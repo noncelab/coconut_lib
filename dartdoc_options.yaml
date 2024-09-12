@@ -1,0 +1,2 @@
+dartdoc:
+  nodoc: ['lib/objectbox.g.dart', 'lib/objectbox_entity.dart']

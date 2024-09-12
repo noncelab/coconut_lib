@@ -1,0 +1,10 @@
+targets:
+  $default:
+    builders:
+      objectbox:
+        generate_for:
+          - lib/**.entity.dart
+      json_serializable:
+        generate_for:
+          - lib/src/network/electrum/electrum_res_types.dart
+

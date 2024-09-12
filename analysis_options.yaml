@@ -1,0 +1,7 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    - lib/objectbox.g.dart
+    - lib/objectbox_entity.dart
+    - '**/*.g.dart'
