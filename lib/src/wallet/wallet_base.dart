@@ -33,13 +33,23 @@ abstract class WalletBase {
   ///get Address object for receive
   Address getReceiveAddress() {
     int index = addressBook.usedReceive + 1;
-    return Repository().getAddress(identifier, index, isChange: false);
+    var address = Repository().getAddress(identifier, index, isChange: false);
+
+    address ??= Address(getAddress(index, isChange: false),
+        '$_derivationPath/0/$index', index, false, 0);
+
+    return address;
   }
 
   /// get Address object for change
   Address getChangeAddress() {
     int index = addressBook.usedChange + 1;
-    return Repository().getAddress(identifier, index, isChange: true);
+    var address = Repository().getAddress(identifier, index, isChange: true);
+
+    address ??= Address(getAddress(index, isChange: true),
+        '$_derivationPath/1/$index', index, true, 0);
+
+    return address;
   }
 
   /// get Address list from the address book

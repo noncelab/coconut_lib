@@ -1,2 +1,2 @@
 dartdoc:
-  nodoc: ['lib/objectbox.g.dart', 'lib/objectbox_entity.dart']
+  nodoc: ['src/objectbox/objectbox.g.dart', 'src/objectbox/objectbox_entity.dart']

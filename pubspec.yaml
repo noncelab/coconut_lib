@@ -28,3 +28,6 @@ dev_dependencies:
   objectbox_generator: ^4.0.1
   test: ^1.24.0
   mockito: ^5.4.4
+
+objectbox:
+  output_dir: src/objectbox
