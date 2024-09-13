@@ -66,7 +66,7 @@ abstract class WalletUtility {
         return false;
       }
       if (codec.data.isEmpty || codec.data[0] > 16) return false;
-      if (codec.data.length < 2 || codec.data.length > 40) return false;
+      if (codec.data.length < 2 || codec.data.length > 66) return false;
       return true;
     }
 
