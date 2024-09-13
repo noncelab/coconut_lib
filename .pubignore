@@ -1,8 +1,3 @@
-# objectbox
-lib/objectbox.g.dart
-lib/libobjectbox.dylib
-lib/objectbox-model.json
-
 test/**
 doc/**
 cache/**

@@ -357,7 +357,7 @@ class Repository {
     return list.map((entity) => entity.toAddress()).toList();
   }
 
-  Address getAddress(int walletId, int index, {required bool isChange}) {
+  Address? getAddress(int walletId, int index, {required bool isChange}) {
     var queryBuilder = _address.query(AddressEntity_.index.equals(index));
 
     if (isChange) {
@@ -368,7 +368,7 @@ class Repository {
           AddressBookEntity_.walletId.equals(walletId));
     }
 
-    return queryBuilder.build().findFirst()!.toAddress();
+    return queryBuilder.build().findFirst()?.toAddress();
   }
 
   /// 모든 데이터 초기화, id 초기화, <ProjectRoot>/objectbox 폴더 내 파일 모두 삭제

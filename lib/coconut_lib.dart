@@ -23,19 +23,19 @@ import 'dart:typed_data';
 
 import 'package:bech32/bech32.dart';
 import 'package:bech32m_i/bech32m_i.dart' as bech32m;
-import 'package:coconut_lib/objectbox_entity.dart';
-import 'package:coconut_lib/src/network/electrum/electrum_res_types.dart';
-import 'package:coconut_lib/src/utils/error.dart';
 import 'package:convert/convert.dart';
 import 'package:decimal/decimal.dart';
 import 'package:hex/hex.dart';
 import 'package:http/http.dart';
 
-import 'objectbox.g.dart';
+import 'src/network/electrum/electrum_res_types.dart';
+import 'src/objectbox/objectbox.g.dart';
+import 'src/objectbox/objectbox_entity.dart';
 import 'src/utils/base58.dart';
 import 'src/utils/converter.dart';
 import 'src/utils/ecc.dart' as ecc;
 import 'src/utils/enum.dart';
+import 'src/utils/error.dart';
 import 'src/utils/hash.dart';
 import 'src/utils/pbkdf2.dart';
 import 'src/utils/result_type.dart';

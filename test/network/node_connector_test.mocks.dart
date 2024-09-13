@@ -6,9 +6,9 @@
 import 'dart:async' as _i6;
 
 import 'package:coconut_lib/coconut_lib.dart' as _i2;
-import 'package:coconut_lib/objectbox_entity.dart' as _i4;
 import 'package:coconut_lib/src/network/electrum/electrum_res_types.dart'
     as _i8;
+import 'package:coconut_lib/src/objectbox/objectbox_entity.dart' as _i4;
 import 'package:coconut_lib/src/utils/enum.dart' as _i5;
 import 'package:coconut_lib/src/utils/error.dart' as _i7;
 import 'package:coconut_lib/src/utils/result_type.dart' as _i3;
