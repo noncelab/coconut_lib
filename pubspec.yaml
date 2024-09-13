@@ -1,7 +1,8 @@
 name: coconut_lib
-description: This is a library for Coconut Vault, Coconut Wallet.
-version: 0.6.0
+description: The coconut_lib is a development tool for mobile air gap Bitcoin wallets. It is written in Dart. Coconut Vault and Coconut Wallet were created using this library.
+version: 0.6.0+1
 repository: https://github.com/noncelab/coconut_lib.git
+license: MIT
 
 environment:
   sdk: ^3.3.4

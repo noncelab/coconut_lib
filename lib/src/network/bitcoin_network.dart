@@ -5,10 +5,12 @@ class BitcoinNetwork {
   final String _name;
   final bool _isTestnet;
 
+  /// Check if it is testnet
   bool get isTestnet => _isTestnet;
 
   BitcoinNetwork(this._name, this._isTestnet);
 
+  /// Current network
   static BitcoinNetwork _currentNetwork = BitcoinNetwork.testnet;
 
   /// Get current network configuration
@@ -19,10 +21,16 @@ class BitcoinNetwork {
     _currentNetwork = network;
   }
 
+  /// Mainnet
   static BitcoinNetwork mainnet = BitcoinNetwork('mainnet', false);
+
+  /// Testnet
   static BitcoinNetwork testnet = BitcoinNetwork('testnet', true);
+
+  /// Regtest
   static BitcoinNetwork regtest = BitcoinNetwork('regtest', true);
 
+  /// Get all network values
   static List<BitcoinNetwork> get values => [mainnet, testnet, regtest];
 
   /// Get network by name (mainnet, testnet, regtest)

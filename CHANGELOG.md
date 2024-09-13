@@ -1,3 +1,7 @@
+## 0.6.0+1
+
+- pub.dev guidelines compliance.
+
 ## 0.6.0
 
-- 초기 버전 출시
+- Initial release.
