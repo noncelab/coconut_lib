@@ -43,6 +43,7 @@ import 'src/utils/varints.dart';
 import 'src/utils/wif.dart' as wif;
 import 'src/utils/wordlists/english.dart' as english_words;
 
+export 'src/objectbox/objectbox_entity.dart';
 export 'src/utils/enum.dart';
 export 'src/utils/error.dart';
 export 'src/utils/result_type.dart';
