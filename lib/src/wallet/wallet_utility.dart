@@ -73,6 +73,11 @@ abstract class WalletUtility {
     return false;
   }
 
+  /// Check if the given mnemonic word is in the word list.
+  static bool isInMnemonicWordList(String word) {
+    return english_words.wordList.contains(word);
+  }
+
   /// Check if the given mnemonic is valid.
   static bool validateMnemonic(String mnemonicList) {
     List<String> mnemonic = mnemonicList.split(' ');

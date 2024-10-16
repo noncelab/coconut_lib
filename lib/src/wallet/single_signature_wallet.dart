@@ -37,6 +37,21 @@ class SingleSignatureWallet extends SingleSignatureWalletBase
         addressType, descriptorObject.getDerivationPath(0), extendedPublicKey);
   }
 
+  /// Create a single signature wallet from extended public key.
+  factory SingleSignatureWallet.fromExtendedPublicKey(
+      String extendedPublicKey) {
+    ExtendedPublicKey pubKey = ExtendedPublicKey.parse(extendedPublicKey);
+
+    if (pubKey.version != AddressType.p2wpkh.versionForMainnet &&
+        pubKey.version != AddressType.p2wpkh.versionForTestnet) {
+      throw Exception('Not supported Extended Public Key Version');
+    }
+    HDWallet wallet =
+        HDWallet.fromPublicKey(pubKey.publicKey, pubKey.chainCode);
+    return SingleSignatureWallet(
+        pubKey.parentFingerprint, wallet, AddressType.p2wpkh, '', pubKey);
+  }
+
   /// Get Json string of the single signature wallet.
   String toJson() {
     return jsonEncode({'descriptor': descriptor});

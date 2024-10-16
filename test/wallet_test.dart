@@ -147,6 +147,11 @@ void main() {
       expect(WalletUtility.validateMnemonic(seed21.mnemonic), true);
       expect(WalletUtility.validateMnemonic(seed24.mnemonic), true);
     });
+
+    test('mnemonic word test', () {
+      expect(WalletUtility.isInMnemonicWordList('abandon'), true);
+      expect(WalletUtility.isInMnemonicWordList('abandon1'), false);
+    });
   });
 
   group('HD Wallet test', () {
