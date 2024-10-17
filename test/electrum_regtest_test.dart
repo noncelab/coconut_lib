@@ -1,5 +1,4 @@
 @Tags(['integration'])
-import 'dart:ffi';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
