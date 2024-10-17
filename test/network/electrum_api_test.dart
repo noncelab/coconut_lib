@@ -3,14 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:coconut_lib/coconut_lib.dart';
-import 'package:coconut_lib/src/network/electrum/electrum_res_types.dart';
+import 'package:coconut_lib/src/network/electrum/electrum_response_types.dart';
 import 'package:mockito/annotations.dart';
 import 'package:mockito/mockito.dart';
 import 'package:test/test.dart';
 
 import 'electrum_api_test.mocks.dart';
 
-@GenerateMocks([ElectrumClient, Repository])
+@GenerateMocks([ElectrumClient])
 void main() async {
   var testData =
       jsonDecode(await File('test/wallet_test_data.json').readAsString());

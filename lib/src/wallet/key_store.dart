@@ -2,13 +2,13 @@ part of '../../coconut_lib.dart';
 
 /// Key Store is consist of fingerprint, exPub and seed.
 class KeyStore {
-  String _fingerprint;
+  String _masterFingerprint;
   HDWallet _hdWallet;
   ExtendedPublicKey _extendedPublicKey;
   Seed? _seed;
 
   /// The fingerprint of the key store.
-  String get fingerprint => _fingerprint;
+  String get masterFingerprint => _masterFingerprint;
 
   /// @nodoc
   HDWallet get hdWallet => _hdWallet;
@@ -23,7 +23,7 @@ class KeyStore {
   bool get hasSeed => _seed != null;
 
   /// @nodoc
-  KeyStore(this._fingerprint, this._hdWallet, this._extendedPublicKey,
+  KeyStore(this._masterFingerprint, this._hdWallet, this._extendedPublicKey,
       [this._seed]);
 
   /// Create a key store from a seed.
@@ -113,8 +113,9 @@ class KeyStore {
 //sign with derivation path.
   String signWithDerivationPath(String message, String derivationPath,
       {bool isDer = true}) {
-    int index = int.parse(derivationPath.split('/').last);
-    int changeIndex = int.parse(derivationPath.split('/')[4]);
+    List<String> pathList = derivationPath.split('/');
+    int index = int.parse(pathList.last);
+    int changeIndex = int.parse(pathList[pathList.length - 2]);
     return sign(message, index, isChange: changeIndex == 1, isDer: isDer);
   }
 
@@ -127,12 +128,21 @@ class KeyStore {
     for (int i = 0; i < psbtObj.unsignedTransaction!.inputs.length; i++) {
       PsbtInput thisInput = psbtObj.inputs[i];
       // PsbtInput thisInput = psbtObj
-      //     .getPsbtInput(psbtObj.unsignedTransaction!.inputs[i].transactionHash);
+      //     .getPsbtInput(psbtObj.unsignedTransaction!.inputs[i].transactionHash)
+      // if (thisInput.derivationPath!.parentFingerprint == fingerprint &&
+      //     thisInput.derivationPath!.publicKey ==
+      //         getPublicKeyWithDerivationPath(thisInput.derivationPath!.path)) {
+      //   return true;
+      // }
 
-      if (thisInput.derivationPath!.parentFingerprint == fingerprint &&
-          thisInput.derivationPath!.publicKey ==
-              getPublicKeyWithDerivationPath(thisInput.derivationPath!.path)) {
-        return true;
+      for (int j = 0; j < thisInput.derivationPathList.length; j++) {
+        if (thisInput.derivationPathList[j].masterFingerprint ==
+                masterFingerprint &&
+            thisInput.derivationPathList[j].publicKey ==
+                getPublicKeyWithDerivationPath(
+                    thisInput.derivationPathList[j].path)) {
+          return true;
+        }
       }
     }
     return false;
@@ -163,13 +173,27 @@ class KeyStore {
       }
       String sigHash =
           psbtObject.unsignedTransaction!.getSigHash(i, utxo, isSegwit);
-      String publicKey =
-          getPublicKeyWithDerivationPath(thisInput.derivationPath!.path);
-      String signature =
-          signWithDerivationPath(sigHash, thisInput.derivationPath!.path);
-      if (validateSignatureWithDerivationPath(
-          signature, sigHash, thisInput.derivationPath!.path)) {}
-      psbtObject.addSignature(i, signature, publicKey);
+
+      for (int j = 0; j < thisInput.derivationPathList.length; j++) {
+        if (thisInput.derivationPathList[j].masterFingerprint !=
+            masterFingerprint) {
+          continue;
+        }
+        String publicKey = getPublicKeyWithDerivationPath(
+            thisInput.derivationPathList[j].path);
+        String signature = signWithDerivationPath(
+            sigHash, thisInput.derivationPathList[j].path);
+        if (validateSignatureWithDerivationPath(
+            signature, sigHash, thisInput.derivationPathList[j].path)) {}
+        psbtObject.addSignature(i, signature, publicKey);
+        psbtObject.addSignature(i, signature, publicKey);
+      }
+      // String publicKey =
+      //     getPublicKeyWithDerivationPath(thisInput.derivationPathList!.path);
+      // String signature =
+      //     signWithDerivationPath(sigHash, thisInput.derivationPathList!.path);
+      // if (validateSignatureWithDerivationPath(
+      //     signature, sigHash, thisInput.derivationPathList!.path)) {}
     }
 
     return psbtObject.serialize();
@@ -223,8 +247,9 @@ class KeyStore {
   bool validateSignatureWithDerivationPath(
       String signature, String message, String derivationPath,
       {bool isDer = true}) {
-    int index = int.parse(derivationPath.split('/').last);
-    int changeIndex = int.parse(derivationPath.split('/')[4]);
+    List<String> pathList = derivationPath.split('/');
+    int index = int.parse(pathList.last);
+    int changeIndex = int.parse(pathList[pathList.length - 2]);
     return validateSignature(signature, message, index,
         isChange: changeIndex == 1, isDer: isDer);
   }
@@ -232,7 +257,7 @@ class KeyStore {
   ///@nodoc
   String toJson() {
     return jsonEncode({
-      'fingerprint': _fingerprint,
+      'fingerprint': _masterFingerprint,
       'hdWallet': _hdWallet.toJson(),
       'extendedPublicKey': _extendedPublicKey.serialize(),
       if (_seed != null) 'seed': _seed!.toJson()
@@ -253,14 +278,14 @@ class KeyStore {
   ///@nodoc
   @override
   String toString() {
-    return 'KeyStore{fingerprint: $_fingerprint, extendedPublicKey: $_extendedPublicKey}';
+    return 'KeyStore{fingerprint: $_masterFingerprint, extendedPublicKey: $_extendedPublicKey}';
   }
 
   ///@nodoc
   @override
   bool operator ==(Object other) {
     if (other is KeyStore) {
-      return _fingerprint == other._fingerprint &&
+      return _masterFingerprint == other._masterFingerprint &&
           _extendedPublicKey == other._extendedPublicKey;
     }
     return false;

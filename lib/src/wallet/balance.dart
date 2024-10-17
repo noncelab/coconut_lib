@@ -2,21 +2,26 @@ part of '../../coconut_lib.dart';
 
 /// Represents the balance of a wallet.
 class Balance {
-  final int _confirmed;
-  final int _unconfirmed;
-
-  /// The confirmed balance of the wallet.
-  int get confirmed => _confirmed;
-
-  /// The unconfirmed balance of the wallet.
-  int get unconfirmed => _unconfirmed;
+  int confirmed;
+  int unconfirmed;
 
   /// @nodoc
-  Balance(this._confirmed, this._unconfirmed);
+  Balance(this.confirmed, this.unconfirmed);
 
   /// @nodoc
   Balance operator +(Balance other) {
     return Balance(
-        _confirmed + other.confirmed, _unconfirmed + other.unconfirmed);
+        confirmed + other.confirmed, unconfirmed + other.unconfirmed);
+  }
+
+  /// @nodoc
+  String toJson() {
+    return jsonEncode({'confirmed': confirmed, 'unconfirmed': unconfirmed});
+  }
+
+  /// @nodoc
+  factory Balance.fromJson(String jsonStr) {
+    Map<String, dynamic> json = jsonDecode(jsonStr);
+    return Balance(json['confirmed'], json['unconfirmed']);
   }
 }

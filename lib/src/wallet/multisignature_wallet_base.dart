@@ -33,7 +33,7 @@ abstract class MultisignatureWalletBase extends WalletBase {
         _addressType.scriptType.replaceAll("P2", "").toLowerCase(),
         _keyStoreList.map((e) => e.extendedPublicKey.serialize()).toList(),
         _derivationPath.replaceAll("m/", ""),
-        _keyStoreList.map((e) => e.fingerprint).toList(),
+        _keyStoreList.map((e) => e.masterFingerprint).toList(),
         _requiredSignature);
   }
 
@@ -43,5 +43,15 @@ abstract class MultisignatureWalletBase extends WalletBase {
         .map((e) => e.getPublicKey(addressIndex, isChange: isChange))
         .toList();
     return _addressType.getMultisignatureAddress(pubkeys, _requiredSignature);
+  }
+
+  String getRedeemScript(String derivationPath) {
+    List<Uint8List> publicKeys = _keyStoreList
+        .map((e) => Converter.hexToBytes(e.getPublicKey(0, isChange: false)))
+        .toList();
+    RedeemScript script = RedeemScript.multiSignature(
+        requiredSignature, keyStoreList.length, publicKeys);
+
+    return script.serialize();
   }
 }

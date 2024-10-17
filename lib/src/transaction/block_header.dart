@@ -1,32 +1,18 @@
-import 'dart:convert';
-import "dart:typed_data";
+part of '../../coconut_lib.dart';
 
-import "package:coconut_lib/src/utils/converter.dart";
-import "package:objectbox/objectbox.dart";
-
-@Entity()
-class BlockHeaderEntity {
-  @Id(assignable: true)
-  int id = 0;
-  @Index()
+/// Entity class for block header
+class BlockHeader {
   int height = 0;
-  @Property()
   int timestamp;
-  @Property()
   String header;
-
-  @Transient()
   int? version;
-  @Transient()
   Uint8List? prevBlockHash;
-  @Transient()
   Uint8List? merkleRoot;
-  @Transient()
   Uint8List? bits;
-  @Transient()
   Uint8List? nonce;
 
-  BlockHeaderEntity(
+  ///@nodoc
+  BlockHeader(
     this.height,
     this.timestamp,
     this.header, {
@@ -37,7 +23,8 @@ class BlockHeaderEntity {
     this.nonce,
   });
 
-  factory BlockHeaderEntity.parse(int height, String header) {
+  /// Parse the block header
+  factory BlockHeader.parse(int height, String header) {
     Uint8List bytes = Converter.hexToBytes(header);
     int version = Converter.littleEndianToInt(bytes.sublist(0, 4));
     Uint8List prevBlockHash =
@@ -48,7 +35,7 @@ class BlockHeaderEntity {
     Uint8List bits = bytes.sublist(72, 76);
     Uint8List nonce = bytes.sublist(76, 80);
 
-    return BlockHeaderEntity(height, timestamp, header,
+    return BlockHeader(height, timestamp, header,
         version: version,
         prevBlockHash: prevBlockHash,
         merkleRoot: merkleRoot,
@@ -56,7 +43,8 @@ class BlockHeaderEntity {
         nonce: nonce);
   }
 
-  BlockHeaderEntity.fromJson(Map<String, dynamic> json)
+  ///@nodoc
+  BlockHeader.fromJson(Map<String, dynamic> json)
       : height = json['height'],
         timestamp = json['timestamp'],
         header = json['header'],
@@ -70,6 +58,7 @@ class BlockHeaderEntity {
         bits = json['bits'] != null ? base64Decode(json['bits']) : null,
         nonce = json['nonce'] != null ? base64Decode(json['nonce']) : null;
 
+  ///@nodoc
   Map<String, dynamic> toJson() {
     return {
       'height': height,

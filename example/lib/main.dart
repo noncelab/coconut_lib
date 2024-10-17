@@ -4,7 +4,6 @@ import 'package:coconut_lib/coconut_lib.dart';
 
 void main() async {
   print("0. Set the Bitcoin Network");
-  Repository.initialize('DB_Scenario');
   BitcoinNetwork.setNetwork(BitcoinNetwork.regtest);
   NodeConnector nodeConnector = await NodeConnector.connectSync(
       'regtest-electrum.coconut.onl', 60401,
@@ -36,15 +35,9 @@ void main() async {
   print(
       ' - Extended Public Key: ${wallet.keyStore.extendedPublicKey.serialize()}');
   print(' - Devation Path: ${wallet.derivationPath}');
-  print(' - Fingerprint: ${wallet.keyStore.fingerprint}');
+  print(' - Fingerprint: ${wallet.keyStore.masterFingerprint}');
 
-  var syncResult = await nodeConnector.fetch(wallet);
-  if (syncResult.isFailure) {
-    throw Exception(" - Sync failed : ${syncResult.error}");
-  } else {
-    print(' - Transaction Sync Success');
-    await Repository().sync(wallet, syncResult.value!);
-  }
+  await wallet.fetchOnChainData(nodeConnector);
 
   print(' - [CurrentBlock] height: ${nodeConnector.currentBlock.height}'
       ' timestamp: ${nodeConnector.currentBlock.timestamp}');
@@ -91,8 +84,6 @@ void main() async {
 
   print('6. Receive PSBT in the wallet (in vault)');
   PSBT vaultReceivedPsbt = PSBT.parse(psbt);
-  print(
-      ' - check fingerprint : ${vaultReceivedPsbt.derivationPath?.parentFingerprint}');
   print(" - Sending amount : ${vaultReceivedPsbt.sendingAmount}");
   print(" - Fee : ${vaultReceivedPsbt.fee}");
 

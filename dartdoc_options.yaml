@@ -1,2 +1,0 @@
-dartdoc:
-  nodoc: ['src/objectbox/objectbox.g.dart', 'src/objectbox/objectbox_entity.dart']

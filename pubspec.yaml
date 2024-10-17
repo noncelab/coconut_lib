@@ -15,7 +15,6 @@ dependencies:
   bech32: ^0.2.2
   http: ^1.2.1
   json_annotation: ^4.9.0
-  objectbox: ^4.0.1
   bech32m_i: ^0.2.2
   decimal: ^3.0.2
   flat_buffers: ^23.5.26
@@ -25,9 +24,5 @@ dev_dependencies:
   build_runner: ^2.4.10
   json_serializable: ^6.8.0
   lints: ^3.0.0
-  objectbox_generator: ^4.0.1
   test: ^1.24.0
   mockito: ^5.4.4
-
-objectbox:
-  output_dir: src/objectbox

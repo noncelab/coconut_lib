@@ -43,7 +43,7 @@ class NodeConnector {
 
   SocketConnectionStatus get connectionStatus => _network.connectionStatus;
 
-  Block get currentBlock {
+  BlockTimestamp get currentBlock {
     _network.fetchBlock();
     return _network.block;
   }
@@ -82,6 +82,7 @@ class NodeConnector {
         try {
           electrumApi = await ElectrumApi.connectSync(data.host, data.port,
               ssl: data.ssl);
+          // print('electrumAPI: ${identityHashCode(electrumApi)}');
           var syncResult = await electrumApi.fullSync(wallet);
           replyPort.send(syncResult);
         } catch (e) {
@@ -128,8 +129,7 @@ class NodeConnector {
     });
   }
 
-  Future<Result<WalletFetchResult, CoconutError>> fetch(
-      WalletBase wallet) async {
+  Future<Result<WalletStatus, CoconutError>> fetch(WalletBase wallet) async {
     if (_syncCompleter != null) {
       // 이미 동기화 중이면, 즉시 실패 반환
       return Future.value(Result.failure(
@@ -153,7 +153,7 @@ class NodeConnector {
       _sendPort!.send([wallet, responsePort.sendPort]);
 
       var result = await responsePort.first;
-      if (result is Result<WalletFetchResult, CoconutError>) {
+      if (result is Result<WalletStatus, CoconutError>) {
         return result;
       } else {
         responsePort.close();

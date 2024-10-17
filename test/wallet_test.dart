@@ -1,12 +1,9 @@
 @Tags(['integration'])
 import 'package:coconut_lib/coconut_lib.dart';
-import 'package:coconut_lib/src/utils/hash.dart';
 import 'package:test/test.dart';
+import 'package:coconut_lib/src/utils/hash.dart';
 
 void main() {
-  String dbDirectory = 'objectbox';
-  Repository.initialize(dbDirectory);
-
   group('Seed test', () {
     test('Test mnemonic validation', () {
       String wrongMnemonic1 =
@@ -76,6 +73,7 @@ void main() {
       expect(() => Seed.fromMnemonic(testMnemonic4), returnsNormally);
       expect(() => Seed.fromMnemonic(testMnemonic5), returnsNormally);
     });
+
     test('Test Mnemonic import(21 words)', () {
       String testMnemonic1 =
           'erase move hello private improve spoil undo file vital reveal bench entire pass unfair horn patient layer goddess world advance identify';
@@ -93,6 +91,7 @@ void main() {
       expect(() => Seed.fromMnemonic(testMnemonic4), returnsNormally);
       expect(() => Seed.fromMnemonic(testMnemonic5), returnsNormally);
     });
+
     test('Test Mnemonic import(24 words)', () {
       String testMnemonic1 =
           'second deliver box neutral keep wrap similar genuine unfold bean uncover tiger throw cook breeze illegal roof opera sea program fresh globe deputy mom';
@@ -118,7 +117,7 @@ void main() {
           '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111';
       String bin256 =
           '1010101101101010110110101011011010101101101010110110101011011010101101101010110110101011011010101101101010110110101011011011101110101011011010101101101010110110101011011010101101101010110110101011011010101101101010110110101011011010101101101010110110111011';
-      // print(seed.mnemonic);
+
       expect(() => Seed.fromBinaryEntropy(wrongBin), throwsException);
       expect(Seed.fromBinaryEntropy(bin128).mnemonic,
           'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon attract');
@@ -146,11 +145,6 @@ void main() {
       expect(WalletUtility.validateMnemonic(seed18.mnemonic), true);
       expect(WalletUtility.validateMnemonic(seed21.mnemonic), true);
       expect(WalletUtility.validateMnemonic(seed24.mnemonic), true);
-    });
-
-    test('mnemonic word test', () {
-      expect(WalletUtility.isInMnemonicWordList('abandon'), true);
-      expect(WalletUtility.isInMnemonicWordList('abandon1'), false);
     });
   });
 
@@ -195,7 +189,7 @@ void main() {
           SingleSignatureVault.fromSeed(seed, AddressType.p2wpkhInP2sh);
       expect(vault.keyStore.extendedPublicKey.serialize(),
           'ypub6Xe7jrk9HdHrT6uwxRAGB1rZ72m4Nn3rWMSnv9bSSaT61qwvfD7RVNTXtyHiKnR83tdnxYKQexyniuEgU1qisfrGuQnF3sHAZE6Htam2do4');
-      expect(vault.keyStore.fingerprint, '33A0CBFD');
+      expect(vault.keyStore.masterFingerprint, '33A0CBFD');
     });
 
     test('get Address test (nested segwit)', () {
@@ -329,7 +323,7 @@ void main() {
           'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about');
       SingleSignatureWalletBase wb = SingleSignatureVault.fromSeed(
           Seed.fromMnemonic(seed.mnemonic), AddressType.p2wpkh);
-      String result = wb.keyStore.fingerprint;
+      String result = wb.keyStore.masterFingerprint;
       String expected = '73C5DA0A';
       //print('result: $result');
       expect(result, expected);
@@ -545,8 +539,8 @@ void main() {
       expect(vaultFromJson.derivationPath, originVault.derivationPath);
       expect(vaultFromJson.keyStore.seed.passphrase,
           originVault.keyStore.seed.passphrase);
-      expect(
-          vaultFromJson.keyStore.fingerprint, originVault.keyStore.fingerprint);
+      expect(vaultFromJson.keyStore.masterFingerprint,
+          originVault.keyStore.masterFingerprint);
       expect(vaultFromJson.descriptor, originVault.descriptor);
     });
   });

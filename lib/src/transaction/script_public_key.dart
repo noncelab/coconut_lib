@@ -50,6 +50,17 @@ class ScriptPublicKey extends Script {
     ]);
   }
 
+  static ScriptPublicKey p2wsh(String address) {
+    var codec = Bech32Codec().decode(address);
+    codec.data.removeAt(0);
+    var data8Bits = Converter.convertBits(codec.data, 5, 8, pad: false);
+    //print("HERE : " + Converter.bytesToHex(data8Bits));
+    return ScriptPublicKey([
+      0x00,
+      Uint8List.fromList(data8Bits),
+    ]);
+  }
+
   String _getSegwitHrp() {
     String hrp;
     bool isTestnet = BitcoinNetwork.currentNetwork.isTestnet;

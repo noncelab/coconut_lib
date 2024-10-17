@@ -8,6 +8,17 @@ class Transaction {
   Uint8List _lockTime;
   late bool _isSegwit;
 
+  // Field for from Blockchain Ledger
+  late int? _timestamp = 0;
+  late int? _height = 0;
+  late List<Transaction>? _perviousTransactionList = [];
+  late String? _memo = '';
+
+  int get timestamp => _timestamp!;
+  int get height => _height!;
+  List<Transaction> get perviousTransactionList => _perviousTransactionList!;
+  String get memo => _memo!;
+
   /// Get the version of the transaction.
   String get version => Converter.bytesToHex(_version);
 
@@ -97,7 +108,19 @@ class Transaction {
     if (fee > inputAmount) {
       throw Exception('Insufficient amount. Estimated fee is $fee');
     }
+    return tx;
+  }
 
+  factory Transaction.fromOnChainData(String transaction, int timestamp,
+      int height, List<String> perviousTransactionList, String memo) {
+    Transaction tx = Transaction.parse(transaction);
+    tx._timestamp = timestamp;
+    tx._height = height;
+    tx._perviousTransactionList = [];
+    for (String txString in perviousTransactionList) {
+      tx._perviousTransactionList!.add(Transaction.parse(txString));
+    }
+    tx._memo = memo;
     return tx;
   }
 
@@ -407,28 +430,34 @@ class Transaction {
   /// check if the signature is valid in the transaction.
   bool validateSignature(int inputIndex, String utxo, AddressType addressType) {
     String sigHash = getSigHash(inputIndex, utxo, addressType.isSegwit);
-    String signature;
-    String publicKey;
-    if (addressType == AddressType.p2wpkh) {
-      signature = inputs[inputIndex].witnessList[0];
-      publicKey = inputs[inputIndex].witnessList[1];
+    if (addressType.isMultisig) {
+      //TODO: Implement multisig
+      return true;
     } else {
-      signature = inputs[inputIndex].scriptSig.commands[0];
-      publicKey = inputs[inputIndex].scriptSig.commands[1];
+      String signature;
+      String publicKey;
+
+      if (addressType.isSegwit) {
+        signature = inputs[inputIndex].witnessList[0];
+        publicKey = inputs[inputIndex].witnessList[1];
+      } else {
+        signature = inputs[inputIndex].scriptSig.commands[0];
+        publicKey = inputs[inputIndex].scriptSig.commands[1];
+      }
+
+      Uint8List sig = Converter.hexToBytes(signature);
+      Uint8List msg = Converter.hexToBytes(sigHash);
+      Uint8List pub = Converter.hexToBytes(publicKey);
+
+      int rLen = sig[3];
+      Uint8List r = sig.sublist(4, 4 + rLen);
+      if (r[0] == 0) r = r.sublist(1);
+      int sLen = sig[4 + rLen + 1];
+      Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
+      Uint8List rs = Uint8List.fromList([...r, ...s]);
+
+      return ecc.verify(msg, pub, rs);
     }
-
-    Uint8List sig = Converter.hexToBytes(signature);
-    Uint8List msg = Converter.hexToBytes(sigHash);
-    Uint8List pub = Converter.hexToBytes(publicKey);
-
-    int rLen = sig[3];
-    Uint8List r = sig.sublist(4, 4 + rLen);
-    if (r[0] == 0) r = r.sublist(1);
-    int sLen = sig[4 + rLen + 1];
-    Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
-    Uint8List rs = Uint8List.fromList([...r, ...s]);
-
-    return ecc.verify(msg, pub, rs);
   }
 
   /// Get the virtual byte size of the transaction.
@@ -475,7 +504,6 @@ class Transaction {
         unsignedInput++;
       }
     }
-    // print("unsignedInput : $unsignedInput");
     if (_isSegwit) {
       double additionalByte = 4.0;
       additionalByte += unsignedInput * sigByte;
@@ -508,5 +536,26 @@ class Transaction {
       }
     }
     return true;
+  }
+
+  String toJson() {
+    return jsonEncode({
+      'transaction': serialize(),
+      'timestamp': _timestamp,
+      'height': _height,
+      'perviousTransactionList':
+          _perviousTransactionList!.map((tx) => tx.serialize()).toList(),
+      'memo': _memo
+    });
+  }
+
+  factory Transaction.fromJson(String jsonStr) {
+    Map<String, dynamic> json = jsonDecode(jsonStr);
+    List<String> perviousTransactionList = [];
+    for (var tx in json['perviousTransactionList']) {
+      perviousTransactionList.add(tx);
+    }
+    return Transaction.fromOnChainData(json['transaction'], json['timestamp'],
+        json['height'], perviousTransactionList, json['memo']);
   }
 }

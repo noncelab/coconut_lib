@@ -140,13 +140,15 @@ class Checksum {
     0x644d626ffd
   ];
 
-  static int _calculatePolyMod(List<int> symbols) {
-    int chk = 1;
+  static BigInt _calculatePolyMod(List<int> symbols) {
+    BigInt chk = BigInt.one;
     for (var value in symbols) {
       var top = chk >> 35;
-      chk = (chk & 0x7ffffffff) << 5 ^ value;
+      chk = (chk & BigInt.from(0x7ffffffff)) << 5 ^ BigInt.from(value);
       for (var i = 0; i < 5; i++) {
-        chk ^= ((top >> i) & 1) != 0 ? _generator[i] : 0;
+        chk ^= (top >> i & BigInt.one) != BigInt.zero
+            ? BigInt.from(_generator[i])
+            : BigInt.zero;
       }
     }
     return chk;
@@ -190,13 +192,18 @@ class Checksum {
           .substring(s.length - 8)
           .split('')
           .map((x) => _checksumCharset.indexOf(x)));
-    return _calculatePolyMod(symbols) == 1;
+    return _calculatePolyMod(symbols) == BigInt.one;
   }
 
   static String getChecksum(String s) {
     var symbols = _transformSymbols(s).toList();
-    var poly = _calculatePolyMod(symbols + [0, 0, 0, 0, 0, 0, 0, 0]) ^ 1;
-    var result = List<int>.generate(8, (i) => (poly >> 5 * (7 - i)) & 31);
+    var poly =
+        _calculatePolyMod(symbols + [0, 0, 0, 0, 0, 0, 0, 0]) ^ BigInt.one;
+    var result = List<int>.generate(
+      8,
+      (i) => ((poly >> (5 * (7 - i))) & BigInt.from(31)).toInt(),
+    );
+
     return result.map((x) => _checksumCharset[x]).join('');
   }
 }

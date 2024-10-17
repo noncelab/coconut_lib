@@ -1,4 +1,6 @@
 @Tags(['integration'])
+import 'dart:ffi';
+
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
@@ -20,9 +22,8 @@ Future<void> main() async {
   });
 
   test('blockchain.block.header', () async {
-    var blockHeaderString = '0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e'
-        '332a1fc7b2b73cf188910fdaada1a0c352b172709f0dbed7460a3a0c2769c62f76dc0b'
-        '2e98febee29b6f6566697a66ffff7f2000000000';
+    var blockHeaderString =
+        '0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910fc0cefb712ad31723702fab7a938fb966525001320c2b73b2a0cd7bc235a577fda9339666ffff7f2001000000';
     var result = await client.getBlockHeader(1);
 
     expect(result.runtimeType, String);
@@ -33,16 +34,8 @@ Future<void> main() async {
     /// 0.012229100000000001
     var result = await client.estimateFee(1);
 
-    expect(result.runtimeType, num);
+    expect(result.runtimeType, int);
     expect(result, greaterThan(0));
-  });
-
-  test('blockchain.scripthash.get_balance', () async {
-    /// {confirmed: 5000010000, unconfirmed: 0}
-    var script = '0014b6bcdbde3832fe660d371c31775c887ea93c0d2f';
-    var result = await client.getBalance(script);
-
-    expect(result.confirmed + result.unconfirmed, greaterThan(0));
   });
 
   test('blockchain.scripthash.get_history', () async {
@@ -54,18 +47,6 @@ Future<void> main() async {
     expect(result.first.height, 0);
     expect(result.first.txHash,
         '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b');
-  });
-
-  test('blockchain.scripthash.listunspent', () async {
-    var script =
-        '4104678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5fac';
-    var result = await client.getUnspentList(script);
-
-    expect(result.first.height, 0);
-    expect(result.first.txHash,
-        '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b');
-    expect(result.first.value, 5000000000);
-    expect(result.first.txPos, 0);
   });
 
   test('blockchain.scripthash.get_mempool', () async {

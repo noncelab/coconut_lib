@@ -1,21 +1,22 @@
 part of '../../coconut_lib.dart';
 
+/// @nodoc
 abstract class Network {
   SocketConnectionStatus get connectionStatus;
 
   int get gapLimit => 20;
   int get reqId;
-  Block get block;
+  BlockTimestamp get block;
 
   Future<Result<String, CoconutError>> broadcast(String rawTransaction);
 
-  Future<Result<WalletFetchResult, CoconutError>> fullSync(WalletBase wallet);
+  Future<Result<WalletStatus, CoconutError>> fullSync(WalletBase wallet);
 
   Future<Result<int, CoconutError>> getNetworkMinimumFeeRate();
 
   void fetchBlock();
 
-  Future<Block> fetchBlockSync();
+  Future<BlockTimestamp> fetchBlockSync();
 
   Future<Result<String, CoconutError>> getTransaction(String txHash);
 }

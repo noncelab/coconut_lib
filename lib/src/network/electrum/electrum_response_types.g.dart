@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'electrum_res_types.dart';
+part of 'electrum_response_types.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator

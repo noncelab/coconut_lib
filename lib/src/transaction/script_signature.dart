@@ -34,14 +34,18 @@ class ScriptSignature extends Script {
 
   /// Get P2WPKH script signature.
   static ScriptSignature p2wpkh() {
-    List<dynamic> cmds = [0x00];
-    return ScriptSignature(cmds);
+    return empty();
   }
 
   /// Get empty script signature.
   static ScriptSignature empty() {
     List<dynamic> cmds = [0x00];
     return ScriptSignature(cmds);
+  }
+
+  /// Get P2WSH script signature.
+  static ScriptSignature p2wsh() {
+    return empty();
   }
 
   // static ScriptSignature p2wpkhInP2sh(

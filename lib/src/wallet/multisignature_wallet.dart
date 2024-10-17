@@ -3,6 +3,9 @@ part of '../../coconut_lib.dart';
 /// Represents a multisignature wallet.
 class MultisignatureWallet extends MultisignatureWalletBase
     implements WalletFeature {
+  @override
+  late WalletStatus? walletStatus;
+
   /// @nodoc
   MultisignatureWallet(super.requiredSignature, super.addressType,
       super.derivationPath, super.keyStores);
@@ -41,6 +44,19 @@ class MultisignatureWallet extends MultisignatureWalletBase
         addressType, descriptorObject.getDerivationPath(0), keyStores);
   }
 
+  factory MultisignatureWallet.fromKeyStoreList(
+      int requiredSignature,
+      AddressType addressType,
+      String derivationPath,
+      List<KeyStore> keyStoreList) {
+    if (!addressType.isMultisig) {
+      throw Exception('Use ${addressType.getAddress} is not multisig script.');
+    }
+
+    return MultisignatureWallet(
+        requiredSignature, addressType, derivationPath, keyStoreList);
+  }
+
   /// Get Json string of the multisignature wallet.
   String toJson() {
     return jsonEncode({'descriptor': descriptor});
@@ -54,21 +70,19 @@ class MultisignatureWallet extends MultisignatureWalletBase
 
   @override
   int getBalance() {
-    return Repository()._getBalance(identifier).confirmed;
+    return walletStatus!.balance.confirmed;
   }
 
   @override
   int getUnconfirmedBalance() {
-    return Repository()._getBalance(identifier).unconfirmed;
+    return walletStatus!.balance.unconfirmed;
   }
 
   @override
   List<Transfer> getTransferList({int cursor = 0, int count = 5}) {
-    List<TransactionEntity> entityList = Repository()
-        ._getTransactionEntityList(this, take: count, cursor: cursor);
     List<Transfer> transferList = [];
-    for (TransactionEntity entity in entityList) {
-      transferList.add(Transfer.fromRepository(addressBook, entity));
+    for (Transaction entity in walletStatus!.transactionList) {
+      transferList.add(Transfer.fromTransactions(addressBook, entity));
     }
     return transferList;
   }
@@ -76,12 +90,8 @@ class MultisignatureWallet extends MultisignatureWalletBase
   @override
   List<UTXO> getUtxoList(
       {UtxoOrderEnum order = UtxoOrderEnum.byTimestampDesc}) {
-    List<UTXO> utxoList = [];
-    for (UtxoEntity entity
-        in Repository()._getUtxoEntityList(identifier, order: order)) {
-      utxoList.add(UTXO.fromRepository(entity));
-    }
-    return utxoList;
+    UTXO.sortUTXO(walletStatus!.utxoList, order);
+    return walletStatus!.utxoList;
   }
 
   @override
@@ -114,5 +124,27 @@ class MultisignatureWallet extends MultisignatureWalletBase
     PSBT psbt = await Future(
         () => PSBT.forMaximumSending(receiverAddress, feeRate, this));
     return psbt.estimateFee(feeRate, addressType);
+  }
+
+  @override
+  Future<void> fetchOnChainData(NodeConnector nodeConnector) async {
+    var syncResult = await nodeConnector.fetch(this);
+    if (syncResult.isFailure) {
+      throw Exception(" - Sync failed : ${syncResult.error}");
+    } else {
+      walletStatus = syncResult.value;
+      addressBook.updateAddressBook();
+    }
+  }
+
+  @override
+  void saveStatus() {
+    walletStatus!.persist(identifier);
+  }
+
+  @override
+  Future<void> loadStatus() async {
+    walletStatus = await WalletStatus.load(identifier);
+    addressBook.updateAddressBook();
   }
 }

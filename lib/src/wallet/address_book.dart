@@ -10,27 +10,58 @@ class AddressBook {
   /// @nodoc
   int usedChange = -1;
 
-  final HashMap<String, Address> _receiveBook = HashMap<String, Address>();
-  final HashMap<String, Address> _changeBook = HashMap<String, Address>();
+  final WalletBase _wallet;
+
+  /// @nodoc
+  WalletStatus? get walletStatus => () {
+        late WalletFeature walletFeature;
+        try {
+          walletFeature = _wallet as WalletFeature;
+        } catch (e) {
+          print("Vault does not have wallet status");
+        }
+        return walletFeature.walletStatus;
+
+        // if (_wallet is SingleSignatureWallet) {
+        //   return _wallet.walletStatus;
+        // } else if (_wallet is MultisignatureWallet) {
+        //   return _wallet.walletStatus;
+        // }
+        // return null;
+      }();
+
+  late final List<Address> _receiveList = [];
+  late final List<Address> _changeList = [];
+
+  /// List of receive addresses
+  List<Address> get receiveList => _receiveList;
+
+  /// List of change addresses
+  List<Address> get changeList => _changeList;
+
+  /// receive address map address - address object
+  HashMap<String, Address> get receiveBook =>
+      HashMap.fromEntries(receiveList.map((e) => MapEntry(e.address, e)));
+
+  /// change address map address - address object
+  HashMap<String, Address> get changeBook =>
+      HashMap.fromEntries(changeList.map((e) => MapEntry(e.address, e)));
 
   /// The gap limit of the address.
   int get gapLimit => _gapLimit;
 
-  /// The receive address book.
-  HashMap<String, Address> get receiveBook => _receiveBook;
-
-  /// The change address book.
-  HashMap<String, Address> get changeBook => _changeBook;
-
   /// @nodoc
-  AddressBook();
+  AddressBook(this._wallet) {
+    int maxReceiveIndex = _gapLimit;
+    int maxChangeIndex = _gapLimit;
 
-  /// @nodoc
-  AddressBook.fromEntity(AddressBookEntity entity) {
-    usedReceive = entity.usedReceiveIndex;
-    usedChange = entity.usedChangeIndex;
-    _receiveBook.addAll(entity.getReceiveMap());
-    _changeBook.addAll(entity.getChangeMap());
+    for (int i = 0; i < maxReceiveIndex; i++) {
+      receiveList.add(_generateAddress(i, false));
+    }
+
+    for (int j = 0; j < maxChangeIndex; j++) {
+      changeList.add(_generateAddress(j, true));
+    }
   }
 
   /// get derivation path of the address
@@ -84,12 +115,95 @@ class AddressBook {
     for (Address address in addressList) {
       if (isChange) {
         if (!changeBook.containsKey(address.address)) {
-          _changeBook[address.address] = address;
+          changeBook[address.address] = address;
         }
       } else {
         if (!receiveBook.containsKey(address.address)) {
-          _receiveBook[address.address] = address;
+          receiveBook[address.address] = address;
         }
+      }
+    }
+  }
+
+  /// get the address object from index
+  Address getAddress(int index, bool isChange) {
+    if (isChange) {
+      if (index >= changeList.length) {
+        for (int i = changeList.length; i <= index; i++) {
+          changeList.add(_generateAddress(i, isChange));
+        }
+      }
+      return changeList[index];
+    } else {
+      if (index >= receiveList.length) {
+        for (int i = receiveList.length; i <= index; i++) {
+          receiveList.add(_generateAddress(i, isChange));
+        }
+      }
+      return receiveList[index];
+    }
+  }
+
+  /// @nodoc
+  Address _generateAddress(int index, bool isChange) {
+    String address = '';
+
+    if (_wallet is SingleSignatureWalletBase) {
+      address = _wallet.addressType
+          .getAddress(_wallet.keyStore.getPublicKey(index, isChange: isChange));
+    } else if (_wallet is MultisignatureWalletBase) {
+      address = _wallet.addressType.getMultisignatureAddress(
+          _wallet.keyStoreList
+              .map((e) => e.getPublicKey(index, isChange: isChange))
+              .toList(),
+          _wallet.requiredSignature);
+    }
+    String derivationPath =
+        '${_wallet.derivationPath}/${isChange ? 1 : 0}/$index';
+
+    return Address(address, derivationPath, index, false, 0);
+  }
+
+  /// update address book with the wallet status
+  void updateAddressBook() {
+    if (walletStatus != null) {
+      int maxReceiveIndex = walletStatus!.receiveMaxGap;
+      int maxChangeIndex = walletStatus!.changeMaxGap;
+
+      for (int i = receiveList.length; i < maxReceiveIndex; i++) {
+        receiveList.add(_generateAddress(i, false));
+      }
+
+      for (int j = changeList.length; j < maxChangeIndex; j++) {
+        changeList.add(_generateAddress(j, true));
+      }
+
+      for (int used in walletStatus!.receiveUsedIndexList) {
+        receiveList[used].setUsed(true);
+      }
+
+      if (walletStatus!.receiveUsedIndexList.isNotEmpty) {
+        usedReceive =
+            walletStatus!.receiveUsedIndexList.reduce((a, b) => a > b ? a : b);
+      }
+
+      for (int used in walletStatus!.changeUsedIndexList) {
+        changeList[used].setUsed(true);
+      }
+
+      if (walletStatus!.changeUsedIndexList.isNotEmpty) {
+        usedChange =
+            walletStatus!.changeUsedIndexList.reduce((a, b) => a > b ? a : b);
+      }
+
+      for (int index in walletStatus!.receiveAddressBalanceMap.keys) {
+        receiveList[index]
+            .setAmount(walletStatus!.receiveAddressBalanceMap[index]!);
+      }
+
+      for (int index in walletStatus!.changeAddressBalanceMap.keys) {
+        changeList[index]
+            .setAmount(walletStatus!.changeAddressBalanceMap[index]!);
       }
     }
   }

@@ -1,9 +1,10 @@
 part of '../../../coconut_lib.dart';
 
+/// @nodoc
 class ElectrumApi extends Network {
   // static final ElectrumApi _instance = ElectrumApi._();
 
-  final Map<int, Block> _blockMap = {};
+  final Map<int, BlockTimestamp> _blockMap = {};
 
   ElectrumClient _client;
   int _currentHeight = 0;
@@ -16,7 +17,8 @@ class ElectrumApi extends Network {
   int get reqId => _client._idCounter;
 
   @override
-  Block get block => _blockMap[_currentHeight] ?? Block(0, DateTime.now());
+  BlockTimestamp get block =>
+      _blockMap[_currentHeight] ?? BlockTimestamp(0, DateTime.now());
 
   ElectrumApi._() : _client = ElectrumClient();
 
@@ -24,7 +26,6 @@ class ElectrumApi extends Network {
       {bool ssl = true, ElectrumClient? client}) {
     ElectrumApi instance = ElectrumApi._();
     if (client != null) {
-      // _instance._client = client;
       instance._client = client;
     }
 
@@ -37,11 +38,6 @@ class ElectrumApi extends Network {
 
   static Future<ElectrumApi> connectSync(String host, int port,
       {bool ssl = true}) async {
-    // if (_instance._client.connectionStatus !=
-    //     SocketConnectionStatus.connected) {
-    //   await _instance._client.connect(host, port, ssl: ssl);
-    // }
-
     var instance = ElectrumApi._();
     await instance._client.connect(host, port, ssl: ssl);
 
@@ -53,13 +49,13 @@ class ElectrumApi extends Network {
     return _handleError(() => _client.broadcast(rawTransaction));
   }
 
-  Future<Result<WalletFetchResult, CoconutError>> _sync(WalletBase wallet,
+  Future<Result<WalletStatus, CoconutError>> _sync(WalletBase wallet,
       {int initialReceiveIndex = 0, int initialChangeIndex = 0}) async {
     return _handleError(() async {
       List<Future> futures = [];
-      List<UtxoEntity> utxoEntityList = [];
-      List<TransactionEntity> txEntityList = [];
-      Map<int, BlockHeaderEntity> blockEntityMap = {};
+      List<UTXO> utxoEntityList = [];
+      List<Transaction> txEntityList = [];
+      Map<int, BlockHeader> blockEntityMap = {};
       Map<int, int> maxGapMap = {0: 0, 1: 0}; // 0: receive, 1: change
       Map<int, Map<int, int>> addressBalanceMap = {
         0: {},
@@ -70,8 +66,7 @@ class ElectrumApi extends Network {
         1: []
       }; // 0: receive, 1: change
       Set<int> toFetchBlockHeightSet = {};
-      BalanceEntity balanceEntity = BalanceEntity(
-          walletId: wallet.identifier, confirmed: 0, unconfirmed: 0);
+      Balance balanceEntity = Balance(0, 0);
 
       // 트랜잭션 내역 조회
       Set<GetHistoryRes> txHistorySet = {};
@@ -101,33 +96,34 @@ class ElectrumApi extends Network {
       await _fetchBlockEntity(toFetchBlockHeightSet, blockEntityMap);
 
       // 트랜잭션 로우 데이터 조회
-      await _fetchRawTransaction(
-          wallet, txEntityList, txHistorySet, blockEntityMap);
+      await _fetchRawTransaction(txEntityList, txHistorySet, blockEntityMap);
 
       // 트랜잭션 입력의 상세 트랜잭션 조회
-      await _fetchTxInputsTxString(txEntityList, wallet);
+      await _fetchTxInputsTxString(txEntityList);
 
       // 트랜잭션 내역 기준으로 AddressBook 세팅이 완료된 후 Utxo 조회로 주소별 잔액을 갱신함.
       await _pushNewUtxoList(wallet, utxoEntityList, balanceEntity,
           txEntityList, addressBalanceMap, maxGapMap);
 
-      var walletFetchResult = WalletFetchResult(
-        txEntityList: txEntityList,
-        utxoEntityList: utxoEntityList,
-        balanceEntity: balanceEntity,
-        blockEntityMap: blockEntityMap,
-        addressBalanceMap: addressBalanceMap,
-        usedIndexList: usedIndexList,
-        maxGapMap: maxGapMap,
+      var walletStatus = WalletStatus(
+        transactionList: txEntityList,
+        utxoList: utxoEntityList,
+        balance: balanceEntity,
+        blockHeaderMap: blockEntityMap,
+        receiveAddressBalanceMap: addressBalanceMap[0]!,
+        changeAddressBalanceMap: addressBalanceMap[1]!,
+        receiveUsedIndexList: usedIndexList[0]!,
+        changeUsedIndexList: usedIndexList[1]!,
+        receiveMaxGap: maxGapMap[0]!,
+        changeMaxGap: maxGapMap[1]!,
       );
 
-      return walletFetchResult;
+      return walletStatus;
     });
   }
 
   @override
-  Future<Result<WalletFetchResult, CoconutError>> fullSync(
-      WalletBase wallet) async {
+  Future<Result<WalletStatus, CoconutError>> fullSync(WalletBase wallet) async {
     var syncResult = await _sync(wallet);
     if (syncResult.isFailure) {
       return Result.failure(syncResult.error!);
@@ -168,7 +164,7 @@ class ElectrumApi extends Network {
     getCurrentBlock().then((block) {
       _currentHeight = block.height;
       _lastUpdatedAt = now;
-      _blockMap[_currentHeight] = Block(
+      _blockMap[_currentHeight] = BlockTimestamp(
           _currentHeight,
           DateTime.fromMillisecondsSinceEpoch(block.timestamp * 1000,
               isUtc: true));
@@ -176,7 +172,7 @@ class ElectrumApi extends Network {
   }
 
   @override
-  Future<Block> fetchBlockSync() async {
+  Future<BlockTimestamp> fetchBlockSync() async {
     var now = DateTime.now();
     if (_lastUpdatedAt != null) {
       var lastUpdatedAt = _lastUpdatedAt!.add(Duration(seconds: 10));
@@ -187,7 +183,7 @@ class ElectrumApi extends Network {
     var blockEntity = await getCurrentBlock();
     _currentHeight = blockEntity.height;
     _lastUpdatedAt = now;
-    var block = Block(
+    var block = BlockTimestamp(
         _currentHeight,
         DateTime.fromMillisecondsSinceEpoch(blockEntity.timestamp * 1000,
             isUtc: true));
@@ -196,17 +192,17 @@ class ElectrumApi extends Network {
     return block;
   }
 
-  Future<BlockHeaderEntity> getCurrentBlock() async {
+  Future<BlockHeader> getCurrentBlock() async {
     var result = await _client.getCurrentBlock();
-    return BlockHeaderEntity.parse(result.height, result.hex);
+    return BlockHeader.parse(result.height, result.hex);
   }
 
   /// utxo 조회는 balance 조회를 동시에 진행하여 0번 인덱스부터 조회하도록 고정
   Future<void> _pushNewUtxoList(
       WalletBase wallet,
-      List<UtxoEntity> utxoEntityList,
-      BalanceEntity balanceEntity,
-      List<TransactionEntity> txEntityList,
+      List<UTXO> utxoEntityList,
+      Balance balanceEntity,
+      List<Transaction> txEntityList,
       Map<int, Map<int, int>> addressBalanceMap,
       Map<int, int> maxGapMap) async {
     await _pushUnspentList(wallet, utxoEntityList, balanceEntity, txEntityList,
@@ -219,13 +215,12 @@ class ElectrumApi extends Network {
 
   Future<void> _pushUnspentList(
       WalletBase wallet,
-      List<UtxoEntity> utxoList,
-      BalanceEntity balanceEntity,
-      List<TransactionEntity> txEntityList,
+      List<UTXO> utxoList,
+      Balance balanceEntity,
+      List<Transaction> txEntityList,
       Map<int, Map<int, int>> addressBalanceMap,
       int maxGap,
       {bool isChange = false}) async {
-    int walletId = wallet.identifier;
     int gapIndex = 0 + maxGap;
     int changeIndex = isChange ? 1 : 0;
     List<Future<void>> futureList = [];
@@ -248,15 +243,16 @@ class ElectrumApi extends Network {
         addressBalanceMap[changeIndex]![index] = amount;
 
         for (var unspent in unspentList) {
-          var transactionEntity = txEntityList
-              .firstWhere((txEntity) => txEntity.txHash == unspent.txHash);
-          var transaction = transactionEntity.convert();
-          var utxo = UtxoEntity.fromApiResponse(
-              walletId: walletId,
-              res: unspent,
-              txString: transaction.serialize(),
-              derivationPath: derivationPath,
-              timestamp: transactionEntity.timestamp ?? 0);
+          var transactionEntity = txEntityList.firstWhere(
+              (txEntity) => txEntity.transactionHash == unspent.txHash);
+          // var utxo = UTXO.fromApiResponse(
+          //     walletId: walletId,
+          //     res: unspent,
+          //     txString: transactionEntity.serialize(),
+          //     derivationPath: derivationPath,
+          //     timestamp: transactionEntity.timestamp ?? 0);
+          var utxo = UTXO(unspent.txHash, unspent.txPos, unspent.value,
+              derivationPath, transactionEntity.timestamp, unspent.height);
 
           utxoList.add(utxo);
 
@@ -287,13 +283,12 @@ class ElectrumApi extends Network {
   }
 
   Future<void> _fetchRawTransaction(
-    WalletBase wallet,
-    List<TransactionEntity> txEntityList,
+    List<Transaction> txEntityList,
     Set<GetHistoryRes> txHistorySet,
-    Map<int, BlockHeaderEntity> blockEntityMap,
+    Map<int, BlockHeader> blockEntityMap,
   ) async {
     // 트랜잭션 상세 조회
-    Map<String, TransactionEntity> fetchedTxEntityMap = {};
+    Map<String, Transaction> fetchedTxEntityMap = {};
     List<Future> futures = [];
 
     for (var txHistory in txHistorySet) {
@@ -306,8 +301,11 @@ class ElectrumApi extends Network {
           timestamp = blockEntityMap[blockHeight]!.timestamp;
         }
 
-        var txEntity = TransactionEntity.from(wallet.identifier, txString, [],
-            height: blockHeight, timestamp: timestamp);
+        var txEntity = Transaction.fromOnChainData(
+            txString, timestamp, blockHeight, [], '');
+
+        // var txEntity = TransactionEntity.from(wallet.identifier, txString, [],
+        //     height: blockHeight, timestamp: timestamp);
 
         fetchedTxEntityMap[txHistory.txHash] = txEntity;
       });
@@ -337,24 +335,23 @@ class ElectrumApi extends Network {
   }
 
   Future<void> _fetchTxInputsTxString(
-      Iterable<TransactionEntity> txEntityList, WalletBase wallet) async {
+      Iterable<Transaction> txEntityList) async {
     for (var txEntity in txEntityList) {
       List<Future<String>> futures = [];
-      Transaction tx = txEntity.convert();
 
-      if (_isCoinbaseTransaction(tx)) {
+      if (_isCoinbaseTransaction(txEntity)) {
         continue;
       }
 
-      for (var i = 0; i < tx.inputs.length; ++i) {
-        var input = tx.inputs[i];
+      for (var i = 0; i < txEntity.inputs.length; ++i) {
+        var input = txEntity.inputs[i];
         futures.add(_getTransaction(input.transactionHash));
       }
 
       List<String> results = await Future.wait(futures);
 
       for (var i = 0; i < results.length; ++i) {
-        txEntity.prevTxStringList.add(results[i]);
+        txEntity.perviousTransactionList.add(Transaction.parse(results[i]));
       }
     }
   }
@@ -377,8 +374,21 @@ class ElectrumApi extends Network {
       futures = [];
       for (int i = index; i < gapIndex; i++) {
         var address = wallet.getAddress(i, isChange: isChange);
+
         // script pubkey 에 앞 2글자는 길이 바이트가 포함되어 제외함.
-        var script = ScriptPublicKey.p2wpkh(address).serialize();
+        String script;
+        if (wallet.addressType == AddressType.p2wpkh) {
+          script = ScriptPublicKey.p2wpkh(address).serialize();
+        } else if (wallet.addressType == AddressType.p2wsh) {
+          script = ScriptPublicKey.p2wsh(address).serialize();
+        } else if (wallet.addressType == AddressType.p2pkh) {
+          script = ScriptPublicKey.p2pkh(address).serialize();
+        } else if (wallet.addressType == AddressType.p2sh) {
+          script = ScriptPublicKey.p2sh(address).serialize();
+        } else {
+          throw Exception('Unsupported address type');
+        }
+
         var scriptWithoutSize = script.substring(2);
         var future = _client.getHistory(scriptWithoutSize);
 
@@ -438,7 +448,7 @@ class ElectrumApi extends Network {
   }
 
   Future<void> _fetchBlockEntity(
-      Set<int> heightSet, Map<int, BlockHeaderEntity> blockEntityMap) async {
+      Set<int> heightSet, Map<int, BlockHeader> blockEntityMap) async {
     List<Future> futures = [];
     var list = heightSet.toList();
 
@@ -448,9 +458,7 @@ class ElectrumApi extends Network {
       var future = _client.getBlockHeader(height);
 
       future.then((header) {
-        var entity = BlockHeaderEntity.parse(height, header);
-        var blockUniqueId = RepositoryUtil.getBlockUniqueId(height);
-        entity.id = blockUniqueId;
+        var entity = BlockHeader.parse(height, header);
         blockEntityMap[height] = entity;
       });
 

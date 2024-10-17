@@ -1,8 +1,8 @@
 part of '../../../../coconut_lib.dart';
 
-class Block {
+class BlockTimestamp {
   int height;
   DateTime timestamp;
 
-  Block(this.height, this.timestamp);
+  BlockTimestamp(this.height, this.timestamp);
 }

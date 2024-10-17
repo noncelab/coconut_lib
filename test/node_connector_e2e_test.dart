@@ -5,7 +5,6 @@ import 'package:test/test.dart';
 Future<void> main() async {
   group('NodeConnector', () {
     test('generate exceeded feerate tx', () async {
-      Repository.initialize('objectbox2');
       BitcoinNetwork.setNetwork(BitcoinNetwork.regtest);
       NodeConnector nodeConnector = await NodeConnector.connectSync(
           'regtest-electrum.coconut.onl', 60401);
@@ -15,8 +14,8 @@ Future<void> main() async {
       SingleSignatureWallet wallet =
           SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-      var syncResult = await nodeConnector.fetch(wallet);
-      await Repository().sync(wallet, syncResult.value!);
+      await wallet.fetchOnChainData(nodeConnector);
+      // await Repository().sync(wallet, syncResult.value!);
 
       var address = wallet.getReceiveAddress();
       var estimateFee = await wallet.estimateFee(address.address, 547, 100000);
@@ -36,7 +35,6 @@ Future<void> main() async {
     });
 
     test('generate small utxo', () async {
-      Repository.initialize('objectbox');
       BitcoinNetwork.setNetwork(BitcoinNetwork.regtest);
       NodeConnector nodeConnector = await NodeConnector.connectSync(
           'regtest-electrum.coconut.onl', 60401);
@@ -46,8 +44,7 @@ Future<void> main() async {
       SingleSignatureWallet wallet =
           SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-      var syncResult = await nodeConnector.fetch(wallet);
-      await Repository().sync(wallet, syncResult.value!);
+      await wallet.fetchOnChainData(nodeConnector);
 
       var address = wallet.getReceiveAddress();
 
@@ -64,7 +61,6 @@ Future<void> main() async {
     });
 
     test('max amount tx', () async {
-      Repository.initialize('objectbox2');
       BitcoinNetwork.setNetwork(BitcoinNetwork.regtest);
       NodeConnector nodeConnector = await NodeConnector.connectSync(
           'regtest-electrum.coconut.onl', 60401);
@@ -74,8 +70,8 @@ Future<void> main() async {
       SingleSignatureWallet wallet =
           SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-      var syncResult = await nodeConnector.fetch(wallet);
-      await Repository().sync(wallet, syncResult.value!);
+      await wallet.fetchOnChainData(nodeConnector);
+      // await Repository().sync(wallet, syncResult.value!);
 
       var address = wallet.getReceiveAddress();
 

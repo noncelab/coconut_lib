@@ -10,7 +10,7 @@ class TransactionInput {
   late Uint8List _sequence;
 
   /// @nodoc
-  late List<dynamic> witness;
+  late List<dynamic> witness = [];
 
   /// Get the previous transaction hash.
   String get transactionHash =>
@@ -101,18 +101,51 @@ class TransactionInput {
   }
 
   /// Insert signature into the transaction input.
-  void setSignature(
-      AddressType addressType, String signature, String publicKey) {
-    Converter.hexToBytes(publicKey);
+  void setSignature(AddressType addressType, List<Signature> signatureList,
+      {int totalSignature = 1, int requiredSignature = 1}) {
+    if (signatureList.isEmpty) {
+      throw Exception("No signature found.");
+    }
+
+    if (!addressType.isMultisig && signatureList.length > 1) {
+      throw Exception(
+          "Only one signature is allowed for single signature address.");
+    }
+
     if (addressType == AddressType.p2pkh) {
       scriptSig = ScriptSignature.p2pkh(
-          Converter.hexToBytes(signature), Converter.hexToBytes(publicKey));
+          Converter.hexToBytes(signatureList[0].signature),
+          Converter.hexToBytes(signatureList[0].publicKey));
     } else if (addressType == AddressType.p2wpkh) {
       scriptSig = ScriptSignature.p2wpkh();
       witness = [
-        Converter.hexToBytes(signature),
-        Converter.hexToBytes(publicKey)
+        Converter.hexToBytes(signatureList[0].signature),
+        Converter.hexToBytes(signatureList[0].publicKey)
       ];
+    } else if (addressType == AddressType.p2wsh) {
+      //TODO: implement
+      if (totalSignature < requiredSignature) {
+        throw Exception('Invalid signature count');
+      }
+      scriptSig = ScriptSignature.p2wsh();
+      List<dynamic> witnessList = [];
+      witnessList.add(00);
+      for (int i = 0; i < requiredSignature; i++) {
+        if (i < signatureList.length) {
+          witnessList.add(signatureList[i].signature);
+        } else {
+          throw Exception('Not enough signature.');
+        }
+      }
+      witness = witnessList;
+      String redeemScript = (RedeemScript.multiSignature(
+              requiredSignature,
+              totalSignature,
+              signatureList
+                  .map((e) => Converter.hexToBytes(e.publicKey))
+                  .toList()))
+          .serialize();
+      witness.add(redeemScript);
     } else {
       throw ArgumentError('Not supported address type');
     }

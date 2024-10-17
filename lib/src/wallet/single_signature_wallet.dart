@@ -3,6 +3,9 @@ part of '../../coconut_lib.dart';
 /// Represents a single signature wallet.
 class SingleSignatureWallet extends SingleSignatureWalletBase
     implements WalletFeature {
+  @override
+  late WalletStatus? walletStatus;
+
   /// Creates a new single signature wallet.
   SingleSignatureWallet(
       String fingerprint,
@@ -37,21 +40,6 @@ class SingleSignatureWallet extends SingleSignatureWalletBase
         addressType, descriptorObject.getDerivationPath(0), extendedPublicKey);
   }
 
-  /// Create a single signature wallet from extended public key.
-  factory SingleSignatureWallet.fromExtendedPublicKey(
-      String extendedPublicKey) {
-    ExtendedPublicKey pubKey = ExtendedPublicKey.parse(extendedPublicKey);
-
-    if (pubKey.version != AddressType.p2wpkh.versionForMainnet &&
-        pubKey.version != AddressType.p2wpkh.versionForTestnet) {
-      throw Exception('Not supported Extended Public Key Version');
-    }
-    HDWallet wallet =
-        HDWallet.fromPublicKey(pubKey.publicKey, pubKey.chainCode);
-    return SingleSignatureWallet(
-        pubKey.parentFingerprint, wallet, AddressType.p2wpkh, '', pubKey);
-  }
-
   /// Get Json string of the single signature wallet.
   String toJson() {
     return jsonEncode({'descriptor': descriptor});
@@ -65,34 +53,28 @@ class SingleSignatureWallet extends SingleSignatureWalletBase
 
   @override
   int getBalance() {
-    return Repository()._getBalance(identifier).confirmed;
+    return walletStatus!.balance.confirmed;
   }
 
   @override
   int getUnconfirmedBalance() {
-    return Repository()._getBalance(identifier).unconfirmed;
-  }
-
-  @override
-  List<Transfer> getTransferList({int cursor = 0, int count = 5}) {
-    List<TransactionEntity> entityList = Repository()
-        ._getTransactionEntityList(this, take: count, cursor: cursor);
-    List<Transfer> transferList = [];
-    for (TransactionEntity entity in entityList) {
-      transferList.add(Transfer.fromRepository(addressBook, entity));
-    }
-    return transferList;
+    return walletStatus!.balance.unconfirmed;
   }
 
   @override
   List<UTXO> getUtxoList(
       {UtxoOrderEnum order = UtxoOrderEnum.byTimestampDesc}) {
-    List<UTXO> utxoList = [];
-    for (UtxoEntity entity
-        in Repository()._getUtxoEntityList(identifier, order: order)) {
-      utxoList.add(UTXO.fromRepository(entity));
+    UTXO.sortUTXO(walletStatus!.utxoList, order);
+    return walletStatus!.utxoList;
+  }
+
+  @override
+  List<Transfer> getTransferList({int cursor = 0, int count = 5}) {
+    List<Transfer> transferList = [];
+    for (Transaction entity in walletStatus!.transactionList) {
+      transferList.add(Transfer.fromTransactions(addressBook, entity));
     }
-    return utxoList;
+    return transferList;
   }
 
   @override
@@ -125,5 +107,27 @@ class SingleSignatureWallet extends SingleSignatureWalletBase
     PSBT psbt = await Future(
         () => PSBT.forMaximumSending(receiverAddress, feeRate, this));
     return psbt.estimateFee(feeRate, addressType);
+  }
+
+  @override
+  Future<void> fetchOnChainData(NodeConnector nodeConnector) async {
+    var syncResult = await nodeConnector.fetch(this);
+    if (syncResult.isFailure) {
+      throw Exception(" - Sync failed : ${syncResult.error}");
+    } else {
+      walletStatus = syncResult.value;
+      addressBook.updateAddressBook();
+    }
+  }
+
+  @override
+  void saveStatus() {
+    walletStatus!.persist(identifier);
+  }
+
+  @override
+  Future<void> loadStatus() async {
+    walletStatus = await WalletStatus.load(identifier);
+    addressBook.updateAddressBook();
   }
 }

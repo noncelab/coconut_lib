@@ -6,7 +6,7 @@
 import 'dart:async' as _i5;
 
 import 'package:coconut_lib/coconut_lib.dart' as _i3;
-import 'package:coconut_lib/src/network/electrum/electrum_res_types.dart'
+import 'package:coconut_lib/src/network/electrum/electrum_response_types.dart'
     as _i2;
 import 'package:coconut_lib/src/utils/enum.dart' as _i4;
 import 'package:mockito/mockito.dart' as _i1;
@@ -282,80 +282,4 @@ class MockElectrumClient extends _i1.Mock implements _i3.ElectrumClient {
 /// A class which mocks [Repository].
 ///
 /// See the documentation for Mockito's code generation for more information.
-class MockRepository extends _i1.Mock implements _i3.Repository {
-  MockRepository() {
-    _i1.throwOnMissingStub(this);
-  }
 
-  @override
-  _i3.Address getAddress(
-    int? walletId,
-    int? index, {
-    required bool? isChange,
-  }) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #getAddress,
-          [
-            walletId,
-            index,
-          ],
-          {#isChange: isChange},
-        ),
-        returnValue: _FakeAddress_3(
-          this,
-          Invocation.method(
-            #getAddress,
-            [
-              walletId,
-              index,
-            ],
-            {#isChange: isChange},
-          ),
-        ),
-      ) as _i3.Address);
-
-  @override
-  void resetObjectBox() => super.noSuchMethod(
-        Invocation.method(
-          #resetObjectBox,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  void resetObjectBoxWallet(_i3.WalletBase? wallet) => super.noSuchMethod(
-        Invocation.method(
-          #resetObjectBoxWallet,
-          [wallet],
-        ),
-        returnValueForMissingStub: null,
-      );
-
-  @override
-  _i5.Future<void> sync(
-    _i3.WalletBase? wallet,
-    _i3.WalletFetchResult? data,
-  ) =>
-      (super.noSuchMethod(
-        Invocation.method(
-          #sync,
-          [
-            wallet,
-            data,
-          ],
-        ),
-        returnValue: _i5.Future<void>.value(),
-        returnValueForMissingStub: _i5.Future<void>.value(),
-      ) as _i5.Future<void>);
-
-  @override
-  void close() => super.noSuchMethod(
-        Invocation.method(
-          #close,
-          [],
-        ),
-        returnValueForMissingStub: null,
-      );
-}

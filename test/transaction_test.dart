@@ -7,12 +7,6 @@ import 'package:coconut_lib/src/utils/hash.dart';
 import 'package:test/test.dart';
 
 main() async {
-  String dbDirectory = 'objectbox';
-  Repository.initialize(dbDirectory);
-  BitcoinNetwork.setNetwork(BitcoinNetwork.testnet);
-  NodeConnector nodeConnector =
-      await NodeConnector.connectSync('blockstream.info', 143, ssl: false);
-
   group('Script Test', () {
     test('p2wpkh test', () {
       String address = 'bc1q8308eecs36wqlkyytnqjf6nq6v9xxh54wt3fj8';
@@ -84,24 +78,17 @@ main() async {
       String outputString =
           'e803000000000000160014b247a00acc1cc2c0b4be0d3c38d866f9c08d244a';
       TransactionOutput output = TransactionOutput.parse(outputString);
-      //print('in parse : ' + output.scriptPubKey.cmds.toString());
       expect(output.amount, 1000);
-      //print(output.scriptPubKey.commands.toString());
       expect(output.scriptPubKey.getAddress(),
           'bc1qkfr6qzkvrnpvpd97p57r3krxl8qg6fz24nzjsa');
       expect(output.serialize(), outputString);
-
-      //legacy
     });
 
     test('Ouput parse and serialize (legacy)', () {
       String outputString =
           '277c5d000000000016001424b3e9491f3eadd9862389d98480acf89bdab078';
       TransactionOutput output = TransactionOutput.parse(outputString);
-      //print('in parse : ' + output.scriptPubKey.cmds.toString());
-      //print('amount : ' + output.amount.toString());
       expect(output.amount, 6126631);
-      //print(output.scriptPubKey.commands.toString());
       expect(output.scriptPubKey.getAddress(),
           'bc1qyje7jjgl86kanp3r38vcfq9vlzda4vrccprts0');
       expect(output.serialize(), outputString);
@@ -115,8 +102,6 @@ main() async {
       TransactionOutput output = TransactionOutput.forSending(amount, address);
       String expectedOutputString =
           'e803000000000000160014b247a00acc1cc2c0b4be0d3c38d866f9c08d244a';
-      //print(output.amount);
-      //print(output.serialize());
       expect(output.serialize(), expectedOutputString);
     });
 
@@ -136,7 +121,6 @@ main() async {
       expect(input.transactionHash,
           '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0');
       expect(input.index, 0);
-      //print(input.serialize());
       expect(input.serialize(), inputString);
     });
 
@@ -144,7 +128,6 @@ main() async {
       String inputString =
           'a463a7a78daffa1bdb1248121adb14b94f70a1fabffc81637f4049c3d65cc69f000000000000000080';
       TransactionInput input = TransactionInput.parse(inputString);
-      //print(input.scriptSig.serialize());
       expect(input.serialize(), inputString);
     });
 
@@ -154,28 +137,25 @@ main() async {
       TransactionInput input = TransactionInput.forSending(
           '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
           0);
-      input.setSignature(
-          AddressType.p2pkh,
-          '30440220360e6c5348a85270a3b14b84780ad56cd189bd12848b125c488a678f5e0d95be022011e51cfd849e5d005fc5352885a954c756f6073de633545f6045c4ad96ac9be001',
-          '02742148dd2f73733ce36202798298e8294b42b5aabf1ba87a9bb9b0167abfb8df');
-      //print(input.serialize());
+      input.setSignature(AddressType.p2pkh, [
+        Signature(
+            '30440220360e6c5348a85270a3b14b84780ad56cd189bd12848b125c488a678f5e0d95be022011e51cfd849e5d005fc5352885a954c756f6073de633545f6045c4ad96ac9be001',
+            '02742148dd2f73733ce36202798298e8294b42b5aabf1ba87a9bb9b0167abfb8df')
+      ]);
       expect(input.serialize(), inputString);
     });
     test('input for Sending (P2WPKH)', () {
-      //tx : 9fc65cd6c349407f6381fcbffaa1704fb914db1a124812db1bfaaf8da7a763a4
-      //Full : 02000000000101
-      //in : db01d2e05c8d032d2f3b54b7322e11dc408789e04960e01d4683cd57c7b970a701000000000000008002572a0000000000001600143c5e7ce7108e9c0fd8845cc124ea60d30a635e95b7480600000000001600146094a72c8f17349e6751db7ecc2d17e6f33cd5b90247304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c0920012103c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb400000000
-      //     db01d2e05c8d032d2f3b54b7322e11dc408789e04960e01d4683cd57c7b970a7010000006a47304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c0920012103c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb400000080
       String inputString =
           'db01d2e05c8d032d2f3b54b7322e11dc408789e04960e01d4683cd57c7b970a7010000000000000080';
 
       TransactionInput input = TransactionInput.forSending(
           'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db', 1,
           sequence: 2147483648);
-      input.setSignature(
-          AddressType.p2wpkh,
-          '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
-          '03c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb4');
+      input.setSignature(AddressType.p2wpkh, [
+        Signature(
+            '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
+            '03c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb4')
+      ]);
       // print(input.serialize());
       expect(input.serialize(), inputString);
     });
@@ -201,10 +181,11 @@ main() async {
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
             0)
       ];
-      inputs[0].setSignature(
-          AddressType.p2pkh,
-          '30440220360e6c5348a85270a3b14b84780ad56cd189bd12848b125c488a678f5e0d95be022011e51cfd849e5d005fc5352885a954c756f6073de633545f6045c4ad96ac9be001',
-          '02742148dd2f73733ce36202798298e8294b42b5aabf1ba87a9bb9b0167abfb8df');
+      inputs[0].setSignature(AddressType.p2pkh, [
+        Signature(
+            '30440220360e6c5348a85270a3b14b84780ad56cd189bd12848b125c488a678f5e0d95be022011e51cfd849e5d005fc5352885a954c756f6073de633545f6045c4ad96ac9be001',
+            '02742148dd2f73733ce36202798298e8294b42b5aabf1ba87a9bb9b0167abfb8df')
+      ]);
       List<TransactionOutput> outputs = [
         TransactionOutput.forSending(
             6126631, 'bc1qyje7jjgl86kanp3r38vcfq9vlzda4vrccprts0')
@@ -222,10 +203,11 @@ main() async {
             1,
             sequence: 2147483648)
       ];
-      inputs[0].setSignature(
-          AddressType.p2wpkh,
-          '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
-          '03c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb4');
+      inputs[0].setSignature(AddressType.p2wpkh, [
+        Signature(
+            '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
+            '03c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb4')
+      ]);
       List<TransactionOutput> outputs = [
         TransactionOutput.forSending(
             10839, 'bc1q8308eecs36wqlkyytnqjf6nq6v9xxh54wt3fj8'),
@@ -236,11 +218,6 @@ main() async {
           Transaction.forSending(inputs, outputs, true, version: 2);
       String expectedTxString =
           '02000000000101db01d2e05c8d032d2f3b54b7322e11dc408789e04960e01d4683cd57c7b970a701000000000000008002572a0000000000001600143c5e7ce7108e9c0fd8845cc124ea60d30a635e95b7480600000000001600146094a72c8f17349e6751db7ecc2d17e6f33cd5b90247304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c0920012103c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb400000000';
-      //   02000000000101db01d2e05c8d032d2f3b54b7322e11dc408789e04960e01d4683cd57c7b970a701000000000000008002572a0000000000001600143c5e7ce7108e9c0fd8845cc124ea60d30a635e95372e0000000000001600146094a72c8f17349e6751db7ecc2d17e6f33cd5b90247304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c0920012103c0c4d5bd6ab4ad72bf4b386db12767aa0043ac1652b621afdcf3eeb299fe2fb400000000
-
-      //Transaction parsedTx = Transaction.parse(expectedTxString);
-
-      //expect(tx.outputs[1].serialize(), parsedTx.outputs[1].serialize());
       expect(tx.serialize(), expectedTxString);
     });
     test('transaction hash test', () {
@@ -263,8 +240,6 @@ main() async {
       int calculatedFee = transaction.calculateFee(1); //100000
       for (int i = 0; i < transaction.inputs.length; i++) {
         TransactionInput input = transaction.inputs[i];
-        // print(input.witness[0].length);
-        // print(input.witness[1].length);
 
         if (i % 2 == 0) continue;
         input.witness = [];
@@ -274,7 +249,6 @@ main() async {
     });
 
     test('fee calculation test (legacy)', () {
-      //tx hash : b90142f046531e43c69a09b3142bc5b15ffa888335bb9e1b4e0a483cfff027ba
       String tx =
           '0100000003efdad76b8da190878c1de4c92fd4aaa0a287984171a4398c1140df11663cb84c010000006b483045022065db71606b84edc291eb2ec55e49ee2fd44afef8b20b4ef88fc2a01c2ba6e963022100dfb24228f2f80574d64a3a2964c5b3d054c14f0bf18c409f72345331271b5020012102a1e806a0c19aaf32363eb19e91a901eafdfc513d13f632f4e2a39f3cb894ad27ffffffff670fa789f11df8b202f380ebc6b4f76fa312f6bfb11494811f00411d7bbb0ae0010000006b4830450221009b5fe2b2bff2a9801725351ae2a8eb410b10b6fecb44edb442ee750e6825f1a4022038e19b3b0e3a95b4a3952dde87efc049d4a72a4424872ab768f7fb3220be4c1e0121032256cb5a8e6d3c9354da72369b939a35febb80d35e6afb50e6f348c20c6c6c05ffffffff52dd5a0965f2d36850f3d2ddeb1457cd72e1cd5a325656af44a3c6ba9f2d42fa010000006c4930460221008a9bf9a1ba9b4125ac9b8cf10423447ad8c7ede3414028237c4c0e0b3b3dc4fd0221009f94721c04b7d4eb33bb1aad61daf98b6ed05dfbf5e3225ae9b3afe24b8924d50121028b04194cb938044761bb93d3917abcce13f910a0500c08e61bdaaf5ea29b5ca0ffffffff02b0c39203000000001976a9148a81571528050b80099821ed0bc4e48ed33e5e4d88ac1f6db80a010000001976a914963f47c50eaafd07c8b0a8a505c825216a4fee6d88ac00000000';
 
@@ -284,7 +258,6 @@ main() async {
     });
 
     test('fee estimation test 1', () {
-      //tx hash : a4e280d47a4afadee6f13e7cdf1d18e49e1c027a8e01924ec8799bdacfb6acd5
       String tx =
           '010000000001019df3834eb1d892b9db3c92653f6c1208bda8dc7661a6ea532246dba86551c5bb000000000083e3ffff029c64040000000000160014825f31d0f7cf9912fbb64e81f4662caf6adbf9b804030100000000001600145cd12eff2417fc0121888480cf7db19a5e55d0710248304502210089500e89119ad29e3f2ca5e8b104bd0d6a05687b09066a5077ba159c5acfa75602204f5d6f521a5303025f3477a752c692b74c10de107bf3c9dd96806f311eacb3db012102b20826da311c3f06855c8e6add1c51438d81a6d3ea768aee19060e5027fc6d6000000000';
 
@@ -298,7 +271,6 @@ main() async {
     });
 
     test('fee estimation test 2', () {
-      //tx hash : a1aedb6973783e45defddecd50043f7f0fcbbc755d46e2cec393ad4b33deff53
       String tx =
           '010000000001015f951a9337793e6bb8c6c41c9d85a34fbf156b6495de67fee97b4a7ef92d9b4f1400000000ffffffff15cba5130000000000160014f40d7acb82233d06b219bc0f89a94860787cfbe86d5f000000000000160014c9c279f8143ff32c745920fb2ce120a9f286aaf1c0ab00000000000016001448f4dce0393cabe8af330474542c773f9eb91645d57705000000000016001439880614d8771a795c6fe9507ce920dab32e752267900600000000001600141b3eb97ed29d5d31badef77847e99a9e4c466a5f06be0600000000001600146abee8747cdd6dda28a59f7f148dc7a31ba690024ba9000000000000160014f7539d8d9e0da8a7380a1403503132d502ba3d251a890000000000001976a9145a401e541e45df31d0024eb5e59688c9ebfa836488acc5ca0500000000001600147b92c2159d50a69cc6584ab22fbd7d0094ea1af0769d0100000000001600143b921f7bd30cf71cc01aa4670bc2ce74a8ccb5cafb610200000000001600146b4c248ce7e186de5eb093d0c403f93a4142bba1755e16000000000016001418e5a05c4bbd977bf4f30304259bece4a2cd2bcc933b1600000000001976a914997dd380d7be2848cfe69fcdf20342399dc9bde288acf3f40a0000000000160014ce6d8f72897712be7f43cf8b8e9c3d340b9ca1d8f62c0200000000001600147b64e1ed851032156e3d8a82f78d0e82370ef5cba365010000000000160014cca5b0660e02770a5e2682a7eaa31846740c6cf5768b00000000000017a914b09182b4f234d1ac50b4734124efc1f777b3308f87bd4d1f00000000001600143a062ea9f514a8a0001fac1de7a3d80bea3ab6375b3a0000000000001976a914d402b90e5ee5689fe2330b5b94c15a163f1b80de88ac0d0d0100000000001600140d1c9bf9043a39f6077a68d977bef862605763fe34cf93e10100000016001408da93bfad48bddcdaf49e65248c3195a1838caa0247304402203b92afe5289a1d0a158feaf1239921246c63f7f5d95aba9d6994e469a458b7d1022066915f004ed1bc0f1cbdc4209d23a321151e7a85da7e5d61a44c90edb27cfcce0121022a51bd8200f44d72e94fa623ad6f79efb10fa6a873b5a8cf1c63b47f6301729b00000000';
       Transaction transaction = Transaction.parse(tx);
@@ -306,7 +278,6 @@ main() async {
         input.witness = [];
       }
       int expectedFee = transaction.estimateFee(1);
-      // print(expectedFee);
       expect(739 <= expectedFee && expectedFee <= 741, true);
     });
 
@@ -319,7 +290,6 @@ main() async {
     });
 
     test('maximum sending', () {
-      // test hash : 436409086b0934e78c12213beac100164d51ac50299d6223a46a806b67a68d4b
       int feeRate = 101;
       TransactionInput input = TransactionInput.forSending(
           '85629775dd57cb5331c48e8d0202c9c76461efe9a3d27c025e42aa293360e2e8', 0,
@@ -330,14 +300,13 @@ main() async {
           152599200,
           true,
           feeRate);
-      tx.inputs[0].setSignature(
-          AddressType.p2wpkh,
-          '304402207bc1288a3efb98b2dd99001ece3b21c25d92a613b74298cb42724f79abfecff8022046ae1fc05f24d6fe2bf181c278a885e8b1a733538270795ece5fd145b5ca17b401',
-          '037f96ecf60295840ee32dd0d7e8d914bfce21932b4dd1e5acc027cd2a77e42cc7');
+      tx.inputs[0].setSignature(AddressType.p2wpkh, [
+        Signature(
+            '304402207bc1288a3efb98b2dd99001ece3b21c25d92a613b74298cb42724f79abfecff8022046ae1fc05f24d6fe2bf181c278a885e8b1a733538270795ece5fd145b5ca17b401',
+            '037f96ecf60295840ee32dd0d7e8d914bfce21932b4dd1e5acc027cd2a77e42cc7')
+      ]);
 
-      // print(tx.outputs[0].amount);
       int fee = tx.calculateFee(feeRate);
-      // print(fee);
       expect(fee, inInclusiveRange(11000 - 50, 11000 + 50));
     });
 
@@ -404,15 +373,10 @@ main() async {
       Transaction tx = Transaction.parse(
           '0100000002fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f0000000000eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac11000000',
           isEmptySignature: true);
-      // TransactionOutput utxo1 = TransactionOutput.fromScript(
-      //     620000000,
-      //     ScriptPublicKey.parse(
-      //         '232103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac'));
       TransactionOutput utxo2 = TransactionOutput(
           Converter.intToLittleEndianBytes(600000000, 8),
           ScriptPublicKey.parse(
               '1600141d0f172a0ecb48aee1be1f2687d2963ae33f71a1'));
-      //String sigHash1 = tx.getSigHash(0, utxo1.serialize(), AddressType.p2wpkh);
 
       String sigHash2 =
           tx.getSigHash(1, utxo2.serialize(), AddressType.p2wpkh.isSegwit);
@@ -424,7 +388,6 @@ main() async {
 
       HDWallet hdWallet = HDWallet.fromPrivateKey(
           Converter.hexToBytes(privateKey), Uint8List.fromList([0, 0, 0, 0]));
-      //print(Converter.bytesToHex(hdWallet.publicKey));
 
       Uint8List signature = hdWallet.sign(Converter.hexToBytes(sigHash2));
 
@@ -438,7 +401,6 @@ main() async {
       String targetSignature =
           '304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee01';
       expect(derString, targetSignature);
-      //print(derString);
     });
 
     test(
@@ -451,10 +413,6 @@ main() async {
               passphrase: 'ABC'),
           AddressType.p2wpkh);
 
-      // vault.addressBook.map.forEach((key, value) {
-      //   print('$key : $value');
-      // });
-
       TransactionInput input1 = TransactionInput.forSending(
           "6b90e3232186d8ea27e5b8a5d8fe63e26892148019466a0334e0c529deee2065", 1,
           sequence: 1);
@@ -462,30 +420,34 @@ main() async {
       TransactionOutput output =
           TransactionOutput.forSending(11000, vault.getAddress(1));
       Transaction tx = Transaction.forSending([input1], [output], true);
-      // print("tx : ${tx.serialize()}");
 
       TransactionOutput utxo1 = TransactionOutput.forSending(
           11524, 'tb1qeve9c2dvrk0ec44twlrlvk0k5vz200gz8pu2wn');
 
       String sigHash =
           tx.getSigHash(0, utxo1.serialize(), AddressType.p2wpkh.isSegwit);
-      // print("sigHash : $sigHash");
-      // print("utxo1 : ${utxo1.serialize()}");
       String sign = vault.keyStore.sign(sigHash, 0);
       tx.inputs[0].setSignature(
-          vault.addressType, sign, vault.keyStore.getPublicKey(0));
-      // print(tx.serialize());
+          vault.addressType, [Signature(sign, vault.keyStore.getPublicKey(0))]);
       expect(tx.serialize(),
           '020000000001016520eede29c5e034036a461980149268e263fed8a5b8e527ead8862123e3906b01000000000100000001f82a00000000000016001473f7aa4db6847eab27c59214f6ed7254627e7de002483045022100f369a3e1bdfb62a3ff875fa60bc9834326dead789a24ffcb2faf5f48628240e8022014cc216309a8ded296597cfd2680528729c0a55e43826d8af7d160d45be3df860121033b0492bf5c0a0222a55cdea04cdc022b1751112381ae6e9970319b3d6b161db900000000');
     });
   });
 
   group('PSBT test', () {
+    BitcoinNetwork.setNetwork(BitcoinNetwork.testnet);
+    late NodeConnector nodeConnector;
+
+    setUpAll(() async {
+      nodeConnector =
+          await NodeConnector.connectSync('blockstream.info', 143, ssl: false);
+    });
+
     test('psbt instance test 1', () {
       String genPsbt =
           'cHNidP8BAHECAAAAAWUg7t4pxeA0A2pGGYAUkmjiY/7YpbjlJ+rYhiEj45BrAQAAAAD+////Ak4EAAAAAAAAFgAUc/eqTbaEfqsnxZIU9u1yVGJ+feDBJgAAAAAAABYAFI/e1ckmFCiom0RpZFOnYL+LGj00AAAAACIBAoVTlNWX9SGtm5cFiwwI8Wa3/ghN1Rcn5sFq/HiYIljOEHdHvlRUAACAAQAAgAAAAIAAAQDeAgAAAAABAbOIzj00k4UxHYxukCF+IGpm0wrLGRNpFFd5wnAKSj2FAAAAAAD9////AiPnFBIAAAAAFgAUydEYuAChkfMw6AXd43kGvY9wOo8ELQAAAAAAABYAFMsyXCmsHZ+cVqt3x/ZZ9qMEp70CAkcwRAIgbDLOfc52CI/bgcNruhEK5K3Tjs6/964Dw2MIKToN+XkCID943pnpCRlb8KgUllCu1TPrq2HJi+TWrbiGRj3VUOP/ASECx4cRBpF4/xfXe+U6es7busrE2sopPkLGH3MDNiEI/SJlBSsAAQEfBC0AAAAAAAAWABTLMlwprB2fnFard8f2WfajBKe9AiIGAzsEkr9cCgIipVzeoEzcAisXUREjga5umXAxmz1rFh25GMzw5sZUAACAAQAAgAAAAIAAAAAAAAAAAAAAAA==';
       PSBT psbt = PSBT.parse(genPsbt);
-      expect(psbt.derivationPath?.path, "m/84'/1'/0'");
+      // expect(psbt.derivationPathList[0].path, "m/84'/1'/0'");
       expect(psbt.unsignedTransaction!.transactionHash,
           'b968c83476792ac3ead52749f61957ce926dca5d9749fa6eed5440ebe3e44290');
       expect(psbt.inputs[0].witnessUtxo?.amount.toString(), '11524');
@@ -521,28 +483,15 @@ main() async {
       String psbtString =
           'cHNidP8BAFICAAAAAWUg7t4pxeA0A2pGGYAUkmjiY/7YpbjlJ+rYhiEj45BrAQAAAAABAAAAAfgqAAAAAAAAFgAUc/eqTbaEfqsnxZIU9u1yVGJ+feAAAAAAIgEChVOU1Zf1Ia2blwWLDAjxZrf+CE3VFyfmwWr8eJgiWM4Qd0e+VFQAAIABAACAAAAAgAABAN4CAAAAAAEBs4jOPTSThTEdjG6QIX4gambTCssZE2kUV3nCcApKPYUAAAAAAP3///8CI+cUEgAAAAAWABTJ0Ri4AKGR8zDoBd3jeQa9j3A6jwQtAAAAAAAAFgAUyzJcKawdn5xWq3fH9ln2owSnvQICRzBEAiBsMs59znYIj9uBw2u6EQrkrdOOzr/3rgPDYwgpOg35eQIgP3jemekJGVvwqBSWUK7VM+urYcmL5NatuIZGPdVQ4/8BIQLHhxEGkXj/F9d75Tp6ztu6ysTayik+QsYfcwM2IQj9ImUFKwABAR8ELQAAAAAAABYAFMsyXCmsHZ+cVqt3x/ZZ9qMEp70CIgYDOwSSv1wKAiKlXN6gTNwCKxdRESOBrm6ZcDGbPWsWHbkYzPDmxlQAAIABAACAAAAAgAAAAAAAAAAAIgIDOwSSv1wKAiKlXN6gTNwCKxdRESOBrm6ZcDGbPWsWHblIMEUCIQDzaaPhvftio/+HX6YLyYNDJt6teJok/8svr19IYoJA6AIgFMwhYwmo3tKWWXz9JoBShynApV5Dgm2K99Fg1Fvj34YBAAEDBPgqAAABBBcWABRz96pNtoR+qyfFkhT27XJUYn594CICApaPYnyq0NL/g79f7tMP2059h/m9ZVfoDSuJjgdjz4f6GMzw5sZUAACAAQAAgAAAAIAAAAAAAQAAAAAA';
       PSBT psbt = PSBT.parse(psbtString);
-      expect(psbt.inputs[0].partialSigs![0],
+      expect(psbt.inputs[0].partialSigList[0].signature,
           '3045022100f369a3e1bdfb62a3ff875fa60bc9834326dead789a24ffcb2faf5f48628240e8022014cc216309a8ded296597cfd2680528729c0a55e43826d8af7d160d45be3df8601');
-      expect(psbt.inputs[0].partialSigs![1],
+      expect(psbt.inputs[0].partialSigList[0].publicKey,
           '033b0492bf5c0a0222a55cdea04cdc022b1751112381ae6e9970319b3d6b161db9');
     });
 
     test('add sign and serialization test', () {});
 
     test('psbt generation test', () async {
-      // //Repository repository = Repository();
-
-      // Completer<bool> completer = Completer();
-
-      // Timer(Duration(seconds: 1), () {
-      //   if (nodeConnector.connectionStatus ==
-      //       SocketConnectionStatus.connected) {
-      //     completer.complete(true);
-      //   }
-      // });
-
-      // await completer.future;
-
       SingleSignatureVault vault = SingleSignatureVault.fromSeed(
         Seed.fromMnemonic(
             'walk nose vibrant ankle advance frame violin apart summer depart volume squeeze decide visit manage tomorrow demand office minimum method manage arm dwarf cement',
@@ -552,13 +501,7 @@ main() async {
       SingleSignatureWallet wallet =
           SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-      var syncResult = await nodeConnector.fetch(wallet);
-      if (syncResult.isFailure) {
-        throw Exception(" - Sync failed : ${syncResult.error}");
-      } else {
-        print(' - Transaction Sync Success');
-        await Repository().sync(wallet, syncResult.value!);
-      }
+      await wallet.fetchOnChainData(nodeConnector);
 
       TransactionInput input1 = TransactionInput.forSending(
           "90af61b59a23f51e6308f3c69c59df5c3f2dc0b71931321324b9591f36b28fa2", 0,
@@ -574,8 +517,6 @@ main() async {
       Transaction tx =
           Transaction.forSending([input2, input1], [output1, output2], true);
       PSBT psbt = PSBT.fromTransaction(tx, wallet);
-      //print(psbt.toString());
-      //print(psbt.serialize());
       expect(psbt.outputs[1].isChange, true);
       expect(psbt.outputs[0].isChange, false);
     });
@@ -590,48 +531,37 @@ main() async {
       SingleSignatureWallet wallet =
           SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-      NodeConnector nodeConnector = await NodeConnector.connectSync(
-          'regtest-electrum.coconut.onl', 60401,
-          ssl: true);
+      await wallet.fetchOnChainData(nodeConnector);
 
-      var syncResult = await nodeConnector.fetch(wallet);
-      if (syncResult.isFailure) {
-        throw Exception(" - Sync failed : ${syncResult.error}");
-      } else {
-        print(' - Transaction Sync Success');
-        await Repository().sync(wallet, syncResult.value!);
-      }
+      String receiverAddress = wallet.getReceiveAddress().address;
+      int sendingAmount = 5000;
+      String psbt =
+          await wallet.generatePsbt(receiverAddress, sendingAmount, 1);
+      int estimatedFee =
+          await wallet.estimateFee(receiverAddress, sendingAmount, 1);
 
-      // String receiverAddress = wallet.getReceiveAddress().address;
-      // String receiverAddress = 'tb1qvy67actlsslmvwpjzk9hnx6jf04g5y26sz5crx';
-      // int sendingAmount = 5000;
-      // String psbt =
-      //     await wallet.generatePsbt(receiverAddress, sendingAmount, 1);
-      // int estimatedFee =
-      //     await wallet.estimateFee(receiverAddress, sendingAmount, 1);
+      PSBT psbtObj = PSBT.parse(psbt);
+      int unsignedFee = psbtObj.fee;
 
-      // PSBT psbtObj = PSBT.parse(psbt);
-      // int unsignedFee = psbtObj.fee;
+      String signedPsbt = vault.addSignatureToPsbt(psbt);
+      PSBT signedPsbtObj = PSBT.parse(signedPsbt);
+      Transaction compTx =
+          signedPsbtObj.getSignedTransaction(AddressType.p2wpkh);
 
-      // String signedPsbt = vault.addSignatureToPsbt(psbt);
-      // PSBT signedPsbtObj = PSBT.parse(signedPsbt);
-      // Transaction compTx =
-      //     signedPsbtObj.getSignedTransaction(AddressType.p2wpkh);
-
-      // int realFee = compTx.calculateFee(1);
+      int realFee = compTx.calculateFee(1);
 
       // print("vByte : ${compTx.getVirtualByte()}");
       // print("real fee : $realFee");
       // print("estimated fee : $estimatedFee");
       // print("unsigned fee : $unsignedFee");
 
-      //TODO : reTest
-      // expect((realFee - estimatedFee).abs(), lessThan(2));
-      // expect((realFee - unsignedFee).abs(), lessThan(2));
+      expect((realFee - estimatedFee).abs(), lessThan(2));
+      expect((realFee - unsignedFee).abs(), lessThan(2));
     });
 
     test('fee test (max sending)', () async {
-      BitcoinNetwork.setNetwork(BitcoinNetwork.testnet);
+      int vbyteTolerance = 1; // per input
+
       Seed seed = Seed.fromMnemonic(
           'walk nose vibrant ankle advance frame violin apart summer depart volume squeeze decide visit manage tomorrow demand office minimum method manage arm dwarf cement',
           passphrase: 'ABC');
@@ -640,65 +570,30 @@ main() async {
       SingleSignatureWallet wallet =
           SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-      var syncResult = await nodeConnector.fetch(wallet);
-      if (syncResult.isFailure) {
-        throw Exception(" - Sync failed : ${syncResult.error}");
-      } else {
-        print(' - Transaction Sync Success');
-        await Repository().sync(wallet, syncResult.value!);
-      }
+      await wallet.fetchOnChainData(nodeConnector);
 
-      // String nodeURL = 'blockstream.info';
-      // NodeConnector nodeConnector =
-      //     NodeConnector.connect(nodeURL, 143, ssl: false);
-      // Completer<bool> completer = Completer();
+      int feeRate = 1;
 
-      // late Block currentBlock;
-      // Timer.periodic(Duration(milliseconds: 100), (timer) {
-      //   if (nodeConnector.connectionStatus ==
-      //       SocketConnectionStatus.connected) {
-      //     currentBlock = nodeConnector.currentBlock;
-      //     if (currentBlock.height != 0) {
-      //       timer.cancel();
-      //       completer.complete(true);
-      //     }
-      //   }
-      // });
+      String receiverAddress =
+          wallet.getAddress(19); //tb1qh5mehlqdrl3q6edfa0mwyc52gqyqqmpcfuarq3
+      String psbt =
+          await wallet.generatePsbtWithMaximum(receiverAddress, feeRate);
+      int estimatedFee =
+          await wallet.estimateFeeWithMaximum(receiverAddress, feeRate);
 
-      // await completer.future;
+      PSBT psbtObj = PSBT.parse(psbt);
+      int unsignedFee = psbtObj.fee;
 
-      // var syncResult = await nodeConnector.fullSync(wallet);
-      // if (syncResult.isFailure) {
-      //   throw Exception(" - Sync failed : ${syncResult.error}");
-      // }
-      // int feeRate = 5;
+      String signedPsbt = vault.addSignatureToPsbt(psbt);
+      PSBT signedPsbtObj = PSBT.parse(signedPsbt);
+      Transaction compTx =
+          signedPsbtObj.getSignedTransaction(AddressType.p2wpkh);
 
-      // String receiverAddress = wallet.getReceiveAddress().address;
-      // // String receiverAddress = 'tb1qvy67actlsslmvwpjzk9hnx6jf04g5y26sz5crx';
-      // String psbt = await wallet.generatePsbtWithMaximum(receiverAddress, 1);
-      // int estimatedFee =
-      //     await wallet.estimateFeeWithMaximum(receiverAddress, 1);
-
-      // PSBT psbtObj = PSBT.parse(psbt);
-      // int unsignedFee = psbtObj.fee;
-
-      // String signedPsbt = vault.addSignatureToPsbt(psbt);
-      // // print("signedPsbt : " + signedPsbt);
-      // PSBT signedPsbtObj = PSBT.parse(signedPsbt);
-      // Transaction compTx =
-      //     signedPsbtObj.getSignedTransaction(AddressType.p2wpkh);
-      // print(compTx.serialize());
-
-      // int realFee = compTx.calculateFee(feeRate);
-      // print("real vByte : ${compTx.getVirtualByte()}");
-      // print("real fee : $realFee");
-      // print("estimated fee : $estimatedFee");
-      // print("unsigned fee : $unsignedFee");
-      // print(realFee - estimatedFee);
-      // print(realFee - unsignedFee);
-      //TODO : reTest
-      // expect((realFee - estimatedFee).abs(), lessThan(10));
-      // expect((realFee - unsignedFee).abs(), lessThan(10));
+      int realFee = compTx.calculateFee(feeRate);
+      expect((realFee - estimatedFee).abs(),
+          lessThan(feeRate * (vbyteTolerance * compTx.inputs.length)));
+      expect((realFee - unsignedFee).abs(),
+          lessThan(feeRate * (vbyteTolerance * compTx.inputs.length)));
     });
   });
 }

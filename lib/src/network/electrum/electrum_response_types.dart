@@ -1,6 +1,6 @@
 import 'package:json_annotation/json_annotation.dart';
 
-part 'electrum_res_types.g.dart';
+part 'electrum_response_types.g.dart';
 
 class ElectrumResponse<T> {
   int? id;

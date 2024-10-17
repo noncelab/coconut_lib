@@ -28,7 +28,7 @@ class Transfer {
   String? get memo => _memo;
 
   /// Get the amount of this transfer.
-  int? get amount => _amount?.abs();
+  int? get amount => _amount;
 
   /// Get the fee of this transfer.
   int? get fee => _fee;
@@ -52,12 +52,11 @@ class Transfer {
       this._outputAddressList);
 
   /// @nodoc
-  factory Transfer.fromRepository(
-      AddressBook addressBook, TransactionEntity entity) {
-    var timestamp = entity.timestamp == null
-        ? null
-        : DateTime.fromMillisecondsSinceEpoch(entity.timestamp! * 1000);
-    var tx = Transaction.parse(entity.txString);
+  factory Transfer.fromTransactions(
+      AddressBook addressBook, Transaction transaction) {
+    var timestamp =
+        DateTime.fromMillisecondsSinceEpoch(transaction.timestamp * 1000);
+    var tx = Transaction.parse(transaction.serialize());
 
     int amount = 0;
     int fee = 0;
@@ -68,7 +67,7 @@ class Transfer {
 
     for (int i = 0; i < tx.inputs.length; ++i) {
       var input = tx.inputs[i];
-      var inputTx = Transaction.parse(entity.prevTxStringList[i]);
+      var inputTx = transaction.perviousTransactionList[i];
       var inputTxOutput = inputTx.outputs[input.index];
 
       String inputAddress = inputTxOutput.getAddress();
@@ -102,11 +101,11 @@ class Transfer {
     }
 
     return Transfer(
-      entity.txHash,
+      transaction.transactionHash,
       timestamp,
-      entity.height,
+      transaction.height,
       txType.name,
-      entity.memo,
+      transaction.memo,
       amount,
       fee,
       inputAddressList,

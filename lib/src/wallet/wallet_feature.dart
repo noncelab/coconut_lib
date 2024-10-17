@@ -27,4 +27,15 @@ abstract class WalletFeature {
 
   /// Get a estimate fee for sending all bitcoin in the wallet.
   Future<int> estimateFeeWithMaximum(String receiverAddress, int feeRate);
+
+  /// Fetch the blockchain data of the wallet.
+  Future<void> fetchOnChainData(NodeConnector nodeConnector);
+
+  /// Save wallet status to the file.
+  void saveStatus();
+
+  /// Load wallet status from the file.
+  Future<void> loadStatus();
+
+  WalletStatus? get walletStatus;
 }
