@@ -120,7 +120,6 @@ class NodeConnector {
 
   Future<Result<String, CoconutError>> broadcast(String rawTransaction) async {
     return _network.broadcast(rawTransaction).then((result) async {
-      // broadcast 에 성공했을 경우에만 objectbox에 저장
       if (result.isFailure) {
         return result;
       }
