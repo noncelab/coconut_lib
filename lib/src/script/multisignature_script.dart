@@ -37,6 +37,12 @@ class MultisignatureScript extends Script {
 
     List<dynamic> pubKeys = cmds.sublist(1, 1 + totalSigner);
 
+    final distinctPublicKeys =
+        pubKeys.map((key) => Codec.encodeHex(key as Uint8List)).toSet();
+    if (distinctPublicKeys.length != pubKeys.length) {
+      throw FormatException('Duplicate public key.');
+    }
+
     // Check if the public keys size
     for (var pubKey in pubKeys) {
       if (pubKey.length != 33 && pubKey.length != 65) {
@@ -66,17 +72,30 @@ class MultisignatureScript extends Script {
 
   factory MultisignatureScript.forP2wsh(
       int requiredSignature, int totalSigner, List<Uint8List> publicKeys) {
+    final distinctPublicKeys =
+        publicKeys.map((key) => Codec.encodeHex(key)).toSet();
+    if (totalSigner != publicKeys.length ||
+        distinctPublicKeys.length != publicKeys.length) {
+      throw Exception('Total signer must equal the distinct public key count.');
+    }
+    if (requiredSignature < 1 ||
+        requiredSignature > distinctPublicKeys.length) {
+      throw Exception(
+          'Required signatures must be between 1 and the distinct signer count.');
+    }
+
     List<dynamic> cmds = [];
 
-    publicKeys.sort((a, b) {
-      for (int i = 0; i < a.length && i < b.length; i++) {
-        if (a[i] != b[i]) {
-          return a[i].compareTo(b[i]);
+    publicKeys = List<Uint8List>.of(publicKeys)
+      ..sort((a, b) {
+        for (int i = 0; i < a.length && i < b.length; i++) {
+          if (a[i] != b[i]) {
+            return a[i].compareTo(b[i]);
+          }
         }
-      }
-      return a.length
-          .compareTo(b.length); // Compare by length if all bytes are equal
-    });
+        return a.length
+            .compareTo(b.length); // Compare by length if all bytes are equal
+      });
 
     cmds.add(ScriptOperationCode.getHex('OP_${requiredSignature.toString()}'));
     for (var publicKey in publicKeys) {

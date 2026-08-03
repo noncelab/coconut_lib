@@ -25,6 +25,21 @@ class Descriptor {
     if (miniscriptList != null) {
       _miniscriptList = miniscriptList;
     }
+    if (_addressType.isMultisignature) {
+      final List<KeyStore> keyStores = <KeyStore>[];
+      for (int i = 0; i < _keyOriginExpressionList.length; i++) {
+        final ExtendedPublicKey extendedPublicKey =
+            ExtendedPublicKey._parseWithoutNetworkValidation(getPublicKey(i));
+        keyStores.add(KeyStore(
+          getFingerprint(i),
+          HDWallet.fromPublicKey(
+              extendedPublicKey.publicKey, extendedPublicKey.chainCode),
+          extendedPublicKey,
+        ));
+      }
+      MultisignatureWalletBase._validateSignerSet(
+          _requiredSignatures, keyStores);
+    }
   }
 
   /// Script type of the descriptor.

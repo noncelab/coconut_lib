@@ -94,6 +94,18 @@ void main() {
         expect(script.commands[1], short);
         expect(script.commands[2], long);
       });
+
+      test('rejects duplicate public keys and invalid threshold', () {
+        final publicKey = Uint8List.fromList([2, ...List<int>.filled(32, 1)]);
+
+        expect(
+            () => MultisignatureScript.forP2wsh(1, 2, [publicKey, publicKey]),
+            throwsException);
+        expect(() => MultisignatureScript.forP2wsh(0, 1, [publicKey]),
+            throwsException);
+        expect(() => MultisignatureScript.forP2wsh(2, 1, [publicKey]),
+            throwsException);
+      });
     });
     group('getRequiredSignature', () {
       test('Get reqruied signature', () {

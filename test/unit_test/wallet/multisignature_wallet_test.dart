@@ -1,4 +1,6 @@
 @Tags(['unit'])
+import 'dart:convert';
+
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
@@ -24,6 +26,26 @@ void main() async {
           expect(wallet.keyStoreList[i].extendedPublicKey.serialize(),
               vault.keyStoreList[i].extendedPublicKey.serialize());
         }
+      });
+
+      test('Reject duplicate account xpub and invalid threshold', () {
+        final expressions = vault.keyStoreList
+            .map((keyStore) => Descriptor.getKeyOriginExpression(
+                keyStore, vault.derivationPath))
+            .toList();
+        final duplicateBody =
+            'wsh(sortedmulti(1,${expressions.first},${expressions.first}))';
+        final zeroThresholdBody =
+            'wsh(sortedmulti(0,${expressions.join(',')}))';
+
+        expect(
+            () => MultisignatureWallet.fromDescriptor(duplicateBody,
+                ignoreChecksum: true),
+            throwsException);
+        expect(
+            () => MultisignatureWallet.fromDescriptor(zeroThresholdBody,
+                ignoreChecksum: true),
+            throwsException);
       });
 
       test('Single signature address type exception', () {
@@ -96,6 +118,17 @@ void main() async {
           expect(targetWallet.keyStoreList[i].extendedPublicKey.serialize(),
               wallet.keyStoreList[i].extendedPublicKey.serialize());
         }
+      });
+
+      test('Reject duplicate account xpub in json', () {
+        final expression = Descriptor.getKeyOriginExpression(
+            vault.keyStoreList.first, vault.derivationPath);
+        final descriptor = 'wsh(sortedmulti(1,$expression,$expression))';
+
+        expect(
+            () => MultisignatureWallet.fromJson(
+                jsonEncode({'descriptor': descriptor})),
+            throwsException);
       });
     });
   });

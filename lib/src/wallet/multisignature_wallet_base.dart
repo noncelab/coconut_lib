@@ -12,20 +12,18 @@ abstract class MultisignatureWalletBase extends WalletBase {
   int get requiredSignature => _requiredSignature;
 
   /// Get the list of keyStores.
-  List<KeyStore> get keyStoreList => _keyStoreList;
+  List<KeyStore> get keyStoreList => List.unmodifiable(_keyStoreList);
 
   /// @nodoc
   MultisignatureWalletBase(this._requiredSignature, AddressType _addressType,
-      String derivationPath, this._keyStoreList)
-      : super(_addressType, derivationPath) {
+      String derivationPath, List<KeyStore> keyStores)
+      : _keyStoreList = List<KeyStore>.of(keyStores),
+        super(_addressType, derivationPath) {
     if (!_addressType.isMultisignature) {
       throw Exception('Use Vault or Wallet class for multisignature.');
     }
 
-    if (_keyStoreList.length < requiredSignature) {
-      throw Exception(
-          'Required signature is greater than the number of keyStores.');
-    }
+    _validateSignerSet(requiredSignature, _keyStoreList);
 
     final segments = derivationPath.split('/');
     if (segments.length < 3 || segments[0] != 'm') {
@@ -51,6 +49,45 @@ abstract class MultisignatureWalletBase extends WalletBase {
 
     _descriptor = Descriptor.forMultisignature(_addressType, _keyStoreList,
         _derivationPath.replaceAll("m/", ""), _requiredSignature);
+  }
+
+  static void _validateSignerSet(
+      int requiredSignature, List<KeyStore> keyStores) {
+    if (requiredSignature < 1) {
+      throw Exception('Required signature must be at least 1.');
+    }
+
+    final Set<String> accountXpubIds = <String>{};
+    for (final KeyStore keyStore in keyStores) {
+      final ExtendedPublicKey xpub = keyStore.extendedPublicKey;
+      final String accountXpubId = <String>[
+        xpub.depth.toString(),
+        xpub.parentFingerprint,
+        xpub.index.toString(),
+        Codec.encodeHex(xpub.chainCode),
+        Codec.encodeHex(xpub.publicKey),
+      ].join(':');
+      if (!accountXpubIds.add(accountXpubId)) {
+        throw Exception('Duplicate account extended public key.');
+      }
+    }
+
+    for (final bool isChange in <bool>[false, true]) {
+      final Set<String> derivedPublicKeys = <String>{};
+      for (final KeyStore keyStore in keyStores) {
+        final String publicKey = keyStore.getPublicKey(0, isChange: isChange);
+        if (!derivedPublicKeys.add(publicKey)) {
+          throw Exception(
+              'Duplicate derived public key in ${isChange ? 'change' : 'receive'} branch.');
+        }
+      }
+    }
+
+    final int distinctSignerCount = accountXpubIds.length;
+    if (requiredSignature > distinctSignerCount) {
+      throw Exception(
+          'Required signature must not exceed distinct signer count ($distinctSignerCount).');
+    }
   }
 
   @override

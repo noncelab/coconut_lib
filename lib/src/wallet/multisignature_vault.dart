@@ -75,7 +75,12 @@ class MultisignatureVault extends MultisignatureWalletBase {
 
     for (KeyStore keyStore in keyStoreList) {
       if (keyStore.masterFingerprint == keyStoreFromSeed.masterFingerprint) {
-        keyStoreList[keyStoreList.indexOf(keyStore)] = keyStoreFromSeed;
+        final int index = _keyStoreList.indexOf(keyStore);
+        final List<KeyStore> updatedKeyStores = List.of(_keyStoreList);
+        updatedKeyStores[index] = keyStoreFromSeed;
+        MultisignatureWalletBase._validateSignerSet(
+            requiredSignature, updatedKeyStores);
+        _keyStoreList[index] = keyStoreFromSeed;
         return;
       }
     }

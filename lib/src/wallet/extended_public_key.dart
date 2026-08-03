@@ -81,14 +81,23 @@ class ExtendedPublicKey {
 
   /// Parse an extended public key.
   factory ExtendedPublicKey.parse(String expub) {
-    if (NetworkType.currentNetworkType.isTestnet) {
+    return ExtendedPublicKey._parse(expub, validateNetwork: true);
+  }
+
+  factory ExtendedPublicKey._parseWithoutNetworkValidation(String expub) {
+    return ExtendedPublicKey._parse(expub, validateNetwork: false);
+  }
+
+  factory ExtendedPublicKey._parse(String expub,
+      {required bool validateNetwork}) {
+    if (validateNetwork && NetworkType.currentNetworkType.isTestnet) {
       if (!expub.toLowerCase().startsWith("tpub") &&
           !expub.toLowerCase().startsWith("vpub") &&
           !expub.toLowerCase().startsWith("Vpub")) {
         throw Exception(
             "Extended public key is not compatible with the network type.");
       }
-    } else {
+    } else if (validateNetwork) {
       if (!expub.toLowerCase().startsWith("xpub") &&
           !expub.toLowerCase().startsWith("zpub") &&
           !expub.toLowerCase().startsWith("Zpub")) {

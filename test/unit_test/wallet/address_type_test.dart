@@ -327,6 +327,20 @@ void main() {
                 ], 2),
             throwsException);
       });
+
+      test('rejects duplicate public keys and invalid threshold', () {
+        const publicKey =
+            '02ecb68401036cf502e80e15e0876f1f62627e933c97b1d2d2ebedb9e5b88f562e';
+
+        expect(
+            () => AddressType.p2wsh
+                .getMultisignatureAddress([publicKey, publicKey], 1),
+            throwsException);
+        expect(() => AddressType.p2wsh.getMultisignatureAddress([publicKey], 0),
+            throwsException);
+        expect(() => AddressType.p2sh.getMultisignatureAddress([publicKey], 2),
+            throwsException);
+      });
     });
 
     group('getP2trScriptPathSpendingAddress', () {
