@@ -8,6 +8,7 @@ class KeyStore {
   HDWallet _hdWalletChange;
   ExtendedPublicKey _extendedPublicKey;
   Seed? _seed;
+  final Map<String, Uint8List> _muSig2SecretNonces = {};
 
   /// The fingerprint of the key store.
   String get masterFingerprint => _masterFingerprint;
@@ -393,9 +394,9 @@ class KeyStore {
             applyTweak: true,
             isXOnly: false,
             merkleRoot: merkleRoot);
-        signature = Codec.encodeHex(
-            hdWallet.signSchnorr(Codec.decodeHex(sigHash), true,
-                merkleRoot: merkleRoot));
+        signature = Codec.encodeHex(hdWallet.signSchnorr(
+            Codec.decodeHex(sigHash), true,
+            merkleRoot: merkleRoot));
       } else if (psbtInput.tapLeafScript == null && sessionContext != null) {
         //MuSig2
         publicKey =
@@ -404,11 +405,22 @@ class KeyStore {
             psbtInput.muSig2PubNonces!.length) {
           throw Exception("Not enough public nonce.");
         }
-        Uint8List secretNonce = getSecretNonce(sigHash,
-            psbtInput.muSig2AggregatedPublicKey!, accountIndex, isChange);
+        final String nonceKey = _createMuSig2NonceKey(
+            publicKey, psbtInput.muSig2AggregatedPublicKey!, sigHash);
+        final String? expectedPublicNonce =
+            psbtInput.muSig2PubNonces?[nonceKey];
+        if (expectedPublicNonce == null) {
+          throw StateError('No MuSig2 public nonce for this signer.');
+        }
+        Uint8List secretNonce =
+            _takeMuSig2SecretNonce(nonceKey, expectedPublicNonce);
 
-        signature = Codec.encodeHex(
-            hdWallet.signSchnorrForMuSig2(secretNonce, sessionContext));
+        try {
+          signature = Codec.encodeHex(
+              hdWallet.signSchnorrForMuSig2(secretNonce, sessionContext));
+        } finally {
+          secretNonce.fillRange(0, secretNonce.length, 0);
+        }
       } else {
         throw Exception('Invalid PSBT input.');
       }
@@ -479,8 +491,9 @@ class KeyStore {
         getPublicKey(accountIndex, isChange: isChange, isXOnly: false));
     Uint8List aggPubkey = Codec.decodeHex(aggregatedPublicKey);
     Uint8List message = Codec.decodeHex(sigHash);
-    Uint8List rand = Hash.sha160fromByte(
-        Uint8List.fromList([...secretKey, ...aggPubkey, ...message]));
+    final Random secureRandom = Random.secure();
+    final Uint8List rand = Uint8List.fromList(
+        List<int>.generate(32, (_) => secureRandom.nextInt(256)));
     Uint8List secretNonce = calculateSecretNonce(
         rand, secretKey, publicKey, aggPubkey, message, extraInput,
         isDeterministic: false);
@@ -546,7 +559,37 @@ class KeyStore {
         sigHash, aggregatedPublicKey, accountIndex, isChange,
         extraInput: extraInput);
     Uint8List publicNonce = calculatePublicNonce(secretNonce);
+    final String publicKey =
+        getPublicKey(accountIndex, isChange: isChange, isXOnly: false);
+    final String nonceKey =
+        _createMuSig2NonceKey(publicKey, aggregatedPublicKey, sigHash);
+    final Uint8List? replacedNonce = _muSig2SecretNonces.remove(nonceKey);
+    replacedNonce?.fillRange(0, replacedNonce.length, 0);
+    _muSig2SecretNonces[nonceKey] = Uint8List.fromList(secretNonce);
     return Codec.encodeHex(publicNonce);
+  }
+
+  String _createMuSig2NonceKey(
+          String publicKey, String aggregatedPublicKey, String sigHash) =>
+      '$publicKey$aggregatedPublicKey$sigHash';
+
+  Uint8List _takeMuSig2SecretNonce(
+      String nonceKey, String expectedPublicNonce) {
+    final Uint8List? secretNonce = _muSig2SecretNonces.remove(nonceKey);
+    if (secretNonce == null) {
+      throw StateError(
+          'MuSig2 secret nonce is unavailable or has already been consumed.');
+    }
+
+    final String actualPublicNonce =
+        Codec.encodeHex(calculatePublicNonce(secretNonce));
+    if (actualPublicNonce != expectedPublicNonce.toLowerCase()) {
+      secretNonce.fillRange(0, secretNonce.length, 0);
+      throw StateError(
+          'MuSig2 public nonce does not match stored secret nonce.');
+    }
+
+    return secretNonce;
   }
 
   static Uint8List calculatePublicNonce(Uint8List secretNonce) {
@@ -569,6 +612,10 @@ class KeyStore {
 
   //wipe the seed
   void wipeSeed() {
+    for (final Uint8List secretNonce in _muSig2SecretNonces.values) {
+      secretNonce.fillRange(0, secretNonce.length, 0);
+    }
+    _muSig2SecretNonces.clear();
     if (_seed != null) {
       _seed!.wipe();
       _seed = null;

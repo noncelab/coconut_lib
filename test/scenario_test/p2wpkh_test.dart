@@ -65,7 +65,7 @@ void main() {
     Psbt signedPsbt = Psbt.parse(vault.addSignatureToPsbt(
         Psbt.fromTransaction(unsignedTx, vault).serialize()));
 
-    print(signedPsbt.serialize());
+    // print(signedPsbt.serialize());
 
     expect(
         signedPsbt.getSignedTransaction(vault.addressType).serialize().hashCode,

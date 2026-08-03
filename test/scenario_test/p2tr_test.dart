@@ -202,8 +202,10 @@ void main() {
       String signedPsbt = vault.addSignatureToPsbt(noncePsbt);
       Transaction signedTx =
           Psbt.parse(signedPsbt).getSignedTransaction(AddressType.p2tr);
-      expect(signedTx.serialize(),
-          '02000000000101df796cf8db4f1bbb45bc99b7d8f0f45612e7fad116515bd382b8a9a5edf886570000000000ffffffff02e803000000000000160014334924eaf46e806e86b3537a12f81595030d73a7754c00000000000022512079806b80f4062d40fa45b919e1f2ab7d8a0a7d42027b6c03d702e75e90e06e7c0140faf7956c3337046c6820294f58d4dd93b0717a034abbc43cb36de43a81af46dfae21b96e555a11c738e5d482ae3bafbc3cfbeff9c0cac053962dcbbb6a80670b00000000');
+      expect(Codec.decodeHex(signedTx.inputs.single.witnessList.single),
+          hasLength(64));
+      expect(Transaction.parse(signedTx.serialize()).serialize(),
+          signedTx.serialize());
     });
 
     test('P2TR MuSig2 Test (case 2)', () {
@@ -238,8 +240,10 @@ void main() {
 
       Transaction signedTx =
           Psbt.parse(signedPsbt).getSignedTransaction(AddressType.p2tr);
-      expect(signedTx.serialize(),
-          '02000000000101cb788dbddffc4963fe147551d67810c42475df177d7bad969b939dbd94d753990100000000ffffffff02e803000000000000160014334924eaf46e806e86b3537a12f81595030d73a7754c00000000000022512079806b80f4062d40fa45b919e1f2ab7d8a0a7d42027b6c03d702e75e90e06e7c01403caef0a1bfff48510c0e026cd20c72b1b13076bc2b77e7c7be1568e66bfc82f07907ee409ee479f9d4735d1bb999a516d0d3285c907fec4efcaadbd1cec5764900000000');
+      expect(Codec.decodeHex(signedTx.inputs.single.witnessList.single),
+          hasLength(64));
+      expect(Transaction.parse(signedTx.serialize()).serialize(),
+          signedTx.serialize());
     });
 
     test('P2TR Key Path Spending Test', () {
@@ -296,7 +300,7 @@ void main() {
       Psbt signedPsbt = Psbt.parse(vault.addSignatureToPsbt(noncePsbt));
       Transaction signedTx = signedPsbt.getSignedTransaction(vault.addressType);
       expect(signedTx, isA<Transaction>());
-      print(signedTx.serialize());
+      // print(signedTx.serialize());
       expect(signedTx.transactionHash,
           '4864b06bf9086c8ff1d8ff503b6209957394d2fded675d7b5e3b793a3427e242');
     });
@@ -530,13 +534,13 @@ void main() {
           TaprootVault.fromCoordinatorBsms(vault.getCoordinatorBsms());
       momVault.bindSeedToKeyStore(keyStore2.seed);
 
-      int addressIndex = 0;
+      int addressIndex = 1;
       expect(vault.getAddress(addressIndex),
-          'bcrt1pcjtpvtuclk3kznj4kh6rpkucmceascus8ec85994z7c84m9cf96quyw3k2');
+          'bcrt1p0jtzj2ukjewq7x20kl8g6zq3aph5sq3v2lf6nnfzqu9n9ft4u8pqu7yysc');
 
       Utxo utxo = Utxo(
-          'ec2105d71092011aa43b06944f4110efe3c6c410f9d7192146fa6ca8b44ef606',
-          1,
+          'c996762bdaace673568b5ba574eb8faf8f6ff6c2bc3c0524820610f913f95b84',
+          0,
           21000,
           "m/86'/1'/0'/0/$addressIndex");
 
@@ -546,9 +550,9 @@ void main() {
       //     vault.getControlBlock(0, addressIndex, isChange: false));
 
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
-      print(unsignedPsbt.serialize());
+      // print(unsignedPsbt.serialize());
       String vaultNoncePsbt = vault.addPublicNonce(unsignedPsbt.serialize());
-      print(vaultNoncePsbt);
+      // print(vaultNoncePsbt);
       String dadNoncePsbt = dadVault.addPublicNonce(unsignedPsbt.serialize());
       String momNoncePsbt = momVault.addPublicNonce(dadNoncePsbt);
       String momSignedPsbt = momVault.addSignatureToPsbt(momNoncePsbt);
@@ -560,10 +564,11 @@ void main() {
 
       // print(signedTx.serialize());
       String prevTx =
-          '0200000000010199ca8573c490cd7f96a1337980d53010d87941c68702475ee75fc554b695d39c0000000000feffffff02cb409abe2c010000225120e09ed54683ef4647d4b2b6f68342d1948cf2fd82d9170bf681acdd1800089d2e0852000000000000225120c496162f98fda3614e55b5f430db98de33d863903e707a14b517b07aecb8497402473044022068fbd16c9c029a88498b6eef85d44c7bf39555735c28a9c768730f39bd6f631b022025f9da897051fb002e405e3a2b191fb1094105bf2b6ff3456e96f150f86902f80121037a8fb24f7f69f18f672d6e6932a62792e077515413471dcfe7daed790fe2929540e30200';
+          '020000000001032c709331a74a30f5b0fdc53b62c1732a960c6a315f237bb2a73109b7c006431f0000000000fefffffffb28d12d5206bb911ff1a9b4fef1e48d4debca59d4ac47868de5fa502cec33cd0100000000feffffff9a02b25144cfff5665931210cc46d3af950ee81cde0c52faef40e1f5a9477dd30000000000feffffff0208520000000000002251207c96292b96965c0f194fb7ce8d0811e86f48022c57d3a9cd22070b32a575e1c21d2c189a2a01000022512028a5013c1c7e5226d4cd795c6008f46e52291d9a20df8c231adcbf61ad340e440247304402205a817286a25fbf31914838357cc5e90b2fc745d00c9fb533ccb9ecaa96cbd6ce02201fe7e6d6c6702efcc3663712ecd16ea5e5d5dfdda4e5b2e44413989effa4e2e5012103d53b62963d4db8920c8687abd0934482b4ba798326cfaa0b81fd7d50928339e602473044022024318a4f67bdb822359208d1f8f93b24a42b98e6be4d1ca5e8870ada3b647afa02204962670db40ba9db90881414e855c1fb4424abd753bb52646f87f821be600024012102d12a59fbe73795a32b464de321fd73bf6b326486c5dd2f61e9ebae229c25daa10247304402201d62c4953e0a67598931efc3a79c4e7209118d47ab07b76dfb69427a86b0922c022068b5794eae41c3830a7633d546718719da5f6399a09c9ee3cc7bc0c3718ce7de012103a6ed911d56eeec6708ec232abe3cdd9be4f3c75127dbe5b61f72351b6a1c6f2c7a390300';
       validateKeyPath(prevTx, signedTx.serialize(), 0);
+      // print(signedTx.serialize());
       expect(signedTx.transactionHash,
-          '7556b16c9d1496095c572c0586ea1fa6c74da3422098b9155ba6f49390a1365e');
+          '657b9232039a25ba185e3542fc14f72af931ac7ed91f4d5521ab064288c6988a');
       // txid is non-deterministic because BIP340 signing uses random auxRand by default.
       // validateKeyPath() already verifies the signature.
     });

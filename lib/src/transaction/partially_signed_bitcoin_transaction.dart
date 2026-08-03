@@ -523,10 +523,8 @@ class Psbt {
       }
       if (inputs[i].muSig2PubNonces != null) {
         for (String publicKey in inputs[i].muSig2PubNonces!.keys) {
-          if (!psbtMap["inputs"][i].keys.contains("1b$publicKey")) {
-            psbtMap["inputs"][i]["1b$publicKey"] =
-                inputs[i].muSig2PubNonces![publicKey]!;
-          }
+          psbtMap["inputs"][i]["1b$publicKey"] =
+              inputs[i].muSig2PubNonces![publicKey]!;
         }
       }
       if (inputs[i].tapMerkleRoot != null) {

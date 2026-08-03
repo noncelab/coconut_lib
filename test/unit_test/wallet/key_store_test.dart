@@ -175,6 +175,86 @@ void main() {
         Psbt signedPsbt = Psbt.parse(signedPsbtText);
         expect(signedPsbt.isSigned(keyStore1), true);
       });
+
+      test('MuSig2 secret nonce cannot be consumed twice', () {
+        KeyStore keyStore1 = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+        KeyStore keyStore2 = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+        TaprootVault vault =
+            TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
+        Transaction tx = Transaction.forSinglePayment(
+            MockFactory.createTaprootUtxoList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        String noncePsbt =
+            vault.addPublicNonce(Psbt.fromTransaction(tx, vault).serialize());
+
+        keyStore1.addSignatureToPsbt(noncePsbt, AddressType.p2tr);
+
+        expect(
+            () => keyStore1.addSignatureToPsbt(noncePsbt, AddressType.p2tr),
+            throwsA(isA<StateError>().having((error) => error.message,
+                'message', contains('already been consumed'))));
+      });
+
+      test('MuSig2 signing rejects a nonce after KeyStore restoration', () {
+        KeyStore keyStore1 = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+        KeyStore keyStore2 = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+        TaprootVault vault =
+            TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
+        Transaction tx = Transaction.forSinglePayment(
+            MockFactory.createTaprootUtxoList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        Psbt noncePsbt = Psbt.parse(
+            vault.addPublicNonce(Psbt.fromTransaction(tx, vault).serialize()));
+        KeyStore restoredKeyStore = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+
+        expect(
+            () => restoredKeyStore.addSignatureToPsbt(
+                noncePsbt.serialize(), AddressType.p2tr),
+            throwsA(isA<StateError>().having(
+                (error) => error.message, 'message', contains('unavailable'))));
+      });
+
+      test('MuSig2 nonce can be safely replaced before signing', () {
+        KeyStore keyStore1 = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+        KeyStore keyStore2 = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+        TaprootVault vault =
+            TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
+        Transaction tx = Transaction.forSinglePayment(
+            MockFactory.createTaprootUtxoList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        String unsignedPsbt = Psbt.fromTransaction(tx, vault).serialize();
+        String firstNoncePsbt = vault.addPublicNonce(unsignedPsbt);
+        String replacementNoncePsbt = vault.addPublicNonce(firstNoncePsbt);
+
+        expect(
+            Psbt.parse(replacementNoncePsbt).inputs.single.muSig2PubNonces,
+            isNot(equals(
+                Psbt.parse(firstNoncePsbt).inputs.single.muSig2PubNonces)));
+
+        String signedPsbt = vault.addSignatureToPsbt(replacementNoncePsbt);
+        expect(
+            () => Psbt.parse(signedPsbt).getSignedTransaction(AddressType.p2tr),
+            returnsNormally);
+      });
     });
 
     group('calculateSecretNonce', () {
@@ -317,38 +397,29 @@ void main() {
       });
     });
     group('nonce nondeterminism test', () {
-      test('getSecretNonce should return different values for same inputs (BIP-0327 security requirement)', () {
-        Uint8List secretKey = Codec.decodeHex(
-            '53758e643751e3c23fd15b1c08a80179c8a6a78fed51c6e5961e2ea9d381925a');
-        Uint8List publicKey = Codec.decodeHex(
-            "0231cd531693ac6f845e040afbad01fc13816869436d5bbaa0367abc3809b8848f");
-        Uint8List aggPubkey = Codec.decodeHex(
-            "5c6bc6c83ac710fa23c806e3744d90cbd54899f38cfdb2f6310e9d664f79b5b9");
-        Uint8List message = Codec.decodeHex(
-            "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c");
-        Uint8List extraInput = Codec.decodeHex("");
-
-        Uint8List rand = Hash.sha160fromByte(
-            Uint8List.fromList([...secretKey, ...aggPubkey, ...message]));
-
-        Uint8List nonce1 = KeyStore.calculateSecretNonce(
-            rand, secretKey, publicKey, aggPubkey, message, extraInput,
-            isDeterministic: false);
-
-        rand = Hash.sha160fromByte(
-            Uint8List.fromList([...secretKey, ...aggPubkey, ...message]));
-
-        Uint8List nonce2 = KeyStore.calculateSecretNonce(
-            rand, secretKey, publicKey, aggPubkey, message, extraInput,
-            isDeterministic: false);
+      test(
+          'getSecretNonce should return different values for same inputs (BIP-0327 security requirement)',
+          () {
+        KeyStore nonceKeyStore = KeyStore.fromSeed(seed, AddressType.p2tr);
+        String aggPubkey =
+            "5c6bc6c83ac710fa23c806e3744d90cbd54899f38cfdb2f6310e9d664f79b5b9";
+        String message =
+            "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c";
+        Uint8List nonce1 =
+            nonceKeyStore.getSecretNonce(message, aggPubkey, 0, false);
+        Uint8List nonce2 =
+            nonceKeyStore.getSecretNonce(message, aggPubkey, 0, false);
 
         // BIP-0327: Nonce MUST be unique for each signing session
         // This test EXPECTS different nonces but will FAIL with current deterministic implementation
         expect(Codec.encodeHex(nonce1), isNot(equals(Codec.encodeHex(nonce2))),
-            reason: 'MuSig2 nonce should be nondeterministic to prevent key extraction attacks');
+            reason:
+                'MuSig2 nonce should be nondeterministic to prevent key extraction attacks');
       });
 
-      test('getPublicNonce should return different values for same inputs across different KeyStore instances', () {
+      test(
+          'getPublicNonce should return different values for same inputs across different KeyStore instances',
+          () {
         String sigHash =
             "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c";
         String aggPubKey =
@@ -367,10 +438,13 @@ void main() {
         // BIP-0327: Each signing session must use unique nonce
         // This test EXPECTS different nonces but will FAIL with current deterministic implementation
         expect(nonce1, isNot(equals(nonce2)),
-            reason: 'Different KeyStore instances should generate different nonces for security');
+            reason:
+                'Different KeyStore instances should generate different nonces for security');
       });
 
-      test('multiple calls should return different nonces (replay attack protection)', () {
+      test(
+          'multiple calls should return different nonces (replay attack protection)',
+          () {
         String sigHash =
             "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c";
         String aggPubKey =
@@ -380,19 +454,21 @@ void main() {
 
         KeyStore keyStore = KeyStore.fromSeed(seed, AddressType.p2tr);
 
-        String nonce1 = keyStore.getPublicNonce(
-            sigHash, aggPubKey, accountIndex, isChange);
-        String nonce2 = keyStore.getPublicNonce(
-            sigHash, aggPubKey, accountIndex, isChange);
-        String nonce3 = keyStore.getPublicNonce(
-            sigHash, aggPubKey, accountIndex, isChange);
+        String nonce1 =
+            keyStore.getPublicNonce(sigHash, aggPubKey, accountIndex, isChange);
+        String nonce2 =
+            keyStore.getPublicNonce(sigHash, aggPubKey, accountIndex, isChange);
+        String nonce3 =
+            keyStore.getPublicNonce(sigHash, aggPubKey, accountIndex, isChange);
 
         // BIP-0327: Nonce reuse leads to private key extraction
         // This test EXPECTS different nonces but will FAIL with current deterministic implementation
         expect(nonce1, isNot(equals(nonce2)),
-            reason: 'Repeated getPublicNonce calls should generate different nonces');
+            reason:
+                'Repeated getPublicNonce calls should generate different nonces');
         expect(nonce2, isNot(equals(nonce3)),
-            reason: 'Repeated getPublicNonce calls should generate different nonces');
+            reason:
+                'Repeated getPublicNonce calls should generate different nonces');
       });
     });
 
@@ -562,8 +638,9 @@ void main() {
 
       Psbt noncePsbt =
           Psbt.parse(keyStore.addPublicNonceToPsbt(psbt.serialize()));
-      expect(noncePsbt.inputs[0].getAggregatedPublicNonce(),
-          '03a274a40c820b548f4ec877c8fc0d85ca40451cf23855ee26b1dd68f2163945d30276b16c8a45d31def76ad1849d19301a2a5e0db6726b6b3005551a57114606542');
+      String aggregatedPublicNonce =
+          noncePsbt.inputs[0].getAggregatedPublicNonce();
+      expect(Codec.decodeHex(aggregatedPublicNonce), hasLength(66));
 
       // expect(keyStore.addPublicNonceToPsbt(psbt.serialize()), noncePsbtTarget);
     });
