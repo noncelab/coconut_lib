@@ -45,7 +45,7 @@ class InheritancePolicy extends Policy {
   String toMiniscript() {
     TaprootWallet beneficiaryWallet =
         TaprootWallet.fromKeyStoreList([beneficiaryKeyStore], []);
-    return 'and_v(v:pk(${beneficiaryWallet.getKeyOriginExpression()}),older($locktime))';
+    return 'and_v(v:pk(${beneficiaryWallet.getKeyOriginExpression()}),after($locktime))';
   }
 
   @override
@@ -77,8 +77,12 @@ class InheritancePolicy extends Policy {
   }
 
   static Policy fromMiniscript(String miniscript) {
-    RegExpMatch match =
-        RegExp(r'and_v\(v:pk\((.+)\),older\((\d+)\)\)').firstMatch(miniscript)!;
+    final RegExpMatch? match =
+        RegExp(r'^and_v\(v:pk\((.+)\),(?:older|after)\((\d+)\)\)$')
+            .firstMatch(miniscript);
+    if (match == null) {
+      throw FormatException('Unsupported inheritance miniscript.');
+    }
     String pubkeyHex = match.group(1)!;
     int locktime = int.parse(match.group(2)!);
     TaprootWallet beneficiaryWallet =

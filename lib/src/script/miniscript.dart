@@ -76,7 +76,7 @@ class Miniscript {
 
   factory Miniscript.forInheritance(int locktime, String pubkeyHex) {
     return Miniscript.andV(
-        Miniscript.v(Miniscript.pk(pubkeyHex)), Miniscript.older(locktime));
+        Miniscript.v(Miniscript.pk(pubkeyHex)), Miniscript.after(locktime));
   }
 
   factory Miniscript.forBackup(String pubkeyHex) {
@@ -161,7 +161,7 @@ class Miniscript {
         ];
 
       case MiniscriptOperation.after:
-        // 디스크립터(Relative)에서 after(sequence) → CSV 경로 (InheritanceScript.withCheckSequenceVerify와 동일)
+        // Absolute locktime (CLTV).
         final n = value;
         if (n == null) {
           throw StateError('after node missing value');
@@ -169,12 +169,13 @@ class Miniscript {
         final nBytes = Converter.intToLittleEndianBytes(n, 4);
         return <dynamic>[
           nBytes,
-          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
         ];
 
       case MiniscriptOperation.older:
-        // 디스크립터(Absolute)에서 older(locktime) → CLTV 경로 (InheritanceScript.withCheckLockTimeVerify와 동일)
+        // Legacy compatibility: older was historically emitted for CLTV
+        // inheritance policies, so keep interpreting it as absolute locktime.
         final n = value;
         if (n == null) {
           throw StateError('older node missing value');
@@ -213,24 +214,15 @@ class Miniscript {
             throw StateError('and_v timelock node missing value');
           }
           final nBytes = Converter.intToLittleEndianBytes(timelock, 4);
-          if (right.op == MiniscriptOperation.older) {
-            return <dynamic>[
-              nBytes,
-              ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-              ScriptOperationCode.getHex('OP_DROP'),
-              pkBytes,
-              ScriptOperationCode.getHex('OP_CHECKSIG'),
-            ];
-          } else {
-            // after → CSV
-            return <dynamic>[
-              nBytes,
-              ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
-              ScriptOperationCode.getHex('OP_DROP'),
-              pkBytes,
-              ScriptOperationCode.getHex('OP_CHECKSIG'),
-            ];
-          }
+          // Both the canonical after form and the legacy older form map to
+          // the same CLTV tapscript to preserve existing wallet addresses.
+          return <dynamic>[
+            nBytes,
+            ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
+            ScriptOperationCode.getHex('OP_DROP'),
+            pkBytes,
+            ScriptOperationCode.getHex('OP_CHECKSIG'),
+          ];
         }
 
         // 일반적인 and_v: 왼쪽(V) + 오른쪽(B) 스크립트 연결

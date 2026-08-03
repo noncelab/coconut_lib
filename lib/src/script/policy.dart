@@ -38,7 +38,8 @@ abstract class Policy {
   }
 
   static Policy fromMiniscript(String miniscript) {
-    if (miniscript.startsWith('and_v(v:pk(') && miniscript.contains('older(')) {
+    if (RegExp(r'^and_v\(v:pk\(.+\),(?:older|after)\(\d+\)\)$')
+        .hasMatch(miniscript)) {
       return InheritancePolicy.fromMiniscript(miniscript);
     } else {
       throw Exception('Unsupported miniscript type.');

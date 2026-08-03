@@ -44,6 +44,15 @@ void main() {
         expect((p as InheritancePolicy).locktime, inheritancePolicy.locktime);
       });
 
+      test('parses legacy older inheritance miniscript', () {
+        final String legacy =
+            inheritancePolicy.toMiniscript().replaceFirst('after(', 'older(');
+        final Policy policy = Policy.fromMiniscript(legacy);
+        expect(policy, isA<InheritancePolicy>());
+        expect(
+            (policy as InheritancePolicy).locktime, inheritancePolicy.locktime);
+      });
+
       test('throws for unsupported miniscript', () {
         expect(() => Policy.fromMiniscript('pk(k)'), throwsException);
       });

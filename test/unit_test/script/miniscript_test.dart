@@ -77,7 +77,7 @@ void main() {
             .getPublicKeyBytes(0, isXOnly: true));
         final Miniscript tree = Miniscript.forInheritance(1767225600, pkHex);
         expect(tree.serializeForDescriptor(),
-            'and_v(v:pk($pkHex),older(1767225600))');
+            'and_v(v:pk($pkHex),after(1767225600))');
       });
 
       test('serializes single after/older nodes', () {
@@ -123,11 +123,11 @@ void main() {
             policy.toScript(0).rawSerialize().toLowerCase());
       });
 
-      test('after compiles to CSV drop pattern', () {
+      test('after compiles to CLTV drop pattern', () {
         final String fromMiniscript = Miniscript.after(42).serializeForScript();
         final String expected = Script(<dynamic>[
           Converter.intToLittleEndianBytes(42, 4),
-          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
         ]).rawSerialize();
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
@@ -143,7 +143,7 @@ void main() {
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
       });
 
-      test('and_v(v:pk, after) compiles to CSV + pubkey + checksig', () {
+      test('and_v(v:pk, after) compiles to CLTV + pubkey + checksig', () {
         final String pkHex = Codec.encodeHex(beneficiaryVault.keyStoreList[0]
             .getPublicKeyBytes(0, isXOnly: true));
         final String fromMiniscript = Miniscript.andV(
@@ -151,7 +151,7 @@ void main() {
             .serializeForScript();
         final String expected = Script(<dynamic>[
           Converter.intToLittleEndianBytes(7, 4),
-          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
           Codec.decodeHex(pkHex),
           ScriptOperationCode.getHex('OP_CHECKSIG'),
