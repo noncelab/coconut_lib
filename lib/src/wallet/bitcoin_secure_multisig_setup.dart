@@ -17,8 +17,9 @@ class Bsms {
   }
 
   factory Bsms.fromCoordinator(String firstAddress, String descriptor) {
-    return Bsms(
-        coordinator: Coordinator(firstAddress, Descriptor.parse(descriptor)));
+    final Descriptor parsedDescriptor = Descriptor.parse(descriptor);
+    _validateFirstAddress(firstAddress, parsedDescriptor);
+    return Bsms(coordinator: Coordinator(firstAddress, parsedDescriptor));
   }
 
   factory Bsms.parseSigner(String bsmsText) {
@@ -82,9 +83,30 @@ class Bsms {
       throw FormatException('Not support customized path');
     }
 
-    bsms.coordinator =
-        Coordinator(firstAddress, Descriptor.parse(descriptorText));
+    final Descriptor descriptor = Descriptor.parse(descriptorText);
+    _validateFirstAddress(firstAddress, descriptor);
+    bsms.coordinator = Coordinator(firstAddress, descriptor);
     return bsms;
+  }
+
+  static void _validateFirstAddress(
+      String firstAddress, Descriptor descriptor) {
+    final String derivedFirstAddress;
+    if (descriptor._addressType == AddressType.p2tr) {
+      derivedFirstAddress =
+          TaprootWallet.fromDescriptor(descriptor.serialize()).getAddress(0);
+    } else if (descriptor._addressType.isMultisignature) {
+      derivedFirstAddress =
+          MultisignatureWallet.fromDescriptor(descriptor.serialize())
+              .getAddress(0);
+    } else {
+      throw FormatException('BSMS coordinator descriptor must be multisig.');
+    }
+
+    if (firstAddress != derivedFirstAddress) {
+      throw FormatException(
+          'First address does not match the descriptor and network.');
+    }
   }
 
   String serializeSigner() {
