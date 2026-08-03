@@ -565,12 +565,11 @@ void main() {
       // print(signedTx.serialize());
       String prevTx =
           '020000000001032c709331a74a30f5b0fdc53b62c1732a960c6a315f237bb2a73109b7c006431f0000000000fefffffffb28d12d5206bb911ff1a9b4fef1e48d4debca59d4ac47868de5fa502cec33cd0100000000feffffff9a02b25144cfff5665931210cc46d3af950ee81cde0c52faef40e1f5a9477dd30000000000feffffff0208520000000000002251207c96292b96965c0f194fb7ce8d0811e86f48022c57d3a9cd22070b32a575e1c21d2c189a2a01000022512028a5013c1c7e5226d4cd795c6008f46e52291d9a20df8c231adcbf61ad340e440247304402205a817286a25fbf31914838357cc5e90b2fc745d00c9fb533ccb9ecaa96cbd6ce02201fe7e6d6c6702efcc3663712ecd16ea5e5d5dfdda4e5b2e44413989effa4e2e5012103d53b62963d4db8920c8687abd0934482b4ba798326cfaa0b81fd7d50928339e602473044022024318a4f67bdb822359208d1f8f93b24a42b98e6be4d1ca5e8870ada3b647afa02204962670db40ba9db90881414e855c1fb4424abd753bb52646f87f821be600024012102d12a59fbe73795a32b464de321fd73bf6b326486c5dd2f61e9ebae229c25daa10247304402201d62c4953e0a67598931efc3a79c4e7209118d47ab07b76dfb69427a86b0922c022068b5794eae41c3830a7633d546718719da5f6399a09c9ee3cc7bc0c3718ce7de012103a6ed911d56eeec6708ec232abe3cdd9be4f3c75127dbe5b61f72351b6a1c6f2c7a390300';
-      validateKeyPath(prevTx, signedTx.serialize(), 0);
+      expect(validateKeyPath(prevTx, signedTx.serialize(), 0), isTrue);
       // print(signedTx.serialize());
       expect(signedTx.transactionHash,
           '657b9232039a25ba185e3542fc14f72af931ac7ed91f4d5521ab064288c6988a');
-      // txid is non-deterministic because BIP340 signing uses random auxRand by default.
-      // validateKeyPath() already verifies the signature.
+      // Random nonces change the witness and wtxid, but not the txid.
     });
 
     test('P2TR Script Path spending (child spending)', () {
