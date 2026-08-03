@@ -1,7 +1,16 @@
 @Tags(['unit'])
 
+import 'dart:typed_data';
+
 import 'package:coconut_lib/coconut_lib.dart';
+import 'package:bech32/bech32.dart';
 import 'package:test/test.dart';
+
+String _witnessV0Address(int programLength) {
+  final program = Uint8List(programLength);
+  final data = Converter.convertBits(program, 8, 5, pad: true);
+  return Bech32Codec().encode(Bech32('bc', [0, ...data]));
+}
 
 void main() {
   group('TransactionOutput', () {
@@ -63,6 +72,24 @@ void main() {
             TransactionOutput.forPayment(amount, address);
         expect(output, isA<TransactionOutput>());
       });
+
+      test('Accept 20-byte and 32-byte witness-v0 programs', () {
+        expect(
+            TransactionOutput.forPayment(1000, _witnessV0Address(20))
+                .scriptPubKey
+                .isP2wpkh(),
+            true);
+        expect(
+            TransactionOutput.forPayment(1000, _witnessV0Address(32))
+                .scriptPubKey
+                .isP2wsh(),
+            true);
+      });
+
+      test('Reject invalid witness-v0 program length', () {
+        expect(() => TransactionOutput.forPayment(1000, _witnessV0Address(21)),
+            throwsFormatException);
+      });
     });
     group('isDustOutput', () {
       //   p2wpkh 294;
@@ -104,6 +131,14 @@ void main() {
       });
     });
     group('TransactionOutput.parse', () {
+      test('Reject invalid witness-v0 program length', () {
+        final invalidProgram = List.filled(21, '00').join();
+        expect(
+            () => TransactionOutput.parse(
+                '0000000000000000170015$invalidProgram'),
+            throwsFormatException);
+      });
+
       test('Generate transaction output from parser on p2pkh', () {
         String outputText =
             'e803000000000000160014b247a00acc1cc2c0b4be0d3c38d866f9c08d244a';

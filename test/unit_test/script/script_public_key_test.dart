@@ -1,6 +1,15 @@
 @Tags(['unit'])
+import 'dart:typed_data';
+
 import 'package:coconut_lib/coconut_lib.dart';
+import 'package:bech32/bech32.dart';
 import 'package:test/test.dart';
+
+String _witnessV0Address(int programLength, {String hrp = 'tb'}) {
+  final program = Uint8List(programLength);
+  final data = Converter.convertBits(program, 8, 5, pad: true);
+  return Bech32Codec().encode(Bech32(hrp, [0, ...data]));
+}
 
 void main() {
   group('ScriptPublicKey', () {
@@ -12,6 +21,12 @@ void main() {
         expect(script, isA<ScriptPublicKey>());
         expect(script.length, 35);
         expect(script.commands.length, 2);
+      });
+
+      test('Reject witness-v0 programs other than 20 or 32 bytes', () {
+        final invalidProgram = List.filled(21, '00').join();
+        expect(() => ScriptPublicKey.parse('170015$invalidProgram'),
+            throwsFormatException);
       });
     });
     group('ScriptPublicKey.p2pkh', () {
@@ -35,6 +50,13 @@ void main() {
         expect(
             script.getAddress(), 'tb1qkgm3dcvrhgy5n32adjkzrglfg9mwa5gjmwt5ex');
       });
+
+      test('Reject non-20-byte witness program', () {
+        expect(() => ScriptPublicKey.p2wpkh(_witnessV0Address(32)),
+            throwsFormatException);
+        expect(() => ScriptPublicKey.p2wpkh(_witnessV0Address(21)),
+            throwsFormatException);
+      });
     });
     group('ScriptPublicKey.p2wsh', () {
       test('Generate p2wsh script public key', () {
@@ -42,6 +64,13 @@ void main() {
             'tb1qd22redun2rm8mt4zxjazks5mr8dxxdjnk57hhgf2fw2ghmarjahqm9g672');
         expect(script.getAddress(),
             'tb1qd22redun2rm8mt4zxjazks5mr8dxxdjnk57hhgf2fw2ghmarjahqm9g672');
+      });
+
+      test('Reject non-32-byte witness program', () {
+        expect(() => ScriptPublicKey.p2wsh(_witnessV0Address(20)),
+            throwsFormatException);
+        expect(() => ScriptPublicKey.p2wsh(_witnessV0Address(31)),
+            throwsFormatException);
       });
     });
     group('ScriptPublicKey.p2tr', () {

@@ -1,8 +1,16 @@
 @Tags(['unit'])
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:bech32/bech32.dart';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
+
+String _witnessV0Address(int programLength) {
+  final program = Uint8List(programLength);
+  final data = Converter.convertBits(program, 8, 5, pad: true);
+  return Bech32Codec().encode(Bech32('bc', [0, ...data]));
+}
 
 void main() {
   group('WalletUtility', () {
@@ -19,6 +27,16 @@ void main() {
       });
     });
     group('validateAddress', () {
+      test('Accept only 20-byte or 32-byte witness-v0 programs', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+
+        expect(WalletUtility.validateAddress(_witnessV0Address(20)), isTrue);
+        expect(WalletUtility.validateAddress(_witnessV0Address(32)), isTrue);
+        expect(WalletUtility.validateAddress(_witnessV0Address(2)), isFalse);
+        expect(WalletUtility.validateAddress(_witnessV0Address(21)), isFalse);
+        expect(WalletUtility.validateAddress(_witnessV0Address(40)), isFalse);
+      });
+
       test('Validate address due to network type', () {
         NetworkType.setNetworkType(NetworkType.testnet);
         expect(

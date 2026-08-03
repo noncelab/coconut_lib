@@ -84,12 +84,11 @@ abstract class WalletUtility {
     } else if (address.startsWith('bc1q') ||
         address.startsWith('tb1q') ||
         address.startsWith('bcrt1q')) {
-      var codec = Bech32Codec().decode(address);
-      if (codec.hrp != 'bc' && codec.hrp != 'tb' && codec.hrp != 'bcrt') {
+      try {
+        ScriptPublicKey._decodeWitnessV0Program(address);
+      } catch (_) {
         return false;
       }
-      if (codec.data.isEmpty || codec.data[0] > 16) return false;
-      if (codec.data.length < 2 || codec.data.length > 66) return false;
       return true;
     }
 

@@ -35,7 +35,8 @@ class TransactionOutput {
     } else if (address.startsWith('bc1q') ||
         address.startsWith('tb1q') ||
         address.startsWith('bcrt1q')) {
-      return TransactionOutput(amountBytes, ScriptPublicKey.p2wpkh(address),
+      return TransactionOutput(
+          amountBytes, ScriptPublicKey._fromSegwitV0Address(address),
           derivationPath: derivationPath, isChangeOutput: isChangeOutput);
     } else if (address.startsWith('bc1p') ||
         address.startsWith('tb1p') ||
