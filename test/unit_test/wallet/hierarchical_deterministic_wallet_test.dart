@@ -15,6 +15,43 @@ void main() {
           '4cfac59caf9be1428410291697177b2efc8373a29f7ad4a34694163686a4d20b');
       hdWallet = HDWallet.fromPrivateKey(privateKey, chainCode);
     });
+    group('publicKey', () {
+      test('returns a compressed public key', () {
+        expect(hdWallet.publicKey, hasLength(33));
+      });
+    });
+    group('privateKey', () {
+      test('returns private key only for non-neutered wallets', () {
+        expect(hdWallet.privateKey, hasLength(32));
+        expect(hdWallet.neutered().privateKey, isNull);
+      });
+    });
+    group('fingerprint', () {
+      test('returns a four-byte key fingerprint', () {
+        expect(hdWallet.fingerprint, hasLength(4));
+      });
+    });
+    group('chainCode', () {
+      test('returns a 32-byte chain code', () {
+        expect(hdWallet.chainCode, hasLength(32));
+      });
+    });
+    group('index', () {
+      test('returns the child index', () {
+        expect(hdWallet.derive(7).index, 7);
+      });
+    });
+    group('parentFingerprint', () {
+      test('returns the parent fingerprint after derivation', () {
+        expect(hdWallet.derive(7).parentFingerprint, hdWallet.fingerprint);
+      });
+    });
+    group('isNeutered', () {
+      test('reports private-key availability', () {
+        expect(hdWallet.isNeutered(), isFalse);
+        expect(hdWallet.neutered().isNeutered(), isTrue);
+      });
+    });
     group('neutered', () {
       test('Check neutered', () {
         expect(hdWallet.neutered().isNeutered(), true);
@@ -75,7 +112,7 @@ void main() {
             '3twVhJJ3ecUjpz9uQk3wbQ6mU5MBMkWxxRXrsJSvRpvh5cL');
       });
     });
-    group('sign', () {
+    group('signEcdsa', () {
       test('Get signature with ecdsa', () {
         Uint8List hex = Hash.sha256("Message");
         expect(Codec.encodeHex(hdWallet.signEcdsa(hex)),
@@ -83,7 +120,19 @@ void main() {
       });
     });
 
-    group('getPrivatKey', () {
+    group('signSchnorr', () {
+      test('creates a signature verifiable by the same wallet', () {
+        final message = Hash.sha256('schnorr message');
+        final signature = hdWallet.signSchnorr(message, false);
+        expect(signature, hasLength(64));
+        expect(
+            Ecc.verifySchnorr(
+                message, hdWallet.getPublicKey(false, true), signature),
+            isTrue);
+      });
+    });
+
+    group('getPrivateKey', () {
       test('Get tweak private key (case 1 : only private key)', () {
         String matcherTweakPrivateKey =
             'dbfa468e88d52d96ea372320ef0dc789801359684fba35b4c25651be74c3aa68';
@@ -134,7 +183,7 @@ void main() {
             matcherTweakPrivateKey);
       });
     });
-    group('getTweakedPublicKey', () {
+    group('getPublicKey', () {
       //Test vector from : https://github.com/bitcoin/bips/blob/master/bip-0341/wallet-test-vectors.json
       test('Get tweak public key (case 1 : normal)', () {
         String internalPubKey =
@@ -164,7 +213,7 @@ void main() {
             matcherTweakPublicKey);
       });
     });
-    group('verify', () {
+    group('verifyEcdsa', () {
       test('Verify success', () {
         Uint8List hex = Hash.sha256("Message");
         expect(
@@ -183,7 +232,9 @@ void main() {
                     'ea10cba17d4603d90deeb5bee645ac362d2e88da75aff555a66db12df132939b73c0e4d7e78ae921fc3e929cec58b70fed71166618bea91c81c64df652dac027')),
             false);
       });
+    });
 
+    group('verifySchnorr', () {
       //Test vector from https://github.com/bitcoin/bips/blob/master/bip-0341/wallet-test-vectors.json
       test('Verify schnorr signature (bip341 - lline 276)', () {
         String internalPrivateKey =

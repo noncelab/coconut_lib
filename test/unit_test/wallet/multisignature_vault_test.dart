@@ -62,8 +62,14 @@ void main() {
       });
     });
 
-    group('json', () {
-      test('toJson/fromJson roundtrip', () {
+    group('toJson', () {
+      test('serializes vault', () {
+        expect(vault.toJson(), isNotEmpty);
+      });
+    });
+
+    group('MultisignatureVault.fromJson', () {
+      test('restores serialized vault', () {
         final seedlessKeyStores = vault.keyStoreList
             .map((e) => KeyStore.fromExtendedPublicKey(
                   e.extendedPublicKey.serialize(),

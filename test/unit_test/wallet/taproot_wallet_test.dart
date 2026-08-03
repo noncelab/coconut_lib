@@ -45,8 +45,17 @@ void main() {
       });
     });
 
-    group('toJson / fromJson', () {
-      test('roundtrip with policies (seedless via descriptor)', () {
+    group('toJson', () {
+      test('serializes wallet', () {
+        final wallet = TaprootWallet.fromDescriptor(
+          MockFactory.createP2trVaultWithPolicies().descriptor,
+        );
+        expect(wallet.toJson(), isNotEmpty);
+      });
+    });
+
+    group('TaprootWallet.fromJson', () {
+      test('restores policies from serialized wallet', () {
         final TaprootWallet original = TaprootWallet.fromDescriptor(
           MockFactory.createP2trVaultWithPolicies().descriptor,
         );
@@ -56,7 +65,7 @@ void main() {
         expect(restored.derivationPath, original.derivationPath);
       });
 
-      test('fromJson throws when json is vault payload', () {
+      test('throws when json is vault payload', () {
         final vault = MockFactory.createP2trVaultWithPolicies();
         expect(() => TaprootWallet.fromJson(vault.toJson()), throwsException);
       });

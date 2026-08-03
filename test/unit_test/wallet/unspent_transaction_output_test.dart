@@ -11,17 +11,17 @@ void main() {
     setUpAll(() async {
       utxo = MockFactory.createUtxo(entropy: 'ABC');
     });
-    group('get transactionHash', () {
+    group('transactionHash', () {
       test('Get transaction hash', () {
         expect(utxo.transactionHash.hashCode, 1052119297);
       });
     });
-    group('get index', () {
+    group('index', () {
       test('Get transaction index', () {
         expect(utxo.index, 0);
       });
     });
-    group('get amount', () {
+    group('amount', () {
       test('Get amount', () {
         expect(utxo.amount, 100000);
       });
@@ -37,7 +37,7 @@ void main() {
         expect(utxo == targetUtxo, true);
       });
     });
-    group('get hashCode', () {
+    group('hashCode', () {
       test('Get hash code', () {
         expect(utxo.hashCode, 277499242);
       });

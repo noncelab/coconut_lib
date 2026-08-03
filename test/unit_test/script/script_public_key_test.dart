@@ -86,36 +86,55 @@ void main() {
       });
     });
 
-    group('type predicates', () {
-      test('isP2wpkh / isP2tr / isP2wsh', () {
+    group('isP2wpkh', () {
+      test('identifies only P2WPKH scripts', () {
         final ScriptPublicKey p2wpkh = ScriptPublicKey.parse(
             '160014cb325c29ac1d9f9c56ab77c7f659f6a304a7bd02');
         final ScriptPublicKey p2wsh = ScriptPublicKey.parse(
             '2200200d03b386199fc909ca35652f582a526c6b1c45a588d0843759915eb6a41528b7');
+        expect(p2wpkh.isP2wpkh(), true);
+        expect(p2wsh.isP2wpkh(), false);
+      });
+    });
+
+    group('isP2wsh', () {
+      test('identifies only P2WSH scripts', () {
+        final ScriptPublicKey p2wsh = ScriptPublicKey.parse(
+            '2200200d03b386199fc909ca35652f582a526c6b1c45a588d0843759915eb6a41528b7');
         final ScriptPublicKey p2tr = ScriptPublicKey.parse(
             '22512028d00add401c7cacf799aa43d074972518c7dcc02c6bac140316707096c38510');
-
-        expect(p2wpkh.isP2wpkh(), true);
-        expect(p2wpkh.isP2tr(), false);
-
         expect(p2wsh.isP2wsh(), true);
-        expect(p2wsh.isP2wpkh(), false);
-
-        expect(p2tr.isP2tr(), true);
         expect(p2tr.isP2wsh(), false);
       });
+    });
 
-      test('isP2pkh / isP2sh', () {
+    group('isP2tr', () {
+      test('identifies only P2TR scripts', () {
+        final ScriptPublicKey p2wpkh = ScriptPublicKey.parse(
+            '160014cb325c29ac1d9f9c56ab77c7f659f6a304a7bd02');
+        final ScriptPublicKey p2tr = ScriptPublicKey.parse(
+            '22512028d00add401c7cacf799aa43d074972518c7dcc02c6bac140316707096c38510');
+        expect(p2tr.isP2tr(), true);
+        expect(p2wpkh.isP2tr(), false);
+      });
+    });
+
+    group('isP2pkh', () {
+      test('identifies only P2PKH scripts', () {
         final ScriptPublicKey p2pkh =
             ScriptPublicKey.p2pkh('moRfJ2A2uSRMz4tzTrn5VyiUMSMNSHxbL5');
         final ScriptPublicKey p2sh =
             ScriptPublicKey.p2sh('2N2JD6wb56AfK4tfmM6PwdVmoYk2dCKf4Br');
-
         expect(p2pkh.isP2pkh(), true);
-        expect(p2pkh.isP2wpkh(), false);
-
-        expect(p2sh.isP2sh(), true);
         expect(p2sh.isP2pkh(), false);
+      });
+    });
+
+    group('isP2sh', () {
+      test('identifies P2SH scripts', () {
+        final ScriptPublicKey p2sh =
+            ScriptPublicKey.p2sh('2N2JD6wb56AfK4tfmM6PwdVmoYk2dCKf4Br');
+        expect(p2sh.isP2sh(), true);
       });
     });
   });

@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('TransactionOutput', () {
-    group('get amount', () {
+    group('amount', () {
       test('Get amont from transaction output', () {
         String address = 'bc1qkfr6qzkvrnpvpd97p57r3krxl8qg6fz24nzjsa';
         int amount = 1000;
@@ -14,7 +14,7 @@ void main() {
         expect(output.amount, amount);
       });
     });
-    group('get scriptPubKey', () {
+    group('scriptPubKey', () {
       test('Get script public key', () {
         String address = 'bc1qkfr6qzkvrnpvpd97p57r3krxl8qg6fz24nzjsa';
         int amount = 1000;
@@ -24,7 +24,7 @@ void main() {
             '160014b247a00acc1cc2c0b4be0d3c38d866f9c08d244a');
       });
     });
-    group('get length', () {
+    group('length', () {
       test('Get length of transcation output', () {
         String address = 'bc1qkfr6qzkvrnpvpd97p57r3krxl8qg6fz24nzjsa';
         int amount = 1000;
@@ -146,7 +146,7 @@ void main() {
         expect(targetOutput == matchedOutput, true);
       });
     });
-    group('get hashCode', () {
+    group('hashCode', () {
       test('Get hash code', () {
         TransactionOutput targetOutput = TransactionOutput.forPayment(1000,
             'bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej');

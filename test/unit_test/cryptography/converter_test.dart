@@ -24,6 +24,13 @@ void main() {
         expect(Converter.bigDecToHex(decimalValue), '3635c9adc5dea00000');
       });
     });
+    group('bigIntToBytes', () {
+      test('converts a big integer with and without fixed byte length', () {
+        expect(Converter.bigIntToBytes(BigInt.from(0x1234)), [0x12, 0x34]);
+        expect(Converter.bigIntToBytes(BigInt.from(0x1234), byteLength: 4),
+            [0x00, 0x00, 0x12, 0x34]);
+      });
+    });
     group('decToBin', () {
       test('Get binary from decimal', () {
         int decimalValue = 10;
@@ -36,10 +43,27 @@ void main() {
         expect(Converter.hexToDec(hexString), 10);
       });
     });
+    group('hexToBigDec', () {
+      test('converts hexadecimal larger than the integer range', () {
+        expect(Converter.hexToBigDec('ffffffffffffffff'),
+            BigInt.parse('18446744073709551615'));
+      });
+    });
     group('hexToBin', () {
       test('Get binary from hexadeciaml', () {
         String hexString = 'a';
         expect(Converter.hexToBin(hexString), '1010');
+      });
+    });
+    group('binToDec', () {
+      test('converts binary text to decimal', () {
+        expect(Converter.binToDec('10101101'), 173);
+      });
+    });
+    group('uint8ListToDec', () {
+      test('converts big-endian bytes to decimal', () {
+        expect(
+            Converter.uint8ListToDec(Uint8List.fromList([0x01, 0x02])), 0x0102);
       });
     });
     group('binToHex', () {
@@ -52,6 +76,11 @@ void main() {
       test('Get bytes from binary', () {
         String binary = '10101101';
         expect(Converter.binToBytes(binary), [173]);
+      });
+    });
+    group('bytesToDec', () {
+      test('converts bytes to decimal', () {
+        expect(Converter.bytesToDec(Uint8List.fromList([0x01, 0x02])), 0x0102);
       });
     });
     group('bytesToBinary', () {
@@ -86,7 +115,12 @@ void main() {
             BigInt.parse('13292279960944008827972097230598307840'));
       });
     });
-    group('bitsToBytes', () {
+    group('toLittleEndian', () {
+      test('reverses hexadecimal byte order', () {
+        expect(Converter.toLittleEndian('12345678'), '78563412');
+      });
+    });
+    group('binaryToBytes', () {
       test('Check bits to uint8 list', () {
         expect(
             Converter.binaryToBytes([0, 0, 1, 1]), Uint8List.fromList([0x03]));
@@ -151,7 +185,7 @@ void main() {
       });
     });
 
-    group("derToRawSignature", () {
+    group("rawToDerSignature", () {
       test("Get raw signature from der (case 1)", () {
         String der =
             '3044022051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01';

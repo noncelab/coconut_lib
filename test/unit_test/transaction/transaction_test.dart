@@ -19,25 +19,31 @@ void main() {
       legacyTransaction = Transaction.parse(legacyTransactionText);
       segwitTransaction = Transaction.parse(segwitTransactionText);
     });
-    group('get version', () {
+    group('version', () {
       test('Get version of transaction', () {
         expect(legacyTransaction.version, '01000000');
         expect(segwitTransaction.version, '02000000');
       });
     });
-    group('get inputs', () {
+    group('inputs', () {
       test('Get transaction input list', () {
         expect(legacyTransaction.inputs.length, 1);
         expect(segwitTransaction.inputs.length, 1);
       });
     });
-    group('get outputs', () {
+    group('outputs', () {
       test('Get transaction output list', () {
         expect(legacyTransaction.outputs.length, 1);
         expect(segwitTransaction.outputs.length, 2);
       });
     });
-    group('get transactionHash', () {
+    group('lockTime', () {
+      test('returns the little-endian lock time', () {
+        expect(legacyTransaction.lockTime, '00000000');
+        expect(segwitTransaction.lockTime, '00000000');
+      });
+    });
+    group('transactionHash', () {
       test('Get transaction hash', () {
         expect(legacyTransaction.transactionHash,
             '5e2a36182c1566495489bb86ce85ef386095a709bc53c7363ec18c99467aa63c');
@@ -45,13 +51,13 @@ void main() {
             'efb4cadbc8fa6ab7970b461bbc99e506403397bddc3280cbf847c1684b61248b');
       });
     });
-    group('get length', () {
+    group('length', () {
       test('Get length of transaction', () {
         expect(legacyTransaction.length, 188);
         expect(segwitTransaction.length, 115);
       });
     });
-    group('get utxoList', () {
+    group('utxoList', () {
       test('Get utxo list if exist', () {
         SingleSignatureVault vault = MockFactory.createP2wpkhVault();
         List<Utxo> utxoList = MockFactory.createUtxoList(count: 2);
@@ -64,8 +70,18 @@ void main() {
         expect(tx.utxoList.length, 2);
       });
     });
+    group('totalInputAmount', () {
+      test('sums the amounts of transaction UTXOs', () {
+        final vault = MockFactory.createP2wpkhVault();
+        final utxos = MockFactory.createUtxoList(count: 2);
+        final tx =
+            Transaction.forSweep(utxos, MockFactory.reveiveAddress, 1, vault);
+        expect(tx.totalInputAmount,
+            utxos.fold<int>(0, (total, utxo) => total + utxo.amount));
+      });
+    });
 
-    group('Transaction.withDefault', () {
+    group('Transaction.withInputsAndOutputs', () {
       test('Generate default transaction', () {
         TransactionInput input = TransactionInput.parse(
             'a463a7a78daffa1bdb1248121adb14b94f70a1fabffc81637f4049c3d65cc69f000000000000000080');
@@ -195,6 +211,18 @@ void main() {
         expect(Transaction.parse(transactionText), isA<Transaction>());
       });
     });
+    group('setOutputDerivationPath', () {
+      test('sets the path only on the matching output', () {
+        final target = segwitTransaction.outputs.first;
+        final other = segwitTransaction.outputs.last;
+        final path = "m/84'/1'/0'/1/7";
+
+        segwitTransaction.setOutputDerivationPath(target.getAddress(), path);
+
+        expect(target.derivationPath, path);
+        expect(other.derivationPath, isNot(path));
+      });
+    });
     group('serialize', () {
       test('Serialize segwit transaction', () {
         String segwitTransactionText =
@@ -250,7 +278,7 @@ void main() {
       });
     });
 
-    group('validateSignature', () {
+    group('validateEcdsa', () {
       test('Validate signature of transaction', () {
         String transactionText =
             '020000000001016520eede29c5e034036a461980149268e263fed8a5b8e527ead8862123e3906b01000000000100000001f82a00000000000016001473f7aa4db6847eab27c59214f6ed7254627e7de002483045022100f369a3e1bdfb62a3ff875fa60bc9834326dead789a24ffcb2faf5f48628240e8022014cc216309a8ded296597cfd2680528729c0a55e43826d8af7d160d45be3df860121033b0492bf5c0a0222a55cdea04cdc022b1751112381ae6e9970319b3d6b161db900000000';

@@ -14,8 +14,56 @@ void main() {
             MultisignatureScript.parse(witnessScriptText);
         expect(witnessScript.getPublicKeys().length, 3);
       });
+
+      String serializeCommands(List<dynamic> commands) =>
+          Script(commands).serialize();
+
+      test('rejects a script without OP_CHECKMULTISIG', () {
+        expect(() => MultisignatureScript.parse(serializeCommands([0x51])),
+            throwsFormatException);
+      });
+
+      test('rejects an invalid signer count', () {
+        expect(
+            () => MultisignatureScript.parse(
+                serializeCommands([0x51, 0x50, 0xae])),
+            throwsFormatException);
+      });
+
+      test('rejects a signer count that differs from key count', () {
+        final key = Uint8List.fromList(List<int>.filled(33, 2));
+        expect(
+            () => MultisignatureScript.parse(
+                serializeCommands([0x51, key, 0x52, 0xae])),
+            throwsFormatException);
+      });
+
+      test('rejects a signature threshold greater than signer count', () {
+        final key = Uint8List.fromList(List<int>.filled(33, 2));
+        expect(
+            () => MultisignatureScript.parse(
+                serializeCommands([0x52, key, 0x51, 0xae])),
+            throwsFormatException);
+      });
+
+      test('rejects invalid public key lengths', () {
+        final key = Uint8List.fromList(List<int>.filled(32, 2));
+        expect(
+            () => MultisignatureScript.parse(
+                serializeCommands([0x51, key, 0x51, 0xae])),
+            throwsFormatException);
+      });
+
+      test('rejects public keys outside lexicographical order', () {
+        final high = Uint8List.fromList([3, ...List<int>.filled(32, 1)]);
+        final low = Uint8List.fromList([2, ...List<int>.filled(32, 1)]);
+        expect(
+            () => MultisignatureScript.parse(
+                serializeCommands([0x51, high, low, 0x52, 0xae])),
+            throwsFormatException);
+      });
     });
-    group('factory MultisignatureScript.forP2wsh', () {
+    group('MultisignatureScript.forP2wsh', () {
       test('Generate multisignature script for p2wsh', () {
         List<Uint8List> publicKeys = [
           Codec.decodeHex(
@@ -38,6 +86,14 @@ void main() {
         expect(multisignatureScript.commands[4], 0x53);
         expect(multisignatureScript.commands[5], 0xae);
       });
+
+      test('uses key length as a sorting tie-breaker', () {
+        final short = Uint8List.fromList([2]);
+        final long = Uint8List.fromList([2, 0]);
+        final script = MultisignatureScript.forP2wsh(1, 2, [long, short]);
+        expect(script.commands[1], short);
+        expect(script.commands[2], long);
+      });
     });
     group('getRequiredSignature', () {
       test('Get reqruied signature', () {
@@ -52,6 +108,11 @@ void main() {
         MultisignatureScript multisignatureScript =
             MultisignatureScript.forP2wsh(2, 3, publicKeys);
         expect(multisignatureScript.getRequiredSignature(), 2);
+      });
+
+      test('throws when the first opcode is not a signature count', () {
+        final script = MultisignatureScript([0xae]);
+        expect(script.getRequiredSignature, throwsException);
       });
     });
     group('getPublicKeys', () {

@@ -58,6 +58,49 @@ void main() {
       return current;
     }
 
+    group('keyStoreList', () {
+      test('returns parent signing key stores', () {
+        expect(vault.keyStoreList, isNotEmpty);
+      });
+    });
+
+    group('isVault', () {
+      test('distinguishes a vault from a watch-only wallet', () {
+        final wallet = TaprootWallet.fromDescriptor(vault.descriptor);
+        expect(vault.isVault, isTrue);
+        expect(wallet.isVault, isFalse);
+      });
+    });
+
+    group('policyList', () {
+      test('returns the descriptor policies', () {
+        expect(vault.policyList, isNotEmpty);
+      });
+    });
+
+    group('getInternalKey', () {
+      test('returns an x-only internal key', () {
+        expect(vault.getInternalKey(0), hasLength(32));
+      });
+    });
+
+    group('getOutputKey', () {
+      test('returns the tweaked x-only output key', () {
+        expect(vault.getOutputKey(0), hasLength(32));
+        expect(Codec.encodeHex(vault.getOutputKey(0)),
+            isNot(Codec.encodeHex(vault.getInternalKey(0))));
+      });
+    });
+
+    group('getKeyOriginExpression', () {
+      test('contains each parent key fingerprint', () {
+        final expression = vault.getKeyOriginExpression();
+        for (final keyStore in vault.keyStoreList) {
+          expect(expression, contains(keyStore.masterFingerprint));
+        }
+      });
+    });
+
     group('getAddress', () {
       test('returns a valid taproot address', () {
         NetworkType.setNetworkType(NetworkType.regtest);

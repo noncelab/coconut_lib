@@ -35,6 +35,15 @@ void main() {
                 addressType: AddressType.p2wsh),
             throwsException);
       });
+
+      test('throws on key network mismatch', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        final mainnetKeyStore =
+            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        NetworkType.setNetworkType(NetworkType.testnet);
+        expect(() => SingleSignatureVault.fromKeyStore(mainnetKeyStore),
+            throwsException);
+      });
     });
     group('SingleSignatureVault.random', () {
       test('Generate random single signature vault', () {
@@ -94,8 +103,14 @@ void main() {
       });
     });
 
-    group('json', () {
-      test('toJson/fromJson roundtrip', () {
+    group('toJson', () {
+      test('serializes vault', () {
+        expect(vault.toJson(), isNotEmpty);
+      });
+    });
+
+    group('SingleSignatureVault.fromJson', () {
+      test('restores serialized vault', () {
         final source = vault.keyStore;
         final seedlessVault = SingleSignatureVault.fromKeyStore(
           KeyStore.fromExtendedPublicKey(
@@ -110,6 +125,41 @@ void main() {
         expect(restored.derivationPath, seedlessVault.derivationPath);
         expect(restored.keyStore.masterFingerprint,
             seedlessVault.keyStore.masterFingerprint);
+      });
+
+      test('throws on invalid derivation path format', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+          vault.keyStore.extendedPublicKey.serialize(),
+          vault.keyStore.masterFingerprint,
+        );
+        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
+            '"addressTypeName":"p2wpkh","derivationPath":"x/84\'/1\'/0\'"}';
+        expect(() => SingleSignatureVault.fromJson(json), throwsException);
+      });
+
+      test('throws on coin type mismatch in derivation path', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+          vault.keyStore.extendedPublicKey.serialize(),
+          vault.keyStore.masterFingerprint,
+        );
+        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
+            '"addressTypeName":"p2wpkh","derivationPath":"m/84\'/0\'/0\'"}';
+        expect(() => SingleSignatureVault.fromJson(json), throwsException);
+      });
+
+      test('throws on network mismatch', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+          vault.keyStore.extendedPublicKey.serialize(),
+          vault.keyStore.masterFingerprint,
+        );
+        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
+            '"addressTypeName":"p2wpkh","derivationPath":"m/84\'/1\'/0\'"}';
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        try {
+          expect(() => SingleSignatureVault.fromJson(json), throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.testnet);
+        }
       });
     });
   });

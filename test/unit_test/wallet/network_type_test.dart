@@ -9,7 +9,7 @@ void main() {
         expect(NetworkType.mainnet.toString(), 'mainnet');
       });
     });
-    group('get hashCode', () {
+    group('hashCode', () {
       test('Get hash code', () {
         expect(NetworkType.mainnet.hashCode, 136947097);
       });
@@ -20,13 +20,13 @@ void main() {
         expect(NetworkType.testnet == NetworkType.regtest, false);
       });
     });
-    group('get currentNetworkType', () {
+    group('currentNetworkType', () {
       test('Get current network type', () {
         NetworkType.setNetworkType(NetworkType.mainnet);
         expect(NetworkType.currentNetworkType == NetworkType.mainnet, true);
       });
     });
-    group('get values', () {
+    group('values', () {
       test('Retrieve network type', () {
         expect(NetworkType.values.length == 3, true);
       });

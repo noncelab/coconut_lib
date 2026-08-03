@@ -69,8 +69,16 @@ void main() {
       });
     });
 
-    group('toJson / fromJson', () {
-      test('roundtrips beneficiary key store and locktime', () {
+    group('toJson', () {
+      test('serializes policy', () {
+        final policy = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 555666777);
+        expect(policy.toJson(), isNotEmpty);
+      });
+    });
+
+    group('InheritancePolicy.fromJson', () {
+      test('restores beneficiary key store and locktime', () {
         final InheritancePolicy original =
             InheritancePolicy.fromDescriptorAndLocktime(
                 beneficiaryVault.descriptor, 555666777);

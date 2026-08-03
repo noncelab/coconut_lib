@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 
 void main() {
   group('Script', () {
-    group('get length', () {
+    group('length', () {
       test('Get length of script', () {
         String scriptText = '1600143c5e7ce7108e9c0fd8845cc124ea60d30a635e95';
         Uint8List script = Codec.decodeHex(scriptText);
@@ -121,7 +121,7 @@ void main() {
         expect(targetScript == matchedScript, true);
       });
     });
-    group('get hashCode', () {
+    group('hashCode', () {
       test('Get hash code', () {
         String scriptText = '1600143c5e7ce7108e9c0fd8845cc124ea60d30a635e95';
         Script script =

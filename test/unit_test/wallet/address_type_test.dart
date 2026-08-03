@@ -7,7 +7,48 @@ import 'package:test/test.dart';
 
 void main() {
   group('AddressType', () {
-    group('getAddressTypeByVersion', () {
+    group('values', () {
+      test('contains every supported address type', () {
+        expect(
+            AddressType.values,
+            containsAll([
+              AddressType.p2pkh,
+              AddressType.p2wpkh,
+              AddressType.p2wpkhInP2sh,
+              AddressType.p2sh,
+              AddressType.p2wsh,
+              AddressType.p2tr,
+            ]));
+      });
+    });
+    group('isSegwit', () {
+      test('identifies native SegWit address types', () {
+        expect(AddressType.p2wpkh.isSegwit, isTrue);
+        expect(AddressType.p2tr.isSegwit, isTrue);
+        expect(AddressType.p2pkh.isSegwit, isFalse);
+      });
+    });
+    group('isMultisignature', () {
+      test('identifies multisignature address types', () {
+        expect(AddressType.p2sh.isMultisignature, isTrue);
+        expect(AddressType.p2wsh.isMultisignature, isTrue);
+        expect(AddressType.p2wpkh.isMultisignature, isFalse);
+      });
+    });
+    group('isSingleSignature', () {
+      test('identifies single-signature address types', () {
+        expect(AddressType.p2pkh.isSingleSignature, isTrue);
+        expect(AddressType.p2wpkh.isSingleSignature, isTrue);
+        expect(AddressType.p2wsh.isSingleSignature, isFalse);
+      });
+    });
+    group('isTaproot', () {
+      test('identifies taproot address types', () {
+        expect(AddressType.p2tr.isTaproot, isTrue);
+        expect(AddressType.p2wpkh.isTaproot, isFalse);
+      });
+    });
+    group('getAddressTypeFromScriptType', () {
       test('getAddressTypeFromScriptType', () {
         expect(
             AddressType.getAddressTypeFromScriptType('pkh'), AddressType.p2pkh);
@@ -19,14 +60,32 @@ void main() {
             AddressType.getAddressTypeFromScriptType('wsh'), AddressType.p2wsh);
       });
 
-      group('isTestnetVersion', () {
-        test('isTestnetVersion', () {
-          expect(AddressType.isTestnetVersion(0x045f1cf6), true);
-          expect(AddressType.isTestnetVersion(0x04b24746), false);
-          expect(AddressType.isTestnetVersion(0x02575483), true);
-          expect(AddressType.isTestnetVersion(0x02aa7ed3), false);
-          expect(() => AddressType.isTestnetVersion(0x00), throwsException);
-        });
+      test('throws for unsupported script types', () {
+        expect(() => AddressType.getAddressTypeFromScriptType('unknown'),
+            throwsException);
+      });
+    });
+
+    group('getAddressTypeFromName', () {
+      test('returns the matching named address type', () {
+        expect(AddressType.getAddressTypeFromName('p2tr'), AddressType.p2tr);
+        expect(
+            AddressType.getAddressTypeFromName('p2wpkh'), AddressType.p2wpkh);
+      });
+
+      test('throws for unsupported names', () {
+        expect(() => AddressType.getAddressTypeFromName('unknown'),
+            throwsException);
+      });
+    });
+
+    group('isTestnetVersion', () {
+      test('isTestnetVersion', () {
+        expect(AddressType.isTestnetVersion(0x045f1cf6), true);
+        expect(AddressType.isTestnetVersion(0x04b24746), false);
+        expect(AddressType.isTestnetVersion(0x02575483), true);
+        expect(AddressType.isTestnetVersion(0x02aa7ed3), false);
+        expect(() => AddressType.isTestnetVersion(0x00), throwsException);
       });
     });
     group('getAddressTypeByVersion', () {
@@ -266,6 +325,39 @@ void main() {
                   '021f4a8611bc27942b8f80fb25a2d66c3fd82739bb672909ec519a4f7aac36588b',
                   '03c6382a22a126247191d45ef5742f8315c93e1de73eab0ac025c55bbfb18dfb54'
                 ], 2),
+            throwsException);
+      });
+    });
+
+    group('getP2trScriptPathSpendingAddress', () {
+      final publicKeys = [
+        '187791b6f712a8ea41c8ecdd0ee77fab3e85263b37e1ec18a3651926b3a6cf27',
+        '93478e9488f956df2396be2ce6c5cced75f900dfa18e7dabd2428aae78451820',
+      ];
+
+      test('creates addresses for n-of-n and threshold scripts', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        expect(AddressType.getP2trScriptPathSpendingAddress([...publicKeys], 2),
+            startsWith('bc1p'));
+        expect(AddressType.getP2trScriptPathSpendingAddress([...publicKeys], 1),
+            startsWith('bc1p'));
+      });
+
+      test('rejects unsupported signature thresholds', () {
+        expect(
+            () => AddressType.getP2trScriptPathSpendingAddress(
+                [...publicKeys, ...publicKeys], 4),
+            throwsException);
+        expect(
+            () => AddressType.getP2trScriptPathSpendingAddress(
+                [...publicKeys], 3),
+            throwsException);
+      });
+
+      test('rejects non-x-only public keys', () {
+        expect(
+            () => AddressType.getP2trScriptPathSpendingAddress(
+                ['02${publicKeys.first}'], 1),
             throwsException);
       });
     });

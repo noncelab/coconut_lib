@@ -15,22 +15,22 @@ void main() {
       vault = MockFactory.createP2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
-    group('get addressType', () {
+    group('addressType', () {
       test('Get address type from wallet base', () {
         expect(wallet.addressType, AddressType.p2wpkh);
       });
     });
-    group('get derivationPath', () {
+    group('derivationPath', () {
       test('Get derivation path', () {
         expect(wallet.derivationPath, "m/84'/1'/0'");
       });
     });
-    group('get accountIndex', () {
+    group('accountIndex', () {
       test('Get account index', () {
         expect(wallet.accountIndex, 0);
       });
     });
-    group('get descriptor', () {
+    group('descriptor', () {
       test('Get descriptor', () {
         expect(vault.descriptor.hashCode, 186870090);
       });

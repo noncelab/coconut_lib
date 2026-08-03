@@ -16,6 +16,62 @@ void main() async {
       vault = MockFactory.createP2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
+    group('SingleSignatureWallet', () {
+      test('rejects a key from another network', () {
+        NetworkType.setNetworkType(NetworkType.testnet);
+        final keyStore =
+            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        try {
+          expect(
+              () => SingleSignatureWallet(
+                  keyStore.masterFingerprint,
+                  keyStore.hdWallet,
+                  AddressType.p2wpkh,
+                  "m/84'/0'/0'",
+                  keyStore.extendedPublicKey),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.regtest);
+        }
+      });
+
+      test('rejects malformed derivation paths', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        final keyStore =
+            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        try {
+          expect(
+              () => SingleSignatureWallet(
+                  keyStore.masterFingerprint,
+                  keyStore.hdWallet,
+                  AddressType.p2wpkh,
+                  'invalid',
+                  keyStore.extendedPublicKey),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.regtest);
+        }
+      });
+
+      test('rejects a derivation path for another network', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        final keyStore =
+            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        try {
+          expect(
+              () => SingleSignatureWallet(
+                  keyStore.masterFingerprint,
+                  keyStore.hdWallet,
+                  AddressType.p2wpkh,
+                  "m/84'/1'/0'",
+                  keyStore.extendedPublicKey),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.regtest);
+        }
+      });
+    });
     group('SingleSignatureWallet.fromDescriptor', () {
       test('Generate single signature wallet from descriptor', () {
         SingleSignatureWallet targetWallet =

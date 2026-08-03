@@ -8,6 +8,50 @@ import '../../mock_factory.dart';
 
 void main() {
   group('ExtendedPublicKey', () {
+    late ExtendedPublicKey extendedPublicKey;
+
+    setUp(() {
+      NetworkType.setNetworkType(NetworkType.testnet);
+      extendedPublicKey =
+          MockFactory.createP2wpkhVault().keyStore.extendedPublicKey;
+    });
+
+    group('depth', () {
+      test('returns the derivation depth', () {
+        expect(extendedPublicKey.depth, 3);
+      });
+    });
+    group('parentFingerprintByte', () {
+      test('returns the parent fingerprint bytes', () {
+        expect(Codec.encodeHex(extendedPublicKey.parentFingerprintByte),
+            extendedPublicKey.parentFingerprint);
+      });
+    });
+    group('parentFingerprint', () {
+      test('returns the hexadecimal parent fingerprint', () {
+        expect(extendedPublicKey.parentFingerprint, hasLength(8));
+      });
+    });
+    group('index', () {
+      test('returns the hardened account index', () {
+        expect(extendedPublicKey.index, 0x80000000);
+      });
+    });
+    group('chainCode', () {
+      test('returns a 32-byte chain code', () {
+        expect(extendedPublicKey.chainCode, hasLength(32));
+      });
+    });
+    group('publicKey', () {
+      test('returns a compressed public key', () {
+        expect(extendedPublicKey.publicKey, hasLength(33));
+      });
+    });
+    group('version', () {
+      test('returns the configured extended-key version', () {
+        expect(extendedPublicKey.version, AddressType.p2wpkh.versionForTestnet);
+      });
+    });
     group('fromHdWallet', () {
       test('Generate ExtendedPublicKey', () {
         SingleSignatureVault vault = MockFactory.createP2wpkhVault();
@@ -71,6 +115,26 @@ void main() {
         SingleSignatureVault vault = MockFactory.createP2wpkhVault();
         expect(vault.keyStore.extendedPublicKey.serialize(toXpub: true),
             'xpub6CGPh2qh56Rq6cq3jeemUUuSRcha3GrVrs9QMLkikfu253nziERNLqabWB49qyqkVvHJ1iB9M3CCxkHNLv2xrSNhhbxHTku6Ld22Az4cMG6');
+      });
+    });
+    group('serializeForPsbt', () {
+      test('serializes the 78-byte payload without Base58Check encoding', () {
+        final serialized = extendedPublicKey.serializeForPsbt();
+        expect(serialized, hasLength(156));
+        expect(Codec.decodeHex(serialized), hasLength(78));
+      });
+    });
+
+    group('toString', () {
+      test('returns the serialized extended public key', () {
+        expect(extendedPublicKey.toString(), extendedPublicKey.serialize());
+      });
+    });
+
+    group('operator ==', () {
+      test('compares serialized extended public keys', () {
+        expect(ExtendedPublicKey.parse(extendedPublicKey.serialize()),
+            extendedPublicKey);
       });
     });
 

@@ -10,17 +10,17 @@ void main() {
     setUpAll(() {
       vault = MockFactory.createP2wshVault();
     });
-    group('get totalSigner', () {
+    group('totalSigner', () {
       test('Get total signer of vault', () {
         expect(vault.totalSigner, 3);
       });
     });
-    group('get requiredSignature', () {
+    group('requiredSignature', () {
       test('Get required signature of vault', () {
         expect(vault.requiredSignature, 2);
       });
     });
-    group('get keyStoreList', () {
+    group('keyStoreList', () {
       test('Get key store list from vault', () {
         expect(vault.keyStoreList, isA<List<KeyStore>>());
         expect(vault.keyStoreList.length, 3);
@@ -45,6 +45,14 @@ void main() {
             'tb1qq0q7qav557ea92qszuytkyh33ly8elz0whcuwsycux59pzqnyulsc5vskx');
       });
     });
+    group('getKeyOriginExpression', () {
+      test('contains every signer fingerprint', () {
+        final expression = vault.getKeyOriginExpression();
+        for (final keyStore in vault.keyStoreList) {
+          expect(expression, contains(keyStore.masterFingerprint));
+        }
+      });
+    });
     group('getCoordinatorBsms', () {
       test('Get coordinator bsms from vault', () {
         expect(vault.getCoordinatorBsms().hashCode, 1032617779);
@@ -54,6 +62,13 @@ void main() {
       test('Get witness script of vault', () {
         expect(
             vault.getWitnessScript("m/48'/1'/0'/2'/10/1").hashCode, 669698738);
+      });
+
+      test('rejects address types without witness scripts', () {
+        final legacyVault = MultisignatureVault(
+            2, AddressType.p2sh, 0, "m/45'/1'/0'", vault.keyStoreList);
+        expect(
+            () => legacyVault.getWitnessScript("m/45'/0/0"), throwsException);
       });
     });
     group('hasPublicKeyInPsbt', () {
@@ -78,9 +93,43 @@ void main() {
           expect(input.requiredSignature, input.signedCount);
         }
       });
+
+      test('throws when psbt address type mismatches', () {
+        final psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        expect(
+            () => vault.addSignatureToPsbt(psbt.serialize()), throwsException);
+      });
     });
 
-    group('getAddregatedPublilcKey', () {
+    group('MultisignatureWalletBase', () {
+      test('rejects single-signature address types', () {
+        expect(
+            () => MultisignatureVault(
+                2, AddressType.p2wpkh, 0, "m/84'/1'/0'", vault.keyStoreList),
+            throwsException);
+      });
+
+      test('rejects malformed derivation paths', () {
+        expect(
+            () => MultisignatureVault(
+                2, AddressType.p2wsh, 0, 'invalid', vault.keyStoreList),
+            throwsException);
+      });
+
+      test('rejects derivation paths for another network', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        try {
+          expect(
+              () => MultisignatureVault(2, AddressType.p2wsh, 0,
+                  "m/48'/1'/0'/2'", vault.keyStoreList),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.testnet);
+        }
+      });
+    });
+
+    group('getAggregatedPublicKey', () {
       test('Get aggregatedPublicKey', () {});
     });
   });

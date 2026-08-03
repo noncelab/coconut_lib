@@ -17,6 +17,51 @@ void main() {
           "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"));
       keyStore = KeyStore.fromSeed(seed, AddressType.p2wpkh);
     });
+    group('masterFingerprint', () {
+      test('returns the root key fingerprint', () {
+        expect(keyStore.masterFingerprint, hasLength(8));
+      });
+    });
+    group('hdWallet', () {
+      test('returns the account-level HD wallet', () {
+        expect(
+            keyStore.hdWallet.publicKey, keyStore.extendedPublicKey.publicKey);
+      });
+    });
+    group('getChildHdWallet', () {
+      test('returns distinct receive and change branches', () {
+        expect(Codec.encodeHex(keyStore.getChildHdWallet(false).publicKey),
+            isNot(Codec.encodeHex(keyStore.getChildHdWallet(true).publicKey)));
+      });
+    });
+    group('extendedPublicKey', () {
+      test('returns the account extended public key', () {
+        expect(
+            keyStore.extendedPublicKey.publicKey, keyStore.hdWallet.publicKey);
+      });
+    });
+    group('seed', () {
+      test('returns the bound seed', () {
+        expect(keyStore.seed, seed);
+      });
+
+      test('binds and removes a seed', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+        watchOnly.seed = seed;
+        expect(watchOnly.seed, seed);
+        watchOnly.seed = null;
+        expect(watchOnly.hasSeed, isFalse);
+      });
+    });
+    group('hasSeed', () {
+      test('reports whether private seed material is available', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+        expect(keyStore.hasSeed, isTrue);
+        expect(watchOnly.hasSeed, isFalse);
+      });
+    });
     group('fromSeed', () {
       test('Generate key store from seed', () {
         expect(keyStore, isA<KeyStore>());
@@ -396,7 +441,7 @@ void main() {
         expect(keyStore.toString(), contains('extendedPublicKey'));
       });
     });
-    group('nonce nondeterminism test', () {
+    group('getSecretNonce', () {
       test(
           'getSecretNonce should return different values for same inputs (BIP-0327 security requirement)',
           () {
@@ -416,7 +461,9 @@ void main() {
             reason:
                 'MuSig2 nonce should be nondeterministic to prevent key extraction attacks');
       });
+    });
 
+    group('getPublicNonce', () {
       test(
           'getPublicNonce should return different values for same inputs across different KeyStore instances',
           () {
@@ -499,12 +546,14 @@ void main() {
       });
     });
 
-    group('additional coverage', () {
+    group('getPublicKeyBytes', () {
       test('getPublicKeyBytes matches getPublicKey hex', () {
         final Uint8List pubBytes = keyStore.getPublicKeyBytes(0);
         expect(Codec.encodeHex(pubBytes), keyStore.getPublicKey(0));
       });
+    });
 
+    group('fromJson', () {
       test('fromJson restores serialized form', () {
         final KeyStore watchOnly = KeyStore.fromExtendedPublicKey(
             keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
@@ -513,13 +562,49 @@ void main() {
         expect(restored.extendedPublicKey.serialize(),
             watchOnly.extendedPublicKey.serialize());
       });
+    });
 
+    group('toJson', () {
+      test('serializes a watch-only key store', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+        final map = jsonDecode(watchOnly.toJson()) as Map<String, dynamic>;
+        expect(map['fingerprint'], watchOnly.masterFingerprint);
+        expect(
+            map['extendedPublicKey'], watchOnly.extendedPublicKey.serialize());
+        expect(map['seed'], isNull);
+      });
+    });
+
+    group('wipeSeed', () {
       test('wipeSeed clears sensitive data', () {
         final KeyStore mutable =
             KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
         expect(mutable.hasSeed, true);
         mutable.wipeSeed();
         expect(mutable.hasSeed, false);
+      });
+    });
+
+    group('addPublicNonceToPsbt', () {
+      test('Add public nonce to PSBT', () {
+        TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
+        KeyStore keyStore = vault.keyStoreList[0];
+        Psbt psbt = Psbt.fromTransaction(
+            Transaction.forSinglePayment(
+                [MockFactory.getCommonUtxo(AddressType.p2tr)],
+                vault.getAddress(1),
+                '${vault.derivationPath}/1/1',
+                15000,
+                3,
+                vault),
+            vault);
+
+        Psbt noncePsbt =
+            Psbt.parse(keyStore.addPublicNonceToPsbt(psbt.serialize()));
+        String aggregatedPublicNonce =
+            noncePsbt.inputs[0].getAggregatedPublicNonce();
+        expect(Codec.decodeHex(aggregatedPublicNonce), hasLength(66));
       });
     });
   });
@@ -619,30 +704,6 @@ void main() {
         expect(sessionContext.e.toString(),
             '75550762600552793952557687225983707197539317791023912703967559988774299150629');
       });
-    });
-  });
-
-  group('addMuSig2PublicNonceToPsbt', () {
-    test('Add public nonce to PSBT', () {
-      TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
-      KeyStore keyStore = vault.keyStoreList[0];
-      Psbt psbt = Psbt.fromTransaction(
-          Transaction.forSinglePayment(
-              [MockFactory.getCommonUtxo(AddressType.p2tr)],
-              vault.getAddress(1),
-              '${vault.derivationPath}/1/1',
-              15000,
-              3,
-              vault),
-          vault);
-
-      Psbt noncePsbt =
-          Psbt.parse(keyStore.addPublicNonceToPsbt(psbt.serialize()));
-      String aggregatedPublicNonce =
-          noncePsbt.inputs[0].getAggregatedPublicNonce();
-      expect(Codec.decodeHex(aggregatedPublicNonce), hasLength(66));
-
-      // expect(keyStore.addPublicNonceToPsbt(psbt.serialize()), noncePsbtTarget);
     });
   });
 }

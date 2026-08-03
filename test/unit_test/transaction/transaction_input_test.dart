@@ -8,7 +8,7 @@ import '../../mock_factory.dart';
 
 void main() {
   group('TransactionInput', () {
-    group('get transactionHash', () {
+    group('transactionHash', () {
       test('Get transaction hash', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -17,7 +17,7 @@ void main() {
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0');
       });
     });
-    group('get index', () {
+    group('index', () {
       test('Get index', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -25,7 +25,7 @@ void main() {
         expect(input.index, 0);
       });
     });
-    group('get sequence', () {
+    group('sequence', () {
       test('Get sequence', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -33,7 +33,7 @@ void main() {
         expect(input.sequence, 4294967295);
       });
     });
-    group('get length', () {
+    group('length', () {
       test('Get length of transaction input', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -198,7 +198,7 @@ void main() {
       });
     });
 
-    group('taproot signature setters', () {
+    group('setTaprootKeyPathSpendingSignature', () {
       test('Set taproot key path witness', () {
         TransactionInput input = TransactionInput.forPayment(
             'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',
@@ -206,7 +206,9 @@ void main() {
         input.setTaprootKeyPathSpendingSignature('aa' * 64);
         expect(input.witnessList.length, 1);
       });
+    });
 
+    group('setTaprootScriptPathSpendingSignature', () {
       test('Set taproot script path witness', () {
         TransactionInput input = TransactionInput.forPayment(
             'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',

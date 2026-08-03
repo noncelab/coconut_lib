@@ -15,17 +15,17 @@ void main() {
       unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
       signedPsbt = MockFactory.createP2wpkhSignedPsbt();
     });
-    group('get fee', () {
+    group('fee', () {
       test('Get final fee', () {
         expect(signedPsbt.fee, 423);
       });
     });
-    group('get sendingAmount', () {
+    group('sendingAmount', () {
       test('Get sending amount except fee and change', () {
         expect(signedPsbt.sendingAmount, 15000);
       });
     });
-    group('get addressType', () {
+    group('addressType', () {
       test('Resolve address type from psbt input fields', () {
         expect(unsignedPsbt.addressType, AddressType.p2wpkh);
       });
@@ -109,6 +109,158 @@ void main() {
         TaprootVault targetVault = TaprootVault.fromKeyStoreList(
             [keyStore1, keyStore2], [policy1, policy2]);
         expect(unsignedPsbt.isForVault(targetVault), false);
+      });
+
+      test('matches only the single signature vault that owns the key', () {
+        final SingleSignatureVault vaultA = MockFactory.createP2wpkhVault();
+        final SingleSignatureVault vaultB =
+            MockFactory.createP2wpkhVault(passphrase: 'vaultB');
+
+        final Transaction txForA = Transaction.forSinglePayment(
+            MockFactory.createUtxoList(count: 1),
+            vaultA.getAddress(1),
+            '${vaultA.derivationPath}/1/1',
+            15000,
+            3,
+            vaultA);
+        final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
+
+        expect(psbtForVaultA.isForVault(vaultA), isTrue);
+        expect(psbtForVaultA.isForVault(vaultB), isFalse);
+      });
+
+      test(
+          'distinguishes multisig vaults with same keys but different required signers',
+          () {
+        final SingleSignatureVault signerA =
+            MockFactory.createP2wpkhVault(passphrase: 'A');
+        final SingleSignatureVault signerB =
+            MockFactory.createP2wpkhVault(passphrase: 'B');
+        final SingleSignatureVault signerC =
+            MockFactory.createP2wpkhVault(passphrase: 'C');
+
+        final KeyStore keyStoreA =
+            KeyStore.fromSeed(signerA.keyStore.seed, AddressType.p2wsh);
+        final KeyStore keyStoreB =
+            KeyStore.fromSeed(signerB.keyStore.seed, AddressType.p2wsh);
+        final KeyStore keyStoreC =
+            KeyStore.fromSeed(signerC.keyStore.seed, AddressType.p2wsh);
+        final List<KeyStore> keyStores = [keyStoreA, keyStoreB, keyStoreC];
+
+        final MultisignatureVault vault2Of3 =
+            MultisignatureVault.fromKeyStoreList(keyStores, 2);
+        final MultisignatureVault vault3Of3 =
+            MultisignatureVault.fromKeyStoreList(keyStores, 3);
+
+        final Transaction txFor2Of3 = Transaction.forSinglePayment(
+            MockFactory.createUtxoList(
+                count: 1, derivationPath: "${vault2Of3.derivationPath}/0/0"),
+            vault2Of3.getAddress(1),
+            '${vault2Of3.derivationPath}/1/1',
+            15000,
+            3,
+            vault2Of3);
+        final Psbt psbtFor2Of3 = Psbt.fromTransaction(txFor2Of3, vault2Of3);
+
+        final Transaction txFor3Of3 = Transaction.forSinglePayment(
+            MockFactory.createUtxoList(
+                count: 1, derivationPath: "${vault3Of3.derivationPath}/0/0"),
+            vault3Of3.getAddress(1),
+            '${vault3Of3.derivationPath}/1/1',
+            15000,
+            3,
+            vault3Of3);
+        final Psbt psbtFor3Of3 = Psbt.fromTransaction(txFor3Of3, vault3Of3);
+
+        expect(psbtFor2Of3.isForVault(vault2Of3), isTrue);
+        expect(psbtFor2Of3.isForVault(vault3Of3), isFalse);
+        expect(psbtFor3Of3.isForVault(vault2Of3), isFalse);
+        expect(psbtFor3Of3.isForVault(vault3Of3), isTrue);
+      });
+
+      test('matches only the exact taproot vault parent and child key set', () {
+        final KeyStore parentA1 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA1')),
+            AddressType.p2tr);
+        final KeyStore parentA2 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA2')),
+            AddressType.p2tr);
+        final TaprootVault childA =
+            MockFactory.createBeneficiaryVault(passphrase: 'childA');
+        final Policy childPolicyA = InheritancePolicy.fromDescriptorAndLocktime(
+            childA.descriptor, 1767225600);
+        final TaprootVault vaultA =
+            TaprootVault.fromKeyStoreList([parentA1, parentA2], [childPolicyA]);
+        final TaprootVault vaultB =
+            TaprootVault.fromKeyStoreList([parentA1], [childPolicyA]);
+
+        const int addressIndex = 0;
+        final Utxo utxo = Utxo(
+            '0b5b43a8a09f1021bac4f4357c2808043b409231b42fc0143050ac37668a984b',
+            0,
+            21000,
+            "m/86'/1'/0'/0/$addressIndex");
+        final Transaction txForA = Transaction.forSinglePayment([utxo],
+            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
+        final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
+        final Transaction txForB = Transaction.forSinglePayment([utxo],
+            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
+        final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
+
+        expect(psbtForVaultA.isForVault(vaultA), isTrue);
+        expect(psbtForVaultA.isForVault(vaultB), isFalse);
+        expect(psbtForVaultB.isForVault(vaultA), isFalse);
+        expect(psbtForVaultB.isForVault(vaultB), isTrue);
+      });
+
+      test('only beneficiary locktime diff of taproot wallets', () {
+        final KeyStore parentA1 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA1')),
+            AddressType.p2tr);
+        final KeyStore parentA2 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA2')),
+            AddressType.p2tr);
+        final TaprootVault childA =
+            MockFactory.createBeneficiaryVault(passphrase: 'childA');
+        final Policy childPolicyA = InheritancePolicy.fromDescriptorAndLocktime(
+            childA.descriptor, 1767225600);
+        final Policy childPolicyB = InheritancePolicy.fromDescriptorAndLocktime(
+            childA.descriptor, 1767225601);
+        final TaprootVault vaultA =
+            TaprootVault.fromKeyStoreList([parentA1, parentA2], [childPolicyA]);
+        final TaprootVault vaultB =
+            TaprootVault.fromKeyStoreList([parentA1, parentA2], [childPolicyB]);
+
+        const int addressIndex = 0;
+        final Utxo utxo = Utxo(
+            '0b5b43a8a09f1021bac4f4357c2808043b409231b42fc0143050ac37668a984b',
+            0,
+            21000,
+            "m/86'/1'/0'/0/$addressIndex");
+        final Transaction txForA = Transaction.forSinglePayment([utxo],
+            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
+        final Transaction txForB = Transaction.forSinglePayment([utxo],
+            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
+
+        final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
+        final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
+
+        expect(psbtForVaultA.isForVault(vaultA), isTrue);
+        expect(psbtForVaultA.isForVault(vaultB), isFalse);
+        expect(psbtForVaultB.isForVault(vaultA), isFalse);
+        expect(psbtForVaultB.isForVault(vaultB), isTrue);
       });
     });
     group('serialize', () {
@@ -330,29 +482,29 @@ void main() {
       multisigInput = MockFactory.createP2wshUnsignedPsbt().inputs[0];
     });
 
-    group('get witnessUtxo', () {
+    group('witnessUtxo', () {
       test('Get witness utxo', () {
         expect(input.witnessUtxo!.serialize(),
             'a086010000000000160014b54542413855bca0894e855b7858cd07bca87b80');
       });
     });
-    group('get derivationPathList', () {
+    group('derivationPathList', () {
       test('Get derivation path list', () {
         expect(input.bip32Derivation![0].path, "m/84'/1'/0'/0/0");
         expect(multisigInput.bip32Derivation![0].path, "m/48'/1'/0'/2'/0/0");
       });
     });
-    group('get requiredSignature', () {
+    group('requiredSignature', () {
       test('Get number of required signature', () {
         expect(multisigInput.requiredSignature, 2);
       });
     });
-    group('get totalSigner', () {
+    group('totalSigner', () {
       test('Get number of total signer', () {
         expect(multisigInput.totalSigner, 3);
       });
     });
-    group('addSignature', () {
+    group('addPartialSig', () {
       test('Add signature into the psbt input', () {
         expect(
             () => multisigInput.addPartialSig(
@@ -362,34 +514,64 @@ void main() {
       });
     });
 
-    group('PsbtInput methods', () {
-      test('signatureList and signedCount reflect added signatures', () {
+    group('signatureList', () {
+      test('reflects added signatures', () {
         final PsbtInput mutableInput =
             MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
-        expect(mutableInput.signedCount, 0);
         expect(mutableInput.signatureList, isEmpty);
-
         mutableInput.addPartialSig(
             '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
             mutableInput.derivationPathList.first.publicKey);
-
-        expect(mutableInput.signedCount, 1);
         expect(mutableInput.signatureList.length, 1);
       });
+    });
 
-      test('taproot/musig mutators update each field', () {
+    group('signedCount', () {
+      test('reflects added signatures', () {
+        final PsbtInput mutableInput =
+            MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
+        expect(mutableInput.signedCount, 0);
+        mutableInput.addPartialSig(
+            '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
+            mutableInput.derivationPathList.first.publicKey);
+        expect(mutableInput.signedCount, 1);
+      });
+    });
+
+    group('addTapKeySig', () {
+      test('updates tapKeySig', () {
         final PsbtInput tapInput =
             MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
         tapInput.addTapKeySig('aa' * 64);
+        expect(tapInput.tapKeySig, isNotNull);
+      });
+    });
+
+    group('addTapScriptSig', () {
+      test('updates tapScriptSig', () {
+        final PsbtInput tapInput =
+            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
         tapInput.addTapScriptSig('bb' * 64, '02' + ('11' * 32));
+        expect(tapInput.tapScriptSig, isNotNull);
+      });
+    });
+
+    group('addMuSig2PubNonce', () {
+      test('updates muSig2PubNonces', () {
+        final PsbtInput tapInput =
+            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
         tapInput.addMuSig2PubNonce(
             '02' + ('22' * 32), '03' + ('33' * 32), '44' * 32, '55' * 66);
+        expect(tapInput.muSig2PubNonces, isNotNull);
+      });
+    });
+
+    group('addMuSig2PartialSig', () {
+      test('updates muSig2PartialSigs', () {
+        final PsbtInput tapInput =
+            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
         tapInput.addMuSig2PartialSig(
             '66' * 64, '02' + ('22' * 32), '03' + ('33' * 32), '44' * 32);
-
-        expect(tapInput.tapKeySig, isNotNull);
-        expect(tapInput.tapScriptSig, isNotNull);
-        expect(tapInput.muSig2PubNonces, isNotNull);
         expect(tapInput.muSig2PartialSigs, isNotNull);
       });
     });
@@ -436,17 +618,17 @@ void main() {
           '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';
       parsedPsbtOutput = Psbt.parse(psbtString).outputs[0];
     });
-    group('get derivationPath', () {
+    group('derivationPath', () {
       test('Get derivation path from psbt output', () {
         expect(parsedPsbtOutput.bip32Derivation!.path, "m/84'/1'/0'/0/0");
       });
     });
-    group('get amount', () {
+    group('amount', () {
       test('Get amount of psbt output', () {
         expect(multisigOutput.outAmount, 15000);
       });
     });
-    group('get outAddress', () {
+    group('outAddress', () {
       test('Get address of psbt output', () {
         expect(output.outAddress, 'tb1qcjx6kazryh26wzpr2p66w2s0f7nv29n07fx05a');
       });
@@ -466,18 +648,18 @@ void main() {
           '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';
       parsedPsbtOutput = Psbt.parse(psbtString).outputs[0];
     });
-    group('get publicKey', () {
+    group('publicKey', () {
       test('Get public key of bip32 derivation path', () {
         expect(parsedPsbtOutput.bip32Derivation!.publicKey,
             "0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824");
       });
     });
-    group('get masterFingerprint', () {
+    group('masterFingerprint', () {
       test('Get master fingerprint of bip32 derivation path', () {
         expect(parsedPsbtOutput.bip32Derivation!.masterFingerprint, "98C7D774");
       });
     });
-    group('get path', () {
+    group('path', () {
       test('Get derivation path', () {
         expect(parsedPsbtOutput.bip32Derivation!.path, "m/84'/1'/0'/0/0");
       });

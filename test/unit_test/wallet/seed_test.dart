@@ -13,7 +13,7 @@ void main() {
     setUpAll(() {
       seed = MockFactory.createP2wpkhVault().keyStore.seed;
     });
-    group('get mnemonic', () {
+    group('mnemonic', () {
       test('Get mnemonic from seed', () {
         expect(
             seed.mnemonic,
@@ -21,7 +21,7 @@ void main() {
                 'machine crack daughter fish credit glare raven fever tunnel delay fish record'));
       });
     });
-    group('get passphrase', () {
+    group('passphrase', () {
       test('Get passphrase from seed', () {
         Seed targetSeed = Seed.fromEntropy(
             Codec.decodeHex('00000000000000000000000000000000'),
@@ -31,7 +31,7 @@ void main() {
         expect(targetSeed.passphrase, utf8.encode('passphrase'));
       });
     });
-    group('get rootSeed', () {
+    group('rootSeed', () {
       test('Get root seed from seed', () {
         expect(Codec.encodeHex(seed.rootSeed),
             'ae6a87214c18fb91824b34b4e027f46d51061fdece2b3042ca51bf9b80f5d075fddb304fd9857ff1e147f9d0147bdc3116572657d9e2232540e6fc962a11a254');
@@ -106,7 +106,7 @@ void main() {
         expect(seed1 == seed2, true);
       });
     });
-    group('get hashCode', () {
+    group('hashCode', () {
       test('Get hash code', () {
         Seed targetSeed = Seed.fromEntropy(
             utf8.encode('000102030405060708090a0b0c0d0e0f'),
