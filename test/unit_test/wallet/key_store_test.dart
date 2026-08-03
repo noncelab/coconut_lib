@@ -574,6 +574,25 @@ void main() {
             map['extendedPublicKey'], watchOnly.extendedPublicKey.serialize());
         expect(map['seed'], isNull);
       });
+
+      test('excludes private key material from a signing key store', () {
+        final signing =
+            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        final jsonText = signing.toJson();
+        final map = jsonDecode(jsonText) as Map<String, dynamic>;
+        final hdWalletMap =
+            jsonDecode(map['hdWallet'] as String) as Map<String, dynamic>;
+
+        expect(map.containsKey('seed'), isFalse);
+        expect(hdWalletMap.containsKey('privateKey'), isFalse);
+        expect(jsonText, isNot(contains('machine crack daughter')));
+
+        final restored = KeyStore.fromJson(jsonText);
+        expect(restored.hasSeed, isFalse);
+        expect(restored.hdWallet.isNeutered(), isTrue);
+        expect(restored.extendedPublicKey.serialize(),
+            signing.extendedPublicKey.serialize());
+      });
     });
 
     group('wipeSeed', () {

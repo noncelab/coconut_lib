@@ -112,8 +112,8 @@ class KeyStore {
     HDWallet hdWallet = HDWallet.fromJson(map['hdWallet']);
     ExtendedPublicKey extendedPublicKey =
         ExtendedPublicKey.parse(map['extendedPublicKey']);
-    Seed? seed = map['seed'] != null ? Seed.fromJson(map['seed']) : null;
-    return KeyStore(fingerprint, hdWallet, extendedPublicKey, seed);
+    // Seed? seed = map['seed'] != null ? Seed.fromJson(map['seed']) : null;
+    return KeyStore(fingerprint, hdWallet, extendedPublicKey);
   }
 
   /// Get the private key of the key store using index.
@@ -600,13 +600,17 @@ class KeyStore {
     return Uint8List.fromList([...r1!, ...r2!]);
   }
 
-  ///@nodoc
+  /// Serializes this key store using public information only.
+  ///
+  /// Sensitive information such as the seed, mnemonic, passphrase, and private
+  /// keys is not included. A key store restored from this JSON is watch-only.
   String toJson() {
     return jsonEncode({
       'fingerprint': _masterFingerprint,
-      'hdWallet': _hdWallet.toJson(),
+      // 'hdWallet': _hdWallet.toJson(),
+      'hdWallet': _hdWallet.neutered().toJson(),
       'extendedPublicKey': _extendedPublicKey.serialize(),
-      if (_seed != null) 'seed': _seed!.toJson()
+      // if (_seed != null) 'seed': _seed!.toJson()
     });
   }
 
