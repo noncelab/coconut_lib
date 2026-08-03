@@ -423,5 +423,32 @@ void main() {
         expect(Codec.encodeHex(target.fingerprint), 'a56d9844');
       });
     });
+    group('wipePrivateKey', () {
+      test('zeroes private bytes and leaves a neutered wallet', () {
+        final privateKey = Codec.decodeHex(
+            '6a8c473974ffabbf2bac36adadd328baabf8b6d7a269b69bb808d80d64f17f41');
+        final wallet = HDWallet.fromPrivateKey(
+            privateKey,
+            Codec.decodeHex(
+                '4cfac59caf9be1428410291697177b2efc8373a29f7ad4a34694163686a4d20b'));
+        final publicKey = Codec.encodeHex(wallet.publicKey);
+
+        wallet.wipePrivateKey();
+
+        expect(privateKey, everyElement(0));
+        expect(wallet.privateKey, isNull);
+        expect(wallet.isNeutered(), isTrue);
+        expect(Codec.encodeHex(wallet.publicKey), publicKey);
+        expect(wallet.derive(0).isNeutered(), isTrue);
+        expect(() => wallet.deriveHardened(0), throwsException);
+        expect(() => wallet.getMasterPrivateKey(), throwsException);
+        expect(() => wallet.getPrivateKey(false, false), throwsStateError);
+        expect(() => wallet.signEcdsa(Uint8List(32)), throwsStateError);
+        expect(
+            (jsonDecode(wallet.toJson()) as Map<String, dynamic>)
+                .containsKey('privateKey'),
+            isFalse);
+      });
+    });
   });
 }

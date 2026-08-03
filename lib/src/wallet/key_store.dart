@@ -616,6 +616,15 @@ class KeyStore {
       secretNonce.fillRange(0, secretNonce.length, 0);
     }
     _muSig2SecretNonces.clear();
+
+    final HDWallet publicHdWallet = _hdWallet.neutered();
+    _hdWalletReceive.wipePrivateKey();
+    _hdWalletChange.wipePrivateKey();
+    _hdWallet.wipePrivateKey();
+    _hdWallet = publicHdWallet;
+    _hdWalletReceive = _hdWallet.derive(0);
+    _hdWalletChange = _hdWallet.derive(1);
+
     if (_seed != null) {
       _seed!.wipe();
       _seed = null;

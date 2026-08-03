@@ -577,12 +577,39 @@ void main() {
     });
 
     group('wipeSeed', () {
-      test('wipeSeed clears sensitive data', () {
+      test('clears private wallets and preserves public derivation', () {
         final KeyStore mutable =
             KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        final HDWallet accountWallet = mutable.hdWallet;
+        final HDWallet receiveWallet = mutable.getChildHdWallet(false);
+        final HDWallet changeWallet = mutable.getChildHdWallet(true);
+        final Uint8List accountPrivateKey = accountWallet.privateKey!;
+        final Uint8List receivePrivateKey = receiveWallet.privateKey!;
+        final Uint8List changePrivateKey = changeWallet.privateKey!;
+        final String receivePublicKey = mutable.getPublicKey(0);
+
         expect(mutable.hasSeed, true);
         mutable.wipeSeed();
+
         expect(mutable.hasSeed, false);
+        expect(accountPrivateKey, everyElement(0));
+        expect(receivePrivateKey, everyElement(0));
+        expect(changePrivateKey, everyElement(0));
+        expect(accountWallet.isNeutered(), isTrue);
+        expect(receiveWallet.isNeutered(), isTrue);
+        expect(changeWallet.isNeutered(), isTrue);
+        expect(mutable.hdWallet.isNeutered(), isTrue);
+        expect(mutable.getChildHdWallet(false).isNeutered(), isTrue);
+        expect(mutable.getChildHdWallet(true).isNeutered(), isTrue);
+        expect(mutable.getPublicKey(0), receivePublicKey);
+        expect(() => mutable.getPrivateKey(0), throwsException);
+        expect(() => accountWallet.signEcdsa(Uint8List(32)), throwsStateError);
+
+        final map = jsonDecode(mutable.toJson()) as Map<String, dynamic>;
+        final hdWalletMap =
+            jsonDecode(map['hdWallet'] as String) as Map<String, dynamic>;
+        expect(map.containsKey('seed'), isFalse);
+        expect(hdWalletMap.containsKey('privateKey'), isFalse);
       });
     });
 

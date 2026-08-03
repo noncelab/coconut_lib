@@ -127,6 +127,16 @@ class HDWallet {
   }
 
   /// @nodoc
+  void wipePrivateKey() {
+    if (_d == null) {
+      return;
+    }
+    _Q = Uint8List.fromList(publicKey);
+    _d!.fillRange(0, _d!.length, 0);
+    _d = null;
+  }
+
+  /// @nodoc
   String toBase58(int version) {
     Uint8List buffer = Uint8List(78);
     ByteData bytes = buffer.buffer.asByteData();
@@ -230,12 +240,16 @@ class HDWallet {
   }
 
   Uint8List signEcdsa(Uint8List message) {
+    if (privateKey == null) {
+      throw StateError('HDWallet: Private key is not available.');
+    }
     return Converter.rawToDerSignature(Ecc.signEcdsa(message, privateKey!));
   }
 
   Uint8List signSchnorr(Uint8List message, bool applyTweak,
       {Uint8List? auxRand, Uint8List? merkleRoot}) {
-    Uint8List secretKey = getPrivateKey(applyTweak, true, merkleRoot: merkleRoot);
+    Uint8List secretKey =
+        getPrivateKey(applyTweak, true, merkleRoot: merkleRoot);
     return Ecc.signSchnorr(message, secretKey, auxRand: auxRand);
   }
 
@@ -284,6 +298,9 @@ class HDWallet {
 
   Uint8List getPrivateKey(applyTweak, isXOnly,
       {Uint8List? merkleRoot, Uint8List? aggregatedPublicKey}) {
+    if (privateKey == null) {
+      throw StateError('HDWallet: Private key is not available.');
+    }
     Uint8List privKey;
     Uint8List pubKey;
 
