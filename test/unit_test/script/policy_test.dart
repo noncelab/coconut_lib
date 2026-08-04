@@ -44,13 +44,10 @@ void main() {
         expect((p as InheritancePolicy).locktime, inheritancePolicy.locktime);
       });
 
-      test('parses legacy older inheritance miniscript', () {
-        final String legacy =
+      test('rejects relative older inheritance miniscript', () {
+        final String relative =
             inheritancePolicy.toMiniscript().replaceFirst('after(', 'older(');
-        final Policy policy = Policy.fromMiniscript(legacy);
-        expect(policy, isA<InheritancePolicy>());
-        expect(
-            (policy as InheritancePolicy).locktime, inheritancePolicy.locktime);
+        expect(() => Policy.fromMiniscript(relative), throwsException);
       });
 
       test('throws for unsupported miniscript', () {

@@ -29,23 +29,15 @@ void main() {
         expect(wallet.policyList.length, greaterThan(0));
       });
 
-      test('legacy older descriptor preserves addresses and tapleaf hashes',
-          () {
+      test('rejects descriptor using relative older as inheritance policy', () {
         final TaprootVault vault = MockFactory.createP2trVaultWithPolicies();
         final String canonicalBody = vault.descriptor.split('#').first;
         final String legacyBody = canonicalBody.replaceAll('after(', 'older(');
         final String legacyDescriptor =
             '$legacyBody#${Checksum.getChecksum(legacyBody)}';
 
-        final canonical = TaprootWallet.fromDescriptor(vault.descriptor);
-        final legacy = TaprootWallet.fromDescriptor(legacyDescriptor);
-
-        expect(legacy.getAddress(0), canonical.getAddress(0));
-        expect(legacy.policyList.length, canonical.policyList.length);
-        for (int i = 0; i < legacy.policyList.length; i++) {
-          expect(legacy.policyList[i].getTapleafHash(0),
-              canonical.policyList[i].getTapleafHash(0));
-        }
+        expect(() => TaprootWallet.fromDescriptor(legacyDescriptor),
+            throwsException);
       });
 
       test('throws on non-taproot descriptor', () {

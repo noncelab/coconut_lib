@@ -77,9 +77,8 @@ class InheritancePolicy extends Policy {
   }
 
   static Policy fromMiniscript(String miniscript) {
-    final RegExpMatch? match =
-        RegExp(r'^and_v\(v:pk\((.+)\),(?:older|after)\((\d+)\)\)$')
-            .firstMatch(miniscript);
+    final RegExpMatch? match = RegExp(r'^and_v\(v:pk\((.+)\),after\((\d+)\)\)$')
+        .firstMatch(miniscript);
     if (match == null) {
       throw FormatException('Unsupported inheritance miniscript.');
     }

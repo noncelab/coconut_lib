@@ -53,18 +53,14 @@ void main() {
         expect((parsed as InheritancePolicy).locktime, original.locktime);
       });
 
-      test('maps legacy older and canonical after to the same CLTV policy', () {
+      test('rejects relative older expression', () {
         final InheritancePolicy original =
             InheritancePolicy.fromDescriptorAndLocktime(
                 beneficiaryVault.descriptor, 987654321);
         final String canonical = original.toMiniscript();
         final String legacy = canonical.replaceFirst('after(', 'older(');
-        final Policy fromAfter = InheritancePolicy.fromMiniscript(canonical);
-        final Policy fromOlder = InheritancePolicy.fromMiniscript(legacy);
-
-        expect(fromAfter.toScript(0).rawSerialize(),
-            fromOlder.toScript(0).rawSerialize());
-        expect(fromOlder.getTapleafHash(0), fromAfter.getTapleafHash(0));
+        expect(() => InheritancePolicy.fromMiniscript(legacy),
+            throwsFormatException);
       });
     });
 

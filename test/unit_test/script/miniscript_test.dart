@@ -133,11 +133,11 @@ void main() {
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
       });
 
-      test('older compiles to CLTV drop pattern', () {
+      test('older compiles to CSV drop pattern', () {
         final String fromMiniscript = Miniscript.older(9).serializeForScript();
         final String expected = Script(<dynamic>[
           Converter.intToLittleEndianBytes(9, 4),
-          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
         ]).rawSerialize();
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
@@ -170,11 +170,11 @@ void main() {
         final String expected = Script(<dynamic>[
           Codec.decodeHex(pkHex),
           ScriptOperationCode.getHex('OP_CHECKSIGVERIFY'),
-          Converter.intToLittleEndianBytes(7, 4),
-          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
           Codec.decodeHex(pkHex),
-          ScriptOperationCode.getHex('OP_CHECKSIG'),
+          ScriptOperationCode.getHex('OP_CHECKSIGVERIFY'),
+          Converter.intToLittleEndianBytes(7, 4),
+          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
+          ScriptOperationCode.getHex('OP_DROP'),
         ]).rawSerialize();
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
       });

@@ -174,8 +174,7 @@ class Miniscript {
         ];
 
       case MiniscriptOperation.older:
-        // Legacy compatibility: older was historically emitted for CLTV
-        // inheritance policies, so keep interpreting it as absolute locktime.
+        // Relative locktime (CSV).
         final n = value;
         if (n == null) {
           throw StateError('older node missing value');
@@ -183,7 +182,7 @@ class Miniscript {
         final nBytes = Converter.intToLittleEndianBytes(n, 4);
         return <dynamic>[
           nBytes,
-          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
         ];
 
@@ -194,12 +193,11 @@ class Miniscript {
         final left = children[0];
         final right = children[1];
 
-        // inheritance 패턴: and_v(v:pk, older|after) → timelock + DROP + pubkey + CHECKSIG
+        // inheritance 패턴: and_v(v:pk, after) → timelock + DROP + pubkey + CHECKSIG
         if (left.op == MiniscriptOperation.v &&
             left.children.length == 1 &&
             left.children[0].op == MiniscriptOperation.pk &&
-            (right.op == MiniscriptOperation.older ||
-                right.op == MiniscriptOperation.after)) {
+            right.op == MiniscriptOperation.after) {
           final pkHex = left.children[0].pubkeyHex;
           if (pkHex == null || pkHex.isEmpty) {
             throw StateError('and_v left v:pk missing pubkeyHex');
@@ -214,8 +212,6 @@ class Miniscript {
             throw StateError('and_v timelock node missing value');
           }
           final nBytes = Converter.intToLittleEndianBytes(timelock, 4);
-          // Both the canonical after form and the legacy older form map to
-          // the same CLTV tapscript to preserve existing wallet addresses.
           return <dynamic>[
             nBytes,
             ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
