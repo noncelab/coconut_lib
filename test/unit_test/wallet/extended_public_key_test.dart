@@ -102,6 +102,17 @@ void main() {
 
         expect(() => ExtendedPublicKey.parse(exPubText), throwsException);
       });
+
+      test('can skip network validation', () {
+        NetworkType.setNetworkType(NetworkType.regtest);
+        const String exPubText =
+            'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+
+        final ExtendedPublicKey parsed =
+            ExtendedPublicKey.parse(exPubText, validateNetwork: false);
+
+        expect(parsed.parentFingerprint, '7ef32bdb');
+      });
     });
     group('serialize', () {
       test('Serialise extended public key', () {

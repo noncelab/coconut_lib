@@ -29,7 +29,7 @@ class Descriptor {
       final List<KeyStore> keyStores = <KeyStore>[];
       for (int i = 0; i < _keyOriginExpressionList.length; i++) {
         final ExtendedPublicKey extendedPublicKey =
-            ExtendedPublicKey._parseWithoutNetworkValidation(getPublicKey(i));
+            ExtendedPublicKey.parse(getPublicKey(i), validateNetwork: false);
         keyStores.add(KeyStore(
           getFingerprint(i),
           HDWallet.fromPublicKey(

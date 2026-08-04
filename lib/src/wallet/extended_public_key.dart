@@ -80,16 +80,10 @@ class ExtendedPublicKey {
   // }
 
   /// Parse an extended public key.
-  factory ExtendedPublicKey.parse(String expub) {
-    return ExtendedPublicKey._parse(expub, validateNetwork: true);
-  }
-
-  factory ExtendedPublicKey._parseWithoutNetworkValidation(String expub) {
-    return ExtendedPublicKey._parse(expub, validateNetwork: false);
-  }
-
-  factory ExtendedPublicKey._parse(String expub,
-      {required bool validateNetwork}) {
+  ///
+  /// Network compatibility is validated by default. Set [validateNetwork] to
+  /// `false` when parsing independently of [NetworkType.currentNetworkType].
+  factory ExtendedPublicKey.parse(String expub, {bool validateNetwork = true}) {
     if (validateNetwork && NetworkType.currentNetworkType.isTestnet) {
       if (!expub.toLowerCase().startsWith("tpub") &&
           !expub.toLowerCase().startsWith("vpub") &&
