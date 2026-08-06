@@ -133,8 +133,14 @@ class Psbt {
         }
       }();
 
-  bool isForVault(WalletBase wallet) {
+  /// Returns whether this PSBT's identifying metadata matches [wallet].
+  ///
+  /// Multisignature inputs are also checked against the complete vault policy.
+  bool matchesVault(WalletBase wallet) {
     if (wallet is SingleSignatureVault) {
+      if (globalExtendedPublicKeyList.length != 1) {
+        return false;
+      }
       KeyStore keyStore = wallet.keyStore;
       if (keyStore.extendedPublicKey.serializeForPsbt(toXpub: true) !=
           globalExtendedPublicKeyList.first.publicKey) {
@@ -168,41 +174,329 @@ class Psbt {
       pubInPsbtList.sort();
       pubInVaultList.sort();
       if (pubInVaultList.join('') != pubInPsbtList.join('')) {
-        print('pubInVaultList: $pubInVaultList');
-        print('pubInPsbtList: $pubInPsbtList');
-        return false;
-      }
-      if (wallet.requiredSignature !=
-          inputs[0].witnessScript!.getRequiredSignature()) {
         return false;
       }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
-      return true;
+      try {
+        validateMultisignaturePolicy(wallet);
+        return true;
+      } catch (_) {
+        return false;
+      }
     } else if (wallet is TaprootVault) {
-      List<String> pubInVaultList = [];
+      final Set<String> pubInVaultList = <String>{};
       for (KeyStore keyStore in wallet.keyStoreList) {
-        pubInVaultList
-            .add(keyStore.extendedPublicKey.serializeForPsbt(toXpub: true));
+        pubInVaultList.add(
+            '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+            '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
       }
       for (Policy policy in wallet.policyList) {
         if (policy is InheritancePolicy) {
-          pubInVaultList.add(policy.beneficiaryKeyStore.extendedPublicKey
-              .serializeForPsbt(toXpub: true));
+          final KeyStore keyStore = policy.beneficiaryKeyStore;
+          pubInVaultList.add(
+              '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+              '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
         }
       }
       if (pubInVaultList.length != globalExtendedPublicKeyList.length) {
         return false;
       }
+      final Set<String> pubInPsbtList = globalExtendedPublicKeyList
+          .map((entry) =>
+              '${entry.publicKey}:${entry.masterFingerprint.toUpperCase()}:${entry.path}')
+          .toSet();
+      if (pubInPsbtList.length != globalExtendedPublicKeyList.length ||
+          !pubInPsbtList.containsAll(pubInVaultList)) {
+        return false;
+      }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
-      return true;
+      try {
+        validateTaprootPolicy(wallet);
+        return true;
+      } catch (_) {
+        return false;
+      }
     } else {
       return false;
+    }
+  }
+
+  /// Validates every P2WSH input against [wallet]'s complete multisig policy.
+  ///
+  /// Throws when an input's witness script, derivation metadata, or witness
+  /// UTXO does not match the script independently derived from the vault.
+  void validateMultisignaturePolicy(MultisignatureVault wallet) {
+    if (addressType != AddressType.p2wsh || inputs.isEmpty) {
+      throw Exception('PSBT is not a P2WSH multisignature transaction.');
+    }
+
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      final MultisignatureScript? witnessScript = input.witnessScript;
+      final List<DerivationPath>? derivations = input.bip32Derivation;
+      if (witnessUtxo == null || witnessScript == null || derivations == null) {
+        throw Exception(
+            'Input $inputIndex is missing multisignature policy metadata.');
+      }
+      if (derivations.length != wallet.keyStoreList.length) {
+        throw Exception('Input $inputIndex has an invalid signer set.');
+      }
+
+      final Set<String> paths = derivations.map((entry) => entry.path).toSet();
+      if (paths.length != 1) {
+        throw Exception('Input $inputIndex has inconsistent derivation paths.');
+      }
+      final String path = paths.single;
+      final List<String> vaultPathSegments = wallet.derivationPath.split('/');
+      final List<String> inputPathSegments = path.split('/');
+      final bool hasExpectedDepth =
+          inputPathSegments.length == vaultPathSegments.length + 2;
+      final bool hasExpectedPrefix = hasExpectedDepth &&
+          inputPathSegments.sublist(0, vaultPathSegments.length).join('/') ==
+              wallet.derivationPath;
+      final int? change = hasExpectedDepth
+          ? int.tryParse(inputPathSegments[vaultPathSegments.length])
+          : null;
+      final int? addressIndex = hasExpectedDepth
+          ? int.tryParse(inputPathSegments[vaultPathSegments.length + 1])
+          : null;
+      if (!hasExpectedPrefix ||
+          (change != 0 && change != 1) ||
+          addressIndex == null ||
+          addressIndex < 0) {
+        throw Exception('Input $inputIndex uses a path outside the vault.');
+      }
+
+      final String expectedWitnessScript = wallet.getWitnessScript(path);
+      if (witnessScript.rawSerialize() != expectedWitnessScript) {
+        throw Exception(
+            'Input $inputIndex does not match the vault multisig policy.');
+      }
+
+      final Set<String> expectedDerivations =
+          wallet.keyStoreList.map((keyStore) {
+        final String publicKey = keyStore.getPublicKey(
+            WalletUtility.getAccountIndexFromDerivationPath(path),
+            isChange: WalletUtility.isChangeFromDerivationPath(path));
+        return '${keyStore.masterFingerprint.toUpperCase()}:$path:$publicKey';
+      }).toSet();
+      final Set<String> actualDerivations = derivations
+          .map((entry) =>
+              '${entry.masterFingerprint.toUpperCase()}:${entry.path}:${entry.publicKey}')
+          .toSet();
+      if (actualDerivations.length != derivations.length ||
+          actualDerivations.length != expectedDerivations.length ||
+          !actualDerivations.containsAll(expectedDerivations)) {
+        throw Exception(
+            'Input $inputIndex derivations do not match the vault signer set.');
+      }
+
+      final String expectedScriptPubKey =
+          '0020${Hash.sha256fromHex(expectedWitnessScript)}';
+      if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
+        throw Exception(
+            'Input $inputIndex witness UTXO does not commit to the witness script.');
+      }
+
+      final Set<String> witnessPublicKeys = witnessScript
+          .getPublicKeys()
+          .map((key) => Codec.encodeHex(key))
+          .toSet();
+      for (final Signature signature in input.partialSig ?? <Signature>[]) {
+        if (!witnessPublicKeys.contains(signature.publicKey)) {
+          throw Exception(
+              'Input $inputIndex contains a signature outside the vault policy.');
+        }
+      }
+    }
+  }
+
+  /// Validates every Taproot input against [wallet]'s complete policy.
+  void validateTaprootPolicy(TaprootVault wallet) {
+    if (addressType != AddressType.p2tr || inputs.isEmpty) {
+      throw Exception('PSBT is not a Taproot transaction.');
+    }
+
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      final List<DerivationPath>? derivations = input.tapBip32Derivation;
+      if (witnessUtxo == null ||
+          derivations == null ||
+          derivations.isEmpty ||
+          input.internalKey == null) {
+        throw Exception(
+            'Input $inputIndex is missing Taproot policy metadata.');
+      }
+
+      final Set<String> paths = derivations.map((entry) => entry.path).toSet();
+      if (paths.length != 1) {
+        throw Exception('Input $inputIndex has inconsistent derivation paths.');
+      }
+      final String path = paths.single;
+      final List<int> childPath =
+          _validateWalletChildPath(path, wallet.derivationPath, inputIndex);
+      final bool isChange = childPath[0] == 1;
+      final int addressIndex = childPath[1];
+
+      final String expectedInternalKey = Codec.encodeHex(
+          wallet.getInternalKey(addressIndex, isChange: isChange));
+      if (input.internalKey != expectedInternalKey) {
+        throw Exception(
+            'Input $inputIndex has an invalid Taproot internal key.');
+      }
+      final String expectedMerkleRoot = Codec.encodeHex(
+          wallet.getMerkleRoot(addressIndex, isChange: isChange));
+      if ((input.tapMerkleRoot ?? '') != expectedMerkleRoot) {
+        throw Exception(
+            'Input $inputIndex has an invalid Taproot merkle root.');
+      }
+
+      final String expectedScriptPubKey =
+          '5120${Codec.encodeHex(wallet.getOutputKey(addressIndex, isChange: isChange))}';
+      if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
+        throw Exception(
+            'Input $inputIndex witness UTXO does not match the Taproot policy.');
+      }
+
+      if (input.tapLeafScript != null) {
+        _validateTaprootScriptPath(input, wallet, inputIndex, addressIndex,
+            isChange, path, derivations);
+      } else {
+        _validateTaprootKeyPath(input, wallet, inputIndex, addressIndex,
+            isChange, path, derivations);
+      }
+    }
+  }
+
+  static List<int> _validateWalletChildPath(
+      String path, String walletPath, int inputIndex) {
+    final List<String> walletSegments = walletPath.split('/');
+    final List<String> inputSegments = path.split('/');
+    if (inputSegments.length != walletSegments.length + 2 ||
+        inputSegments.sublist(0, walletSegments.length).join('/') !=
+            walletPath) {
+      throw Exception('Input $inputIndex uses a path outside the vault.');
+    }
+    final int? change = int.tryParse(inputSegments[walletSegments.length]);
+    final int? addressIndex =
+        int.tryParse(inputSegments[walletSegments.length + 1]);
+    if ((change != 0 && change != 1) ||
+        addressIndex == null ||
+        addressIndex < 0) {
+      throw Exception('Input $inputIndex uses an invalid vault child path.');
+    }
+    return <int>[change!, addressIndex];
+  }
+
+  static void _validateTaprootKeyPath(
+      PsbtInput input,
+      TaprootVault wallet,
+      int inputIndex,
+      int addressIndex,
+      bool isChange,
+      String path,
+      List<DerivationPath> derivations) {
+    final Set<String> expectedDerivations = wallet.keyStoreList.map((keyStore) {
+      final String publicKey = keyStore.getPublicKey(addressIndex,
+          isChange: isChange, isXOnly: true, applyTweak: false);
+      return '${keyStore.masterFingerprint.toUpperCase()}:$path:$publicKey';
+    }).toSet();
+    final Set<String> actualDerivations = derivations
+        .where((entry) => entry.leafHashes.isEmpty)
+        .map((entry) =>
+            '${entry.masterFingerprint.toUpperCase()}:${entry.path}:${entry.publicKey}')
+        .toSet();
+    if (derivations.any((entry) => entry.leafHashes.isNotEmpty) ||
+        actualDerivations.length != derivations.length ||
+        actualDerivations.length != expectedDerivations.length ||
+        !actualDerivations.containsAll(expectedDerivations)) {
+      throw Exception(
+          'Input $inputIndex derivations do not match the Taproot key policy.');
+    }
+
+    if (wallet.keyStoreList.length == 1) {
+      if (input.muSig2AggregatedPublicKey != null ||
+          input.muSig2ParticipantPubkeys != null) {
+        throw Exception('Input $inputIndex has unexpected MuSig2 metadata.');
+      }
+      return;
+    }
+
+    final List<String>? participants = input.muSig2ParticipantPubkeys;
+    final String? aggregatedPublicKey = input.muSig2AggregatedPublicKey;
+    final Set<String> expectedParticipants = wallet.keyStoreList
+        .map((keyStore) => keyStore.getPublicKey(addressIndex,
+            isChange: isChange, isXOnly: false, applyTweak: false))
+        .toSet();
+    if (participants == null ||
+        aggregatedPublicKey == null ||
+        participants.length != expectedParticipants.length ||
+        participants.toSet().length != participants.length ||
+        !participants.toSet().containsAll(expectedParticipants)) {
+      throw Exception('Input $inputIndex has an invalid MuSig2 signer set.');
+    }
+    final String expectedAggregatedPublicKey = Codec.encodeHex(
+        wallet.getAggregatedPublicKey(addressIndex,
+            isChange: isChange, isXOnly: false));
+    if (aggregatedPublicKey != expectedAggregatedPublicKey) {
+      throw Exception(
+          'Input $inputIndex has an invalid MuSig2 aggregated public key.');
+    }
+  }
+
+  static void _validateTaprootScriptPath(
+      PsbtInput input,
+      TaprootVault wallet,
+      int inputIndex,
+      int addressIndex,
+      bool isChange,
+      String path,
+      List<DerivationPath> derivations) {
+    final String actualScript = input.tapLeafScript!.rawSerialize();
+    final int policyIndex = wallet.policyList.indexWhere((policy) =>
+        policy.toScript(addressIndex, isChange: isChange).rawSerialize() ==
+        actualScript);
+    if (policyIndex < 0 ||
+        wallet.policyList[policyIndex] is! InheritancePolicy) {
+      throw Exception(
+          'Input $inputIndex uses an unknown Taproot script policy.');
+    }
+    final InheritancePolicy policy =
+        wallet.policyList[policyIndex] as InheritancePolicy;
+    final String expectedControlBlock =
+        wallet.getControlBlock(policyIndex, addressIndex, isChange: isChange);
+    if (input.controlBlock != expectedControlBlock) {
+      throw Exception(
+          'Input $inputIndex has an invalid Taproot control block.');
+    }
+
+    final String leafHash = Codec.encodeHex(
+        policy.getTapleafHash(addressIndex, isChange: isChange));
+    final KeyStore keyStore = policy.beneficiaryKeyStore;
+    final String publicKey = keyStore.getPublicKey(addressIndex,
+        isChange: isChange, isXOnly: true, applyTweak: false);
+    if (derivations.length != 1 ||
+        derivations.single.masterFingerprint != keyStore.masterFingerprint ||
+        derivations.single.path != path ||
+        derivations.single.publicKey != publicKey ||
+        derivations.single.leafHashes.length != 1 ||
+        derivations.single.leafHashes.single != leafHash) {
+      throw Exception(
+          'Input $inputIndex derivation does not match the Taproot script policy.');
+    }
+    for (final Signature signature in input.tapScriptSig ?? <Signature>[]) {
+      if (signature.publicKey != publicKey) {
+        throw Exception(
+            'Input $inputIndex contains a signature outside the Taproot script policy.');
+      }
     }
   }
 

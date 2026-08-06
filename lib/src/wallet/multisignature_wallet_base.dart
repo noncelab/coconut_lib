@@ -173,6 +173,11 @@ abstract class MultisignatureWalletBase extends WalletBase {
       throw Exception('Not enought psbt inputs or transaction inputs');
     }
 
+    if (this is! MultisignatureVault) {
+      throw Exception('Multisignature policy validation requires a vault.');
+    }
+    psbtObject.validateMultisignaturePolicy(this as MultisignatureVault);
+
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {

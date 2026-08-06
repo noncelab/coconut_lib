@@ -15,9 +15,9 @@ void main() {
 
     Psbt unsignedTx = MockFactory.createP2wpkhUnsignedPsbt();
 
-    expect(unsignedTx.isForVault(vault), true);
+    expect(unsignedTx.matchesVault(vault), true);
     expect(
-        unsignedTx.isForVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
+        unsignedTx.matchesVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
         false);
 
     expect(unsignedTx.addressType, AddressType.p2wpkh);

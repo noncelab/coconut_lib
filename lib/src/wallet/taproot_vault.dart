@@ -75,6 +75,7 @@ class TaprootVault extends TaprootWalletBase {
         psbtObject.unsignedTransaction!.inputs.length) {
       throw Exception('Not enought psbt inputs or transaction inputs');
     }
+    psbtObject.validateTaprootPolicy(this);
 
     List<TransactionOutput> utxoList = [];
     for (int j = 0; j < psbtObject.unsignedTransaction!.inputs.length; j++) {

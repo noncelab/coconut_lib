@@ -116,18 +116,18 @@ void main() {
       });
     });
 
-    group('isForVault', () {
+    group('matchesVault', () {
       test('Check if psbt is for single signature vault', () {
         SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        expect(unsignedPsbt.isForVault(vault), true);
+        expect(unsignedPsbt.matchesVault(vault), true);
         expect(
             unsignedPsbt
-                .isForVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
+                .matchesVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
             false);
       });
       test('Check if psbt is for multisignature vault', () {
         MultisignatureVault vault = MockFactory.createP2wshVault();
-        expect(MockFactory.createP2wshUnsignedPsbt().isForVault(vault), true);
+        expect(MockFactory.createP2wshUnsignedPsbt().matchesVault(vault), true);
         final vault1 = MockFactory.createP2wpkhVault(passphrase: 'A');
         final vault2 = MockFactory.createP2wpkhVault(passphrase: 'B');
         final vault3 = MockFactory.createP2wpkhVault(passphrase: 'C');
@@ -144,9 +144,9 @@ void main() {
         MultisignatureVault targetVault2 =
             MultisignatureVault.fromKeyStoreList([keyStore1, keyStore2], 2);
 
-        expect(MockFactory.createP2wshUnsignedPsbt().isForVault(targetVault1),
+        expect(MockFactory.createP2wshUnsignedPsbt().matchesVault(targetVault1),
             false);
-        expect(MockFactory.createP2wshUnsignedPsbt().isForVault(targetVault2),
+        expect(MockFactory.createP2wshUnsignedPsbt().matchesVault(targetVault2),
             false);
       });
       test('Check if psbt is for taproot vault', () {
@@ -189,11 +189,11 @@ void main() {
             childSingleVault.keyStoreList[0].seed);
         tx.setPolicy(childVault.getSpendablePolicy());
         Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
-        expect(unsignedPsbt.isForVault(vault), true);
-        expect(unsignedPsbt.isForVault(childVault), true);
+        expect(unsignedPsbt.matchesVault(vault), true);
+        expect(unsignedPsbt.matchesVault(childVault), true);
         TaprootVault targetVault = TaprootVault.fromKeyStoreList(
             [keyStore1, keyStore2], [policy1, policy2]);
-        expect(unsignedPsbt.isForVault(targetVault), false);
+        expect(unsignedPsbt.matchesVault(targetVault), false);
       });
 
       test('matches only the single signature vault that owns the key', () {
@@ -210,8 +210,8 @@ void main() {
             vaultA);
         final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
 
-        expect(psbtForVaultA.isForVault(vaultA), isTrue);
-        expect(psbtForVaultA.isForVault(vaultB), isFalse);
+        expect(psbtForVaultA.matchesVault(vaultA), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultB), isFalse);
       });
 
       test(
@@ -257,10 +257,10 @@ void main() {
             vault3Of3);
         final Psbt psbtFor3Of3 = Psbt.fromTransaction(txFor3Of3, vault3Of3);
 
-        expect(psbtFor2Of3.isForVault(vault2Of3), isTrue);
-        expect(psbtFor2Of3.isForVault(vault3Of3), isFalse);
-        expect(psbtFor3Of3.isForVault(vault2Of3), isFalse);
-        expect(psbtFor3Of3.isForVault(vault3Of3), isTrue);
+        expect(psbtFor2Of3.matchesVault(vault2Of3), isTrue);
+        expect(psbtFor2Of3.matchesVault(vault3Of3), isFalse);
+        expect(psbtFor3Of3.matchesVault(vault2Of3), isFalse);
+        expect(psbtFor3Of3.matchesVault(vault3Of3), isTrue);
       });
 
       test('matches only the exact taproot vault parent and child key set', () {
@@ -298,10 +298,10 @@ void main() {
             MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
         final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
 
-        expect(psbtForVaultA.isForVault(vaultA), isTrue);
-        expect(psbtForVaultA.isForVault(vaultB), isFalse);
-        expect(psbtForVaultB.isForVault(vaultA), isFalse);
-        expect(psbtForVaultB.isForVault(vaultB), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultA), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultB), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultA), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultB), isTrue);
       });
 
       test('only beneficiary locktime diff of taproot wallets', () {
@@ -342,10 +342,10 @@ void main() {
         final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
         final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
 
-        expect(psbtForVaultA.isForVault(vaultA), isTrue);
-        expect(psbtForVaultA.isForVault(vaultB), isFalse);
-        expect(psbtForVaultB.isForVault(vaultA), isFalse);
-        expect(psbtForVaultB.isForVault(vaultB), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultA), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultB), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultA), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultB), isTrue);
       });
     });
     group('serialize', () {

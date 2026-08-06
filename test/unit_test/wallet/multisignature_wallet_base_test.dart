@@ -99,6 +99,38 @@ void main() {
         expect(
             () => vault.addSignatureToPsbt(psbt.serialize()), throwsException);
       });
+
+      test('rejects a weaker multisig policy before signing', () {
+        final Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+        final MultisignatureScript weakerScript = MultisignatureScript.forP2wsh(
+            1,
+            vault.totalSigner,
+            psbt.inputs[1].witnessScript!.getPublicKeys());
+        psbt.toKeyMap()['inputs'][1]['05'] = weakerScript.rawSerialize();
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(vault), isFalse);
+        expect(() => vault.addSignatureToPsbt(forgedPsbt.serialize()),
+            throwsA(isA<Exception>()));
+        expect(
+            forgedPsbt.inputs.every((input) => input.signedCount == 0), isTrue);
+      });
+
+      test('rejects derivation metadata that does not match its public key',
+          () {
+        final Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+        final String derivationKey =
+            inputMap.keys.firstWhere((key) => key.startsWith('06'));
+        final String derivationValue = inputMap[derivationKey];
+        inputMap[derivationKey] =
+            '${derivationValue.substring(0, derivationValue.length - 8)}e7030000';
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(vault), isFalse);
+        expect(() => vault.addSignatureToPsbt(forgedPsbt.serialize()),
+            throwsA(isA<Exception>()));
+      });
     });
 
     group('MultisignatureWalletBase', () {

@@ -328,7 +328,7 @@ void main() {
           MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
 
-      expect(unsignedPsbt.isForVault(vault), isTrue);
+      expect(unsignedPsbt.matchesVault(vault), isTrue);
       expect(unsignedPsbt.addressType, AddressType.p2tr);
 
       Psbt signedPsbt =
@@ -658,11 +658,11 @@ void main() {
               utf8.encode(
                   'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
               passphrase: utf8.encode('A')));
-      expect(unsignedPsbt.isForVault(childVault), true);
-      expect(unsignedPsbt.isForVault(dadVault), true);
-      expect(unsignedPsbt.isForVault(momVault), true);
-      expect(unsignedPsbt.isForVault(vault), true);
-      expect(unsignedPsbt.isForVault(singleSignatureVault), false);
+      expect(unsignedPsbt.matchesVault(childVault), true);
+      expect(unsignedPsbt.matchesVault(dadVault), true);
+      expect(unsignedPsbt.matchesVault(momVault), true);
+      expect(unsignedPsbt.matchesVault(vault), true);
+      expect(unsignedPsbt.matchesVault(singleSignatureVault), false);
 
       // print(unsignedPsbt.serialize());
       Psbt signedPsbt =

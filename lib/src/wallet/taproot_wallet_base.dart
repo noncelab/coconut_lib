@@ -188,6 +188,11 @@ abstract class TaprootWalletBase extends WalletBase {
       throw Exception('Not enought psbt inputs or transaction inputs');
     }
 
+    if (this is! TaprootVault) {
+      throw Exception('Taproot policy validation requires a vault.');
+    }
+    psbtObject.validateTaprootPolicy(this as TaprootVault);
+
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {

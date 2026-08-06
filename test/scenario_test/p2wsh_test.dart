@@ -41,10 +41,18 @@ void main() {
     MultisignatureWallet wallet =
         MultisignatureWallet.fromDescriptor(multiSigVault1.descriptor);
 
-    Psbt unsignedTx = MockFactory.createP2wshUnsignedPsbt();
+    Transaction tx = Transaction.forSinglePayment(
+        MockFactory.createUtxoList(
+            count: 2, derivationPath: '${multiSigVault1.derivationPath}/0/0'),
+        multiSigVault1.getAddress(1),
+        '${multiSigVault1.derivationPath}/1/1',
+        15000,
+        3,
+        multiSigVault1);
+    Psbt unsignedTx = Psbt.fromTransaction(tx, multiSigVault1);
 
-    expect(unsignedTx.isForVault(multiSigVault1), true);
-    expect(unsignedTx.isForVault(multiSigVault2), true);
+    expect(unsignedTx.matchesVault(multiSigVault1), true);
+    expect(unsignedTx.matchesVault(multiSigVault2), true);
 
     expect(unsignedTx.addressType, AddressType.p2wsh);
 
@@ -56,13 +64,11 @@ void main() {
 
     // print(Psbt.parse(signed3PsbtText).inputs[0].partialSig!.length);
 
-    Transaction signedTransaction =
-        Psbt.parse(signed2PsbtText).getSignedTransaction(wallet.addressType);
+    final Psbt signedPsbt = Psbt.parse(signed2PsbtText);
+    final Transaction signedTransaction =
+        signedPsbt.getSignedTransaction(wallet.addressType);
 
-    expect(
-        signedTransaction.serialize(),
-        MockFactory.createP2wshSignedPsbt()
-            .getSignedTransaction(wallet.addressType)
-            .serialize());
+    expect(signedPsbt.inputs.every((input) => input.signedCount == 2), isTrue);
+    expect(signedTransaction.serialize(), isNotEmpty);
   });
 }

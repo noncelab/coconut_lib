@@ -232,6 +232,67 @@ void main() {
             ]),
             true);
       });
+
+      test('rejects a forged internal key in a later input', () {
+        final List<Utxo> utxos = MockFactory.createTaprootUtxoList(count: 2);
+        final Transaction tx = Transaction.forSinglePayment(utxos,
+            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 40000, 1, vault);
+        final Psbt psbt = Psbt.fromTransaction(tx, vault);
+        psbt.toKeyMap()['inputs'][1]['17'] = List.filled(32, '00').join();
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(vault), isFalse);
+        expect(() => forgedPsbt.validateTaprootPolicy(vault), throwsException);
+        expect(() => vault.addPublicNonce(forgedPsbt.serialize()),
+            throwsException);
+      });
+
+      test('rejects a forged MuSig2 aggregated public key', () {
+        final Utxo utxo = MockFactory.createTaprootUtxoList(count: 1).single;
+        final Transaction tx = Transaction.forSinglePayment([utxo],
+            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+        final Psbt psbt = Psbt.fromTransaction(tx, vault);
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+        final String aggregateKey =
+            inputMap.keys.firstWhere((key) => key.startsWith('1a'));
+        final String participants = inputMap.remove(aggregateKey);
+        inputMap['1a${participants.substring(0, 66)}'] = participants;
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(vault), isFalse);
+        expect(() => forgedPsbt.validateTaprootPolicy(vault), throwsException);
+      });
+
+      test('rejects a forged script-path control block', () {
+        final TaprootVault childVault =
+            MockFactory.createBeneficiaryVault(passphrase: 'C');
+        final TaprootVault beneficiaryVault =
+            TaprootVault.fromDescriptor(vault.descriptor);
+        beneficiaryVault
+            .bindSeedToBeneficiaryKeyStore(childVault.keyStoreList[0].seed);
+        final Utxo utxo = MockFactory.createTaprootUtxoList(count: 1).single;
+        final Transaction tx = Transaction.forSinglePayment(
+            [utxo],
+            MockFactory.reveiveAddress,
+            "m/86'/1'/0'/1/0",
+            20000,
+            1,
+            beneficiaryVault);
+        tx.setPolicy(beneficiaryVault.getSpendablePolicy());
+        final Psbt psbt = Psbt.fromTransaction(tx, beneficiaryVault);
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+        final String leafKey =
+            inputMap.keys.firstWhere((key) => key.startsWith('15'));
+        final String leafValue = inputMap.remove(leafKey);
+        final String forgedControlBlock =
+            '${leafKey.substring(2, leafKey.length - 2)}00';
+        inputMap['15$forgedControlBlock'] = leafValue;
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(beneficiaryVault), isFalse);
+        expect(() => forgedPsbt.validateTaprootPolicy(beneficiaryVault),
+            throwsException);
+      });
     });
 
     group('getCoordinatorBsms', () {
