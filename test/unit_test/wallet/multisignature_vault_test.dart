@@ -102,6 +102,16 @@ void main() {
           expect(vault.keyStoreList[i].seed, targetVault.keyStoreList[i].seed);
         }
       });
+
+      test('rejects a seed that does not match an account key', () {
+        final targetVault = MultisignatureVault.fromCoordinatorBsms(
+            vault.getCoordinatorBsms(),
+            addressType: AddressType.p2wsh);
+        final otherSeed = MockFactory.getCommonSeed(passphrase: 'different');
+
+        expect(
+            () => targetVault.bindSeedToKeyStore(otherSeed), throwsStateError);
+      });
     });
 
     group('toJson', () {

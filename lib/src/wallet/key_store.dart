@@ -33,6 +33,29 @@ class KeyStore {
   /// Check if the key store has seed.
   bool get hasSeed => _seed != null;
 
+  /// Whether this key store and [other] represent the same public BIP32 node.
+  bool hasSamePublicIdentity(KeyStore other) {
+    final ExtendedPublicKey current = extendedPublicKey;
+    final ExtendedPublicKey candidate = other.extendedPublicKey;
+
+    return masterFingerprint.toUpperCase() ==
+            other.masterFingerprint.toUpperCase() &&
+        _bytesEqual(current.publicKey, candidate.publicKey) &&
+        _bytesEqual(current.chainCode, candidate.chainCode) &&
+        current.depth == candidate.depth &&
+        current.index == candidate.index &&
+        current.parentFingerprint.toUpperCase() ==
+            candidate.parentFingerprint.toUpperCase();
+  }
+
+  static bool _bytesEqual(Uint8List first, Uint8List second) {
+    if (first.length != second.length) return false;
+    for (int i = 0; i < first.length; i++) {
+      if (first[i] != second[i]) return false;
+    }
+    return true;
+  }
+
   /// @nodoc
   KeyStore(this._masterFingerprint, this._hdWallet, this._extendedPublicKey,
       [this._seed])

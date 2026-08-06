@@ -62,6 +62,24 @@ void main() {
         expect(watchOnly.hasSeed, isFalse);
       });
     });
+    group('hasSamePublicIdentity', () {
+      test('matches a watch-only key store for the same account key', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+
+        expect(keyStore.hasSamePublicIdentity(watchOnly), true);
+      });
+
+      test('rejects another account key with the same fingerprint', () {
+        final other = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'different'),
+            AddressType.p2wpkh);
+        final fingerprintCollision = KeyStore(keyStore.masterFingerprint,
+            other.hdWallet, other.extendedPublicKey);
+
+        expect(keyStore.hasSamePublicIdentity(fingerprintCollision), false);
+      });
+    });
     group('fromSeed', () {
       test('Generate key store from seed', () {
         expect(keyStore, isA<KeyStore>());

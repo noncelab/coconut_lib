@@ -73,17 +73,17 @@ class MultisignatureVault extends MultisignatureWalletBase {
     KeyStore keyStoreFromSeed =
         KeyStore.fromSeed(seed, addressType, accountIndex: accountIndex);
 
-    for (KeyStore keyStore in keyStoreList) {
-      if (keyStore.masterFingerprint == keyStoreFromSeed.masterFingerprint) {
-        final int index = _keyStoreList.indexOf(keyStore);
-        final List<KeyStore> updatedKeyStores = List.of(_keyStoreList);
-        updatedKeyStores[index] = keyStoreFromSeed;
-        MultisignatureWalletBase._validateSignerSet(
-            requiredSignature, updatedKeyStores);
-        _keyStoreList[index] = keyStoreFromSeed;
-        return;
-      }
+    final int index = _keyStoreList.indexWhere(
+        (keyStore) => keyStore.hasSamePublicIdentity(keyStoreFromSeed));
+    if (index < 0) {
+      throw StateError('Seed does not match any key store.');
     }
+
+    final List<KeyStore> updatedKeyStores = List.of(_keyStoreList);
+    updatedKeyStores[index] = keyStoreFromSeed;
+    MultisignatureWalletBase._validateSignerSet(
+        requiredSignature, updatedKeyStores);
+    _keyStoreList[index] = keyStoreFromSeed;
   }
 
   /// Get Json string of the multisignature vault.

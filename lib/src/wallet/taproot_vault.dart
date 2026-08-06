@@ -176,12 +176,12 @@ class TaprootVault extends TaprootWalletBase {
     KeyStore keyStoreFromSeed =
         KeyStore.fromSeed(seed, addressType, accountIndex: accountIndex);
 
-    for (KeyStore keyStore in keyStoreList) {
-      if (keyStore.masterFingerprint == keyStoreFromSeed.masterFingerprint) {
-        keyStoreList[keyStoreList.indexOf(keyStore)] = keyStoreFromSeed;
-        return;
-      }
+    final int index = keyStoreList.indexWhere(
+        (keyStore) => keyStore.hasSamePublicIdentity(keyStoreFromSeed));
+    if (index < 0) {
+      throw StateError('Seed does not match any key store.');
     }
+    keyStoreList[index] = keyStoreFromSeed;
   }
 
   void bindSeedToBeneficiaryKeyStore(Seed seed, {int accountIndex = 0}) {
@@ -189,13 +189,14 @@ class TaprootVault extends TaprootWalletBase {
         KeyStore.fromSeed(seed, AddressType.p2tr, accountIndex: accountIndex);
     for (Policy policy in policyList) {
       if (policy is InheritancePolicy) {
-        if (policy.beneficiaryKeyStore.masterFingerprint ==
-            keyStoreFromSeed.masterFingerprint) {
+        if (policy.beneficiaryKeyStore
+            .hasSamePublicIdentity(keyStoreFromSeed)) {
           policy.beneficiaryKeyStore = keyStoreFromSeed;
           return;
         }
       }
     }
+    throw StateError('Seed does not match any beneficiary key store.');
   }
 
   Policy getSpendablePolicy() {

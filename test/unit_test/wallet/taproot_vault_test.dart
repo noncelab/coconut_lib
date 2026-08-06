@@ -116,11 +116,21 @@ void main() {
     });
 
     group('bindSeedToBeneficiaryKeyStore', () {
-      test('does not throw when no match', () {
+      test('throws when no beneficiary account key matches', () {
         final vault = MockFactory.createP2trVaultWithPolicies();
         final otherSeed = MockFactory.getCommonSeed(passphrase: 'not-matching');
         expect(() => vault.bindSeedToBeneficiaryKeyStore(otherSeed),
-            returnsNormally);
+            throwsStateError);
+      });
+    });
+
+    group('bindSeedToKeyStore', () {
+      test('throws when no account key matches', () {
+        final source = MockFactory.createP2trKeyPathSpendingVault();
+        final watchOnly = TaprootVault.fromDescriptor(source.descriptor);
+        final otherSeed = MockFactory.getCommonSeed(passphrase: 'not-matching');
+
+        expect(() => watchOnly.bindSeedToKeyStore(otherSeed), throwsStateError);
       });
     });
 
