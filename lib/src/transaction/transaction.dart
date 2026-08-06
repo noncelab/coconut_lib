@@ -334,20 +334,6 @@ class Transaction {
     }
   }
 
-  /// Get the length of a variable integer based on its first byte
-  static int _getVariableIntegerLength(Uint8List bytes, int offset) {
-    int firstByte = bytes[offset];
-    if (firstByte < 0xfd) {
-      return 1;
-    } else if (firstByte == 0xfd) {
-      return 3;
-    } else if (firstByte == 0xfe) {
-      return 5;
-    } else {
-      return 9;
-    }
-  }
-
   static Uint8List _parseLocktime(Uint8List txBytes, int offset) {
     const locktimeLength = 4;
     if (offset + locktimeLength > txBytes.length) {
@@ -370,7 +356,7 @@ class Transaction {
     }
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
     //print(numInputs);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
     //print(Converter.bytesToHex(txBytes.sublist(offset)));
     for (int i = 0; i < numInputs; i++) {
@@ -381,7 +367,7 @@ class Transaction {
       offset += size;
     }
     int numOutputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
       TransactionOutput output =
@@ -393,11 +379,11 @@ class Transaction {
     //witness
     for (TransactionInput txIn in inputs) {
       int numItems = Codec.decodeVariableInteger(txBytes, offset);
-      offset += _getVariableIntegerLength(txBytes, offset);
+      offset += Codec.getVariableIntegerLength(txBytes, offset);
       List items = [];
       for (int i = 0; i < numItems; i++) {
         int itemLen = Codec.decodeVariableInteger(txBytes, offset);
-        offset += _getVariableIntegerLength(txBytes, offset);
+        offset += Codec.getVariableIntegerLength(txBytes, offset);
         if (itemLen == 0) {
           items.add(0);
         } else {
@@ -428,7 +414,7 @@ class Transaction {
     offset += 4;
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
     //print("numInputs : $numInputs");
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
     for (int i = 0; i < numInputs; i++) {
       TransactionInput input =
@@ -443,7 +429,7 @@ class Transaction {
     }
 
     int numOutputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     // print("numOutputs : $numOutputs");
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
@@ -465,7 +451,7 @@ class Transaction {
     offset += 4;
 
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
 
     for (int i = 0; i < numInputs; i++) {
@@ -482,7 +468,7 @@ class Transaction {
     }
 
     int numOutputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
       TransactionOutput output =
@@ -1122,7 +1108,8 @@ class Transaction {
     }
 
     int fee = (_estimateVirtualByteForWallet(this, wallet,
-                requiredSignature: requiredSignature, totalSigner: totalSigner) *
+                requiredSignature: requiredSignature,
+                totalSigner: totalSigner) *
             feeRate)
         .ceil();
     int changeAmount = totalInputAmount - _getTotalSendingAmount() - fee;
@@ -1183,7 +1170,8 @@ class Transaction {
     }
     _utxoList.remove(utxoToRemove);
     int fee = (_estimateVirtualByteForWallet(this, wallet,
-                requiredSignature: requiredSignature, totalSigner: totalSigner) *
+                requiredSignature: requiredSignature,
+                totalSigner: totalSigner) *
             feeRate)
         .ceil();
     int changeAmount = totalInputAmount - _getTotalSendingAmount() - fee;
@@ -1201,7 +1189,8 @@ class Transaction {
   void updateFeeRate(double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
     int fee = (_estimateVirtualByteForWallet(this, wallet,
-                requiredSignature: requiredSignature, totalSigner: totalSigner) *
+                requiredSignature: requiredSignature,
+                totalSigner: totalSigner) *
             feeRate)
         .ceil();
 

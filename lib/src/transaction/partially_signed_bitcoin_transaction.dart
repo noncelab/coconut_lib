@@ -215,13 +215,10 @@ class Psbt {
     psbtMap["global"].keys.forEach((key) {
       if (key.startsWith('01')) {
         String publicKey = key.substring(2);
-        String masterFingerprint = psbtMap["global"][key].substring(0, 8);
-        String derivationPath = _parseDerivationPath(
-            Codec.decodeHex(psbtMap["global"][key].substring(8)));
-        extendedPublicKeyList
-            .add(DerivationPath(publicKey, masterFingerprint, derivationPath));
-        globalExtendedPublicKeyList
-            .add(DerivationPath(publicKey, masterFingerprint, derivationPath));
+        final DerivationPath derivation =
+            DerivationPath.fromBip32(publicKey, psbtMap["global"][key]);
+        extendedPublicKeyList.add(derivation);
+        globalExtendedPublicKeyList.add(derivation);
       }
       if (key.startsWith('fc07636f636f6e757401')) {
         isFromCoconut = true;
@@ -265,11 +262,8 @@ class Psbt {
         // 06 : BIP32_DERIVATION
         if (key.startsWith('06')) {
           String publicKey = key.substring(2);
-          String masterFingerprint = psbtMap["inputs"][i][key].substring(0, 8);
-          String derivationPath = _parseDerivationPath(
-              Codec.decodeHex(psbtMap["inputs"][i][key].substring(8)));
           inputDerivationPathList.add(
-              DerivationPath(publicKey, masterFingerprint, derivationPath));
+              DerivationPath.fromBip32(publicKey, psbtMap["inputs"][i][key]));
         }
         // 02 : PARTIAL_SIG
         if (key.startsWith('02')) {
@@ -322,30 +316,8 @@ class Psbt {
 
         // 22 : TAP_BIP32_DERIVATION
         if (key.startsWith('16')) {
-          String publicKey = key.substring(2);
-          Uint8List valueBytes = Codec.decodeHex(psbtMap["inputs"][i][key]);
-          int offset = 0;
-
-          String numberOfTapleafHash =
-              Codec.encodeHex(valueBytes.sublist(offset, offset + 1));
-          List<String> tapleafHashList = [];
-          for (int i = 0; i < int.parse(numberOfTapleafHash); i++) {
-            String tapleafHash =
-                Codec.encodeHex(valueBytes.sublist(offset, offset + 32));
-            tapleafHashList.add(tapleafHash);
-            offset += 32;
-          }
-          offset += 1;
-          String masterFingerprint =
-              Codec.encodeHex(valueBytes.sublist(offset, offset + 4));
-          offset += 4;
-
-          String derivationPath = _parseDerivationPath(
-              valueBytes.sublist(offset, valueBytes.length));
-          tapBip32Derivation.add(DerivationPath(
-              publicKey, masterFingerprint, derivationPath,
-              numberOfTapleafHash: numberOfTapleafHash,
-              tapleafHashList: tapleafHashList));
+          tapBip32Derivation.add(DerivationPath.fromTaproot(
+              key.substring(2), psbtMap["inputs"][i][key]));
         }
 
         // 24 : TAP_MERKLE_ROOT
@@ -447,6 +419,8 @@ class Psbt {
       script = unsignedTransaction!.outputs[i].scriptPubKey;
 
       final List<DerivationPath> outputDerivationPaths = <DerivationPath>[];
+      final List<DerivationPath> outputTaprootDerivationPaths =
+          <DerivationPath>[];
       MultisignatureScript? witnessScript;
       psbtMap["outputs"][i].keys.forEach((key) {
         if (key.startsWith('01')) {
@@ -456,14 +430,15 @@ class Psbt {
           witnessScript = MultisignatureScript.parse(size + script);
         } else if (key.startsWith('02')) {
           String publicKey = key.substring(2);
-          String masterFingerprint = psbtMap["outputs"][i][key].substring(0, 8);
-          String derivationPath = _parseDerivationPath(
-              Codec.decodeHex(psbtMap["outputs"][i][key].substring(8)));
           outputDerivationPaths.add(
-              DerivationPath(publicKey, masterFingerprint, derivationPath));
+              DerivationPath.fromBip32(publicKey, psbtMap["outputs"][i][key]));
+        } else if (key.startsWith('07')) {
+          outputTaprootDerivationPaths.add(DerivationPath.fromTaproot(
+              key.substring(2), psbtMap["outputs"][i][key]));
         }
       });
       outputs.add(PsbtOutput(outputDerivationPaths, amount, script,
+          tapBip32Derivations: outputTaprootDerivationPaths,
           witnessScript: witnessScript));
     }
   }
@@ -857,17 +832,45 @@ class Psbt {
                     _serializeDerivationPath(tx.changeAddressDerivationPath!));
           }
         } else if (wallet is TaprootWalletBase) {
-          for (KeyStore keyStore in taprootWallet.keyStoreList) {
-            String publicKey = keyStore.getPublicKey(
-                WalletUtility.getAccountIndexFromDerivationPath(
-                    tx.changeAddressDerivationPath!),
-                isChange: WalletUtility.isChangeFromDerivationPath(
-                    tx.changeAddressDerivationPath!));
+          final String derivationPath = tx.outputs[i].derivationPath!;
+          final int addressIndex =
+              WalletUtility.getAccountIndexFromDerivationPath(derivationPath);
+          final bool isChange =
+              WalletUtility.isChangeFromDerivationPath(derivationPath);
+          final Map<String, KeyStore> keyStoresByPublicKey =
+              <String, KeyStore>{};
+          final Map<String, List<String>> leafHashesByPublicKey =
+              <String, List<String>>{};
 
-            String fingerPrint = keyStore.masterFingerprint;
-            outputData[bip32DerivationKeyType + publicKey] = fingerPrint +
-                Codec.encodeHex(
-                    _serializeDerivationPath(tx.changeAddressDerivationPath!));
+          for (KeyStore keyStore in taprootWallet.keyStoreList) {
+            final String xOnlyPublicKey = keyStore.getPublicKey(addressIndex,
+                isChange: isChange, isXOnly: true);
+            keyStoresByPublicKey[xOnlyPublicKey] = keyStore;
+            leafHashesByPublicKey.putIfAbsent(xOnlyPublicKey, () => <String>[]);
+          }
+
+          for (final Policy policy in taprootWallet.policyList) {
+            if (policy is! InheritancePolicy) continue;
+            final KeyStore keyStore = policy.beneficiaryKeyStore;
+            final String xOnlyPublicKey = keyStore.getPublicKey(addressIndex,
+                isChange: isChange, isXOnly: true);
+            keyStoresByPublicKey[xOnlyPublicKey] = keyStore;
+            leafHashesByPublicKey
+                .putIfAbsent(xOnlyPublicKey, () => <String>[])
+                .add(Codec.encodeHex(
+                    policy.getTapleafHash(addressIndex, isChange: isChange)));
+          }
+
+          final String tapBip32DerivationKeyType =
+              getKeyType(outputKeyType, 'TAP_BIP32_DERIVATION');
+          for (final MapEntry<String, KeyStore> entry
+              in keyStoresByPublicKey.entries) {
+            final List<String> leafHashes = leafHashesByPublicKey[entry.key]!;
+            outputData[tapBip32DerivationKeyType + entry.key] =
+                '${Codec.encodeHex(Codec.encodeVariableInteger(leafHashes.length))}'
+                '${leafHashes.join()}'
+                '${entry.value.masterFingerprint}'
+                '${Codec.encodeHex(_serializeDerivationPath(derivationPath))}';
           }
         }
       }
@@ -919,14 +922,14 @@ class Psbt {
     // print(' ---> GLOBAL ---');
     while (true) {
       int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-      offset += _getOffset(psbtBytes[offset]);
+      offset += Codec.getVariableIntegerLength(psbtBytes, offset);
       if (keyLen == 0) {
         break;
       }
       Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
       offset += keyLen;
       int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-      offset += _getOffset(psbtBytes[offset]);
+      offset += Codec.getVariableIntegerLength(psbtBytes, offset);
       Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
       offset += valueLen;
       globalMap[Codec.encodeHex(key)] = Codec.encodeHex(value);
@@ -944,14 +947,14 @@ class Psbt {
       Map<String, String> inputData = {};
       while (true) {
         int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += _getOffset(psbtBytes[offset]);
+        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
         if (keyLen == 0) {
           break;
         }
         Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
         offset += keyLen;
         int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += _getOffset(psbtBytes[offset]);
+        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
         Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
         offset += valueLen;
         inputData[Codec.encodeHex(key)] = Codec.encodeHex(value);
@@ -965,14 +968,14 @@ class Psbt {
       while (true) {
         int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
         // print(' -key len ${keyLen.toString()}-');
-        offset += _getOffset(psbtBytes[offset]);
+        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
         if (keyLen == 0) {
           break;
         }
         Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
         offset += keyLen;
         int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += _getOffset(psbtBytes[offset]);
+        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
         Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
         offset += valueLen;
         outputData[Codec.encodeHex(key)] = Codec.encodeHex(value);
@@ -987,27 +990,16 @@ class Psbt {
     return inputs[inputIndex].getAggregatedPublicNonce();
   }
 
-  static int _getOffset(int prefix) {
-    if (prefix == 0xfd) {
-      return 3;
-    } else if (prefix == 0xfe) {
-      return 5;
-    } else if (prefix == 0xff) {
-      return 9;
-    }
-    return 1;
-  }
-
   static List<String> _parseScriptWitness(String witnessHex) {
     Uint8List witnessBytes = Codec.decodeHex(witnessHex);
     int offset = 0;
     int numItems = Codec.decodeVariableInteger(witnessBytes, offset);
-    offset += _getOffset(witnessBytes[offset]);
+    offset += Codec.getVariableIntegerLength(witnessBytes, offset);
 
     List<String> witnessList = [];
     for (int j = 0; j < numItems; j++) {
       int itemLen = Codec.decodeVariableInteger(witnessBytes, offset);
-      offset += _getOffset(witnessBytes[offset]);
+      offset += Codec.getVariableIntegerLength(witnessBytes, offset);
       if (itemLen == 0) {
         witnessList.add('00');
       } else {
@@ -1045,29 +1037,6 @@ class Psbt {
       serializedPath.addAll(Converter.intToLittleEndianBytes(index, 4));
     }
     return Uint8List.fromList(serializedPath);
-  }
-
-  /// @nodoc
-  static String _parseDerivationPath(Uint8List serializedPath) {
-    if (serializedPath.length % 4 != 0) {
-      throw ArgumentError('Serialized path length must be a multiple of 4');
-    }
-
-    List<String> pathSegments = ['m'];
-
-    for (int i = 0; i < serializedPath.length; i += 4) {
-      Uint8List valueBytes = serializedPath.sublist(i, i + 4);
-      int value = Converter.littleEndianToInt(valueBytes);
-
-      if (value & 0x80000000 != 0) {
-        value &= ~0x80000000;
-        pathSegments.add('$value\'');
-      } else {
-        pathSegments.add('$value');
-      }
-    }
-
-    return pathSegments.join('/');
   }
 
   /// Get the transaction if all inputs are signed.
@@ -1467,34 +1436,41 @@ class PsbtInput {
 /// @nodoc
 class PsbtOutput {
   final List<DerivationPath> bip32Derivations; //0x02
+  final List<DerivationPath> tapBip32Derivations; //0x07
   final int? outAmount; //0x03
   final ScriptPublicKey? outScript; //0x04
   MultisignatureScript? witnessScript; //0x01
 
   PsbtOutput(
       List<DerivationPath> bip32Derivations, this.outAmount, this.outScript,
-      {this.witnessScript})
-      : bip32Derivations = List.unmodifiable(bip32Derivations);
+      {List<DerivationPath> tapBip32Derivations = const [], this.witnessScript})
+      : bip32Derivations = List.unmodifiable(bip32Derivations),
+        tapBip32Derivations = List.unmodifiable(tapBip32Derivations);
 
   String get outAddress => outScript!.getAddress();
 
   /// Returns whether this output is verified as change for [wallet].
   bool isChange(WalletBase wallet) {
+    final List<String> derivationPaths = wallet.addressType.isTaproot
+        ? tapBip32Derivations.map((derivation) => derivation.path).toList()
+        : bip32Derivations.map((derivation) => derivation.path).toList();
     return isOwnedBy(wallet) &&
-        bip32Derivations.isNotEmpty &&
-        bip32Derivations.every((derivation) => derivation.isChange);
+        derivationPaths.isNotEmpty &&
+        derivationPaths.every(WalletUtility.isChangeFromDerivationPath);
   }
 
   /// Returns whether this output belongs to [wallet].
   bool isOwnedBy(WalletBase wallet) {
-    if (outScript == null || bip32Derivations.isEmpty) {
+    final List<String> derivationPaths = wallet.addressType.isTaproot
+        ? tapBip32Derivations.map((derivation) => derivation.path).toList()
+        : bip32Derivations.map((derivation) => derivation.path).toList();
+    if (outScript == null || derivationPaths.isEmpty) {
       return false;
     }
 
     final List<String> walletPathSegments = wallet.derivationPath.split('/');
 
-    for (final DerivationPath derivation in bip32Derivations) {
-      final String path = derivation.path;
+    for (final String path in derivationPaths) {
       final List<String> pathSegments = path.split('/');
       final bool isDirectAddressPath = pathSegments.length ==
               walletPathSegments.length + 2 &&
@@ -1529,15 +1505,82 @@ class DerivationPath {
   final String _publicKey;
   final String _masterFingerprint;
   final String _path;
-  final String? numberOfTapleafHash;
-  final List<String>? tapleafHashList;
+  final List<String> _leafHashes;
 
   DerivationPath(this._publicKey, this._masterFingerprint, this._path,
-      {this.numberOfTapleafHash, this.tapleafHashList});
+      {List<String> leafHashes = const []})
+      : _leafHashes = List.unmodifiable(leafHashes);
+
+  factory DerivationPath.fromBip32(String publicKey, String value) {
+    final Uint8List valueBytes = Codec.decodeHex(value);
+    if (valueBytes.length < 4 || (valueBytes.length - 4) % 4 != 0) {
+      throw const FormatException('Invalid BIP32_DERIVATION value');
+    }
+
+    final String masterFingerprint = Codec.encodeHex(valueBytes.sublist(0, 4));
+    final String path = _parsePath(valueBytes.sublist(4));
+    return DerivationPath(publicKey, masterFingerprint, path);
+  }
+
+  factory DerivationPath.fromTaproot(String xOnlyPublicKey, String value) {
+    if (xOnlyPublicKey.length != 64) {
+      throw const FormatException(
+          'TAP_BIP32_DERIVATION requires a 32-byte X-only key');
+    }
+
+    final Uint8List valueBytes = Codec.decodeHex(value);
+    if (valueBytes.isEmpty) {
+      throw const FormatException('TAP_BIP32_DERIVATION value is empty');
+    }
+
+    int offset = Codec.getVariableIntegerLength(valueBytes, 0);
+    if (valueBytes.length < offset) {
+      throw const FormatException('Invalid TAP_BIP32_DERIVATION CompactSize');
+    }
+    final int leafHashCount = Codec.decodeVariableInteger(valueBytes, 0);
+    final int metadataLength = leafHashCount * 32 + 4;
+    if (valueBytes.length < offset + metadataLength ||
+        (valueBytes.length - offset - metadataLength) % 4 != 0) {
+      throw const FormatException('Invalid TAP_BIP32_DERIVATION value');
+    }
+
+    final List<String> leafHashes = <String>[];
+    for (int i = 0; i < leafHashCount; i++) {
+      leafHashes.add(Codec.encodeHex(valueBytes.sublist(offset, offset + 32)));
+      offset += 32;
+    }
+
+    final String masterFingerprint =
+        Codec.encodeHex(valueBytes.sublist(offset, offset + 4));
+    offset += 4;
+    final String path = _parsePath(valueBytes.sublist(offset));
+    return DerivationPath(xOnlyPublicKey, masterFingerprint, path,
+        leafHashes: leafHashes);
+  }
+
+  static String _parsePath(Uint8List serializedPath) {
+    if (serializedPath.length % 4 != 0) {
+      throw const FormatException(
+          'Serialized derivation path length must be a multiple of 4');
+    }
+
+    final List<String> pathSegments = <String>['m'];
+    for (int i = 0; i < serializedPath.length; i += 4) {
+      int value = Converter.littleEndianToInt(serializedPath.sublist(i, i + 4));
+      if (value & 0x80000000 != 0) {
+        value &= ~0x80000000;
+        pathSegments.add('$value\'');
+      } else {
+        pathSegments.add('$value');
+      }
+    }
+    return pathSegments.join('/');
+  }
 
   String get publicKey => _publicKey;
   String get masterFingerprint => _masterFingerprint.toUpperCase();
   String get path => _path;
+  List<String> get leafHashes => _leafHashes;
   int get accountIndex {
     return WalletUtility.getAccountIndexFromDerivationPath(_path);
   }

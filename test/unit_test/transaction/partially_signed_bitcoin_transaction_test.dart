@@ -65,6 +65,48 @@ void main() {
         expect(taprootPsbt.outputs[1].isOwnedBy(taprootWallet), true);
       });
 
+      test('uses BIP-371 output derivations for taproot change', () {
+        final taprootWallet = MockFactory.createP2trKeyPathSpendingVault();
+        final taprootPsbt = MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final Map<String, dynamic> outputMap =
+            taprootPsbt.toKeyMap()['outputs'][1];
+
+        expect(outputMap.keys.any((key) => key.startsWith('07')), true);
+        expect(outputMap.keys.any((key) => key.startsWith('02')), false);
+        expect(taprootPsbt.outputs[1].bip32Derivations, isEmpty);
+        expect(taprootPsbt.outputs[1].tapBip32Derivations, hasLength(1));
+        expect(taprootPsbt.outputs[1].tapBip32Derivations.single.publicKey,
+            hasLength(64));
+        expect(taprootPsbt.outputs[1].tapBip32Derivations.single.leafHashes,
+            isEmpty);
+
+        final reparsed = Psbt.parse(taprootPsbt.serialize());
+        expect(reparsed.outputs[1].isChange(taprootWallet), true);
+      });
+
+      test('preserves taproot output leaf hashes for script policies', () {
+        final taprootWallet = MockFactory.createP2trVaultWithPolicies();
+        final transaction = Transaction.forSinglePayment(
+            MockFactory.createTaprootUtxoList(count: 1),
+            taprootWallet.getAddress(1),
+            '${taprootWallet.derivationPath}/1/1',
+            15000,
+            3,
+            taprootWallet);
+
+        final psbt = Psbt.fromTransaction(transaction, taprootWallet);
+        final reparsed = Psbt.parse(psbt.serialize());
+        final derivations = reparsed.outputs[1].tapBip32Derivations;
+
+        expect(derivations, hasLength(3));
+        expect(
+            derivations.where((derivation) =>
+                derivation.leafHashes.length == 1 &&
+                derivation.leafHashes.single.length == 64),
+            hasLength(3));
+        expect(reparsed.outputs[1].isChange(taprootWallet), true);
+      });
+
       test('requires a wallet when checking ownership and change', () {
         final parsed = Psbt.parse(unsignedPsbt.serialize());
         final wallet = MockFactory.createP2wpkhVault();

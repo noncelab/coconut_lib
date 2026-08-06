@@ -67,6 +67,23 @@ void main() {
         expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
       });
     });
+    group('getVariableIntegerLength', () {
+      test('returns the encoded length from the prefix at an offset', () {
+        final input =
+            Uint8List.fromList([0x00, 0xfc, 0xfd, 0x00, 0x00, 0xfe, 0xff]);
+
+        expect(Codec.getVariableIntegerLength(input, 0), 1);
+        expect(Codec.getVariableIntegerLength(input, 1), 1);
+        expect(Codec.getVariableIntegerLength(input, 2), 3);
+        expect(Codec.getVariableIntegerLength(input, 5), 5);
+        expect(Codec.getVariableIntegerLength(input, 6), 9);
+      });
+
+      test('throws when the offset is outside the input', () {
+        expect(() => Codec.getVariableIntegerLength(Uint8List(0), 0),
+            throwsRangeError);
+      });
+    });
     group('encodeVariableInteger', () {
       test('1-byte integer (0x00 ~ 0xfc)', () {
         for (int i = 0x00; i <= 0xfc; i++) {

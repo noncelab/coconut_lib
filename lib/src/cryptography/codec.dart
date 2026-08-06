@@ -38,6 +38,14 @@ class Codec {
     }
   }
 
+  static int getVariableIntegerLength(Uint8List bytes, int offset) {
+    final int prefix = bytes[offset];
+    if (prefix < 0xfd) return 1;
+    if (prefix == 0xfd) return 3;
+    if (prefix == 0xfe) return 5;
+    return 9;
+  }
+
   static Uint8List encodeVariableInteger(int i) {
     if (i < 0xfd) {
       return Uint8List.fromList([i.toInt()]);
