@@ -109,7 +109,7 @@ class Psbt {
   int get sendingAmount => () {
         int sendingAmount = 0;
         for (PsbtOutput output in outputs) {
-          if (output.bip32Derivation != null && output.isChange) continue;
+          if (output.bip32Derivations.isNotEmpty && output.isChange) continue;
           sendingAmount += output.outAmount!;
         }
 
@@ -446,7 +446,7 @@ class Psbt {
       amount = unsignedTransaction!.outputs[i].amount;
       script = unsignedTransaction!.outputs[i].scriptPubKey;
 
-      DerivationPath? outputDerivationPath;
+      final List<DerivationPath> outputDerivationPaths = <DerivationPath>[];
       MultisignatureScript? witnessScript;
       psbtMap["outputs"][i].keys.forEach((key) {
         if (key.startsWith('01')) {
@@ -459,11 +459,11 @@ class Psbt {
           String masterFingerprint = psbtMap["outputs"][i][key].substring(0, 8);
           String derivationPath = _parseDerivationPath(
               Codec.decodeHex(psbtMap["outputs"][i][key].substring(8)));
-          outputDerivationPath =
-              DerivationPath(publicKey, masterFingerprint, derivationPath);
+          outputDerivationPaths.add(
+              DerivationPath(publicKey, masterFingerprint, derivationPath));
         }
       });
-      outputs.add(PsbtOutput(outputDerivationPath, amount, script,
+      outputs.add(PsbtOutput(outputDerivationPaths, amount, script,
           witnessScript: witnessScript));
     }
   }
@@ -1466,28 +1466,22 @@ class PsbtInput {
 
 /// @nodoc
 class PsbtOutput {
-  final DerivationPath? bip32Derivation; //0x02
+  final List<DerivationPath> bip32Derivations; //0x02
   final int? outAmount; //0x03
   final ScriptPublicKey? outScript; //0x04
   MultisignatureScript? witnessScript; //0x01
 
-  PsbtOutput(this.bip32Derivation, this.outAmount, this.outScript,
-      {this.witnessScript});
+  PsbtOutput(
+      List<DerivationPath> bip32Derivations, this.outAmount, this.outScript,
+      {this.witnessScript})
+      : bip32Derivations = List.unmodifiable(bip32Derivations);
 
   String get outAddress => outScript!.getAddress();
 
   /// @nodoc
   bool get isChange {
-    if (bip32Derivation == null) {
-      return false;
-    } else if (bip32Derivation!.path.split('/')[1].startsWith('48') &&
-        bip32Derivation!.path.split('/')[5] == '1') {
-      return true;
-    } else if (bip32Derivation!.path.split('/')[4] == '1') {
-      return true;
-    } else {
-      return false;
-    }
+    return bip32Derivations.isNotEmpty &&
+        bip32Derivations.every((derivation) => derivation.isChange);
   }
 }
 

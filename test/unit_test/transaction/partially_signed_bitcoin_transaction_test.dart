@@ -343,7 +343,7 @@ void main() {
         Psbt psbt = Psbt.parse(psbtString);
         expect(psbt.unsignedTransaction!.transactionHash,
             "71ae48a404ce3ad731981532b3dbbde539f27ffc042c0f830576b50478cc16ea");
-        expect(psbt.outputs[0].bip32Derivation!.publicKey,
+        expect(psbt.outputs[0].bip32Derivations.single.publicKey,
             "0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824");
       });
       test('Generate psbt from base64 6', () {
@@ -609,18 +609,31 @@ void main() {
   group('PsbtOutput', () {
     late PsbtOutput output;
     late PsbtOutput multisigOutput;
+    late PsbtOutput multisigChangeOutput;
     late PsbtOutput parsedPsbtOutput;
 
     setUpAll(() {
       output = MockFactory.createP2wpkhUnsignedPsbt().outputs[0];
-      multisigOutput = MockFactory.createP2wshUnsignedPsbt().outputs[0];
+      final Psbt multisigPsbt = MockFactory.createP2wshUnsignedPsbt();
+      multisigOutput = multisigPsbt.outputs[0];
+      multisigChangeOutput = multisigPsbt.outputs[1];
       String psbtString =
           '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';
       parsedPsbtOutput = Psbt.parse(psbtString).outputs[0];
     });
     group('derivationPath', () {
       test('Get derivation path from psbt output', () {
-        expect(parsedPsbtOutput.bip32Derivation!.path, "m/84'/1'/0'/0/0");
+        expect(
+            parsedPsbtOutput.bip32Derivations.single.path, "m/84'/1'/0'/0/0");
+      });
+
+      test('preserves every multisig output derivation path', () {
+        expect(multisigChangeOutput.bip32Derivations, hasLength(3));
+        expect(
+            multisigChangeOutput.bip32Derivations
+                .map((derivation) => derivation.path)
+                .toSet(),
+            {"m/48'/1'/0'/2'/1/1"});
       });
     });
     group('amount', () {
@@ -650,18 +663,20 @@ void main() {
     });
     group('publicKey', () {
       test('Get public key of bip32 derivation path', () {
-        expect(parsedPsbtOutput.bip32Derivation!.publicKey,
+        expect(parsedPsbtOutput.bip32Derivations.single.publicKey,
             "0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824");
       });
     });
     group('masterFingerprint', () {
       test('Get master fingerprint of bip32 derivation path', () {
-        expect(parsedPsbtOutput.bip32Derivation!.masterFingerprint, "98C7D774");
+        expect(parsedPsbtOutput.bip32Derivations.single.masterFingerprint,
+            "98C7D774");
       });
     });
     group('path', () {
       test('Get derivation path', () {
-        expect(parsedPsbtOutput.bip32Derivation!.path, "m/84'/1'/0'/0/0");
+        expect(
+            parsedPsbtOutput.bip32Derivations.single.path, "m/84'/1'/0'/0/0");
       });
     });
   });
