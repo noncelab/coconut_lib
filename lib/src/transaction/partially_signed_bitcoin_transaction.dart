@@ -105,16 +105,16 @@ class Psbt {
         return totalInput - totalOutput;
       }();
 
-  /// Get the sending amount of the transaction.
-  int get sendingAmount => () {
-        int sendingAmount = 0;
-        for (PsbtOutput output in outputs) {
-          if (output.bip32Derivations.isNotEmpty && output.isChange) continue;
-          sendingAmount += output.outAmount!;
-        }
+  /// Get the sending amount, excluding change verified against [wallet].
+  int sendingAmount(WalletBase wallet) {
+    int sendingAmount = 0;
+    for (PsbtOutput output in outputs) {
+      if (output.isChange(wallet)) continue;
+      sendingAmount += output.outAmount!;
+    }
 
-        return sendingAmount;
-      }();
+    return sendingAmount;
+  }
 
   AddressType? get addressType => () {
         if (inputs.isEmpty) {
@@ -1478,10 +1478,49 @@ class PsbtOutput {
 
   String get outAddress => outScript!.getAddress();
 
-  /// @nodoc
-  bool get isChange {
-    return bip32Derivations.isNotEmpty &&
+  /// Returns whether this output is verified as change for [wallet].
+  bool isChange(WalletBase wallet) {
+    return isOwnedBy(wallet) &&
+        bip32Derivations.isNotEmpty &&
         bip32Derivations.every((derivation) => derivation.isChange);
+  }
+
+  /// Returns whether this output belongs to [wallet].
+  bool isOwnedBy(WalletBase wallet) {
+    if (outScript == null || bip32Derivations.isEmpty) {
+      return false;
+    }
+
+    final List<String> walletPathSegments = wallet.derivationPath.split('/');
+
+    for (final DerivationPath derivation in bip32Derivations) {
+      final String path = derivation.path;
+      final List<String> pathSegments = path.split('/');
+      final bool isDirectAddressPath = pathSegments.length ==
+              walletPathSegments.length + 2 &&
+          pathSegments
+              .sublist(0, walletPathSegments.length)
+              .asMap()
+              .entries
+              .every((entry) => entry.value == walletPathSegments[entry.key]) &&
+          (pathSegments[pathSegments.length - 2] == '0' ||
+              pathSegments[pathSegments.length - 2] == '1') &&
+          int.tryParse(pathSegments.last) != null;
+
+      if (!isDirectAddressPath || !WalletUtility.validateDerivationPath(path)) {
+        continue;
+      }
+
+      try {
+        if (wallet.getAddressWithDerivationPath(path) == outAddress) {
+          return true;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return false;
   }
 }
 

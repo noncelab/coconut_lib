@@ -22,12 +22,55 @@ void main() {
     });
     group('sendingAmount', () {
       test('Get sending amount except fee and change', () {
-        expect(signedPsbt.sendingAmount, 15000);
+        expect(
+            signedPsbt.sendingAmount(MockFactory.createP2wpkhVault()), 15000);
       });
     });
     group('addressType', () {
       test('Resolve address type from psbt input fields', () {
         expect(unsignedPsbt.addressType, AddressType.p2wpkh);
+      });
+    });
+
+    group('wallet', () {
+      test('identifies owned outputs after parsing', () {
+        final wallet = MockFactory.createP2wpkhVault();
+
+        final parsed = Psbt.parse(unsignedPsbt.serialize());
+
+        expect(parsed.outputs[0].isOwnedBy(wallet), false);
+        expect(parsed.outputs[1].isOwnedBy(wallet), true);
+      });
+
+      test('does not identify outputs owned by another wallet', () {
+        final otherWallet =
+            MockFactory.createP2wpkhVault(passphrase: 'another wallet');
+
+        final parsed = Psbt.parse(unsignedPsbt.serialize());
+
+        expect(parsed.outputs.every((output) => !output.isOwnedBy(otherWallet)),
+            true);
+      });
+
+      test('identifies multisig and taproot owned outputs', () {
+        final multisigPsbt = MockFactory.createP2wshUnsignedPsbt();
+        final taprootPsbt = MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+
+        final multisigWallet = MockFactory.createP2wshVault();
+        final taprootWallet = MockFactory.createP2trKeyPathSpendingVault();
+
+        expect(multisigPsbt.outputs[0].isOwnedBy(multisigWallet), false);
+        expect(multisigPsbt.outputs[1].isOwnedBy(multisigWallet), true);
+        expect(taprootPsbt.outputs[0].isOwnedBy(taprootWallet), false);
+        expect(taprootPsbt.outputs[1].isOwnedBy(taprootWallet), true);
+      });
+
+      test('requires a wallet when checking ownership and change', () {
+        final parsed = Psbt.parse(unsignedPsbt.serialize());
+        final wallet = MockFactory.createP2wpkhVault();
+
+        expect(parsed.outputs[1].isOwnedBy(wallet), true);
+        expect(parsed.outputs[1].isChange(wallet), true);
       });
     });
 
@@ -611,8 +654,12 @@ void main() {
     late PsbtOutput multisigOutput;
     late PsbtOutput multisigChangeOutput;
     late PsbtOutput parsedPsbtOutput;
+    late SingleSignatureVault wallet;
+    late MultisignatureVault multisigWallet;
 
     setUpAll(() {
+      wallet = MockFactory.createP2wpkhVault();
+      multisigWallet = MockFactory.createP2wshVault();
       output = MockFactory.createP2wpkhUnsignedPsbt().outputs[0];
       final Psbt multisigPsbt = MockFactory.createP2wshUnsignedPsbt();
       multisigOutput = multisigPsbt.outputs[0];
@@ -646,10 +693,26 @@ void main() {
         expect(output.outAddress, 'tb1qcjx6kazryh26wzpr2p66w2s0f7nv29n07fx05a');
       });
     });
+    group('isOwned', () {
+      test('is true only for an output owned by the supplied wallet', () {
+        expect(output.isOwnedBy(wallet), false);
+        expect(multisigOutput.isOwnedBy(multisigWallet), false);
+        expect(multisigChangeOutput.isOwnedBy(multisigWallet), true);
+      });
+    });
     group('isChange', () {
-      test('Check the output is for change', () {
-        expect(output.isChange, false);
-        expect(multisigOutput.isChange, false);
+      test('is true only for an owned output on the change branch', () {
+        expect(output.isChange(wallet), false);
+        expect(multisigOutput.isChange(multisigWallet), false);
+        expect(multisigChangeOutput.isChange(multisigWallet), true);
+      });
+
+      test('rejects a foreign address with forged change derivations', () {
+        final forgedOutput = PsbtOutput(multisigChangeOutput.bip32Derivations,
+            multisigOutput.outAmount, multisigOutput.outScript);
+
+        expect(forgedOutput.isOwnedBy(multisigWallet), false);
+        expect(forgedOutput.isChange(multisigWallet), false);
       });
     });
   });
