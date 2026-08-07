@@ -542,6 +542,7 @@ void main() {
 
         Transaction tx = Transaction.forBatchPayment(utxos.sublist(0, 4),
             {receiveAddress: 398200}, changeAddressPath, beforeFeeRate, vault);
+        int sendingAmount = tx.outputs[0].amount;
 
         tx.updateFeeRate(afterFeeRate, vault);
         int inputAmount = 0;
@@ -553,6 +554,7 @@ void main() {
           inputAmount += u.amount;
         }
         expect(tx.outputs.length, 1);
+        expect(tx.outputs[0].amount, sendingAmount);
         expect(
             inputAmount >=
                 outputAmount + tx.estimateFee(afterFeeRate, vault.addressType),

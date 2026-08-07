@@ -7,6 +7,7 @@ class Transaction {
   List<TransactionOutput> _outputs;
   Uint8List _lockTime;
   bool _isSegwit;
+  bool _isSweep = false;
   late final Map<String, int> _paymentMap;
   late String? changeAddressDerivationPath;
 
@@ -188,6 +189,7 @@ class Transaction {
     Transaction transaction = Transaction.withInputsAndOutputs(
         inputs, outputs, wallet.addressType,
         version: version, lockTime: lockTime);
+    transaction._isSweep = true;
     if (policy != null) {
       transaction.setPolicy(policy);
     }
@@ -1194,7 +1196,7 @@ class Transaction {
             feeRate)
         .ceil();
 
-    if (outputs.length == 1) {
+    if (_isSweep && outputs.length == 1) {
       if (outputs[0].amount <= fee) {
         throw Exception('Not enough amount for sending.');
       }
