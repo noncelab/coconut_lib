@@ -12,6 +12,10 @@ void main() {
         Uint8List script = Codec.decodeHex(scriptText);
         expect(Script(Script.parseToCommand(script)).length, 23);
       });
+
+      test('Empty script has zero length', () {
+        expect(Script([]).length, 0);
+      });
     });
     group('parseToCommand', () {
       test('Generate scrip from script text', () {
@@ -60,7 +64,7 @@ void main() {
       test('Invalid OP_PUSHDATA1 length should throw an exception', () {
         Uint8List script = Uint8List.fromList(
             [4, 76, 3, 0xab, 0xcd]); // OP_PUSHDATA1 with incorrect length
-        expect(() => Script.parseToCommand(script), throwsRangeError);
+        expect(() => Script.parseToCommand(script), throwsFormatException);
       });
 
       test('Invalid OP_PUSHDATA2 length should throw an exception', () {
@@ -80,6 +84,26 @@ void main() {
         final Uint8List script =
             Uint8List.fromList([0xfe, 0x01, 0x00, 0x00, 0x00, 0x52]);
         expect(Script.parseToCommand(script), equals([0x52]));
+      });
+
+      test('Rejects empty input', () {
+        expect(
+            () => Script.parseToCommand(Uint8List(0)), throwsFormatException);
+      });
+
+      test('Rejects truncated CompactSize prefix', () {
+        expect(() => Script.parseToCommand(Uint8List.fromList([0xfd, 0x01])),
+            throwsFormatException);
+      });
+
+      test('Rejects missing OP_PUSHDATA1 length', () {
+        expect(() => Script.parseToCommand(Uint8List.fromList([1, 76])),
+            throwsFormatException);
+      });
+
+      test('Rejects missing OP_PUSHDATA2 length', () {
+        expect(() => Script.parseToCommand(Uint8List.fromList([2, 77, 1])),
+            throwsFormatException);
       });
     });
     group('rawSerialize', () {

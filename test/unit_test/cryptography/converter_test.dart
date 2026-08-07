@@ -183,6 +183,27 @@ void main() {
             Codec.encodeHex(Converter.derToRawSignature(Codec.decodeHex(der))),
             raw);
       });
+
+      test('Rejects malformed DER signatures', () {
+        final List<String> malformed = [
+          '',
+          '30',
+          // Wrong sequence tag.
+          '3144022051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+          // Wrong sequence length.
+          '3043022051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+          // Negative R.
+          '30440220d1b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+          // Redundant leading zero in R.
+          '304502210051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+        ];
+
+        for (final String signature in malformed) {
+          expect(() => Converter.derToRawSignature(Codec.decodeHex(signature)),
+              throwsFormatException,
+              reason: signature);
+        }
+      });
     });
 
     group("rawToDerSignature", () {

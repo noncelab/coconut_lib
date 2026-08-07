@@ -239,7 +239,7 @@ void main() {
         Uint8List shortSignature = Uint8List.fromList(
           bigIntToUint8List(BigInt.one), // Only 32 bytes (missing s)
         );
-        expect(() => Ecc.isSignature(shortSignature), throwsRangeError);
+        expect(Ecc.isSignature(shortSignature), isFalse);
       });
 
       test('Invalid: Signature too long', () {

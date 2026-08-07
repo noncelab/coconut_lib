@@ -251,17 +251,65 @@ class Converter {
   }
 
   static Uint8List derToRawSignature(Uint8List der) {
-    der = der.sublist(0, der.length - 1);
-    if (der[0] != 0x30) throw FormatException('Invalid DER sequence');
+    _validateDerSignature(der);
 
-    int rLen = der[3];
-    Uint8List r = _normalizeRawInt(der.sublist(4, 4 + rLen));
+    final int rLen = der[3];
+    final Uint8List r = _normalizeRawInt(der.sublist(4, 4 + rLen));
 
-    int sStart = 4 + rLen + 2;
-    int sLen = der[sStart - 1];
-    Uint8List s = _normalizeRawInt(der.sublist(sStart, sStart + sLen));
+    final int sLengthIndex = 5 + rLen;
+    final int sStart = sLengthIndex + 1;
+    final int sLen = der[sLengthIndex];
+    final Uint8List s = _normalizeRawInt(der.sublist(sStart, sStart + sLen));
 
     return Uint8List.fromList([...r, ...s]);
+  }
+
+  static void _validateDerSignature(Uint8List signature) {
+    // BIP66 bounds include the trailing sighash type byte.
+    if (signature.length < 9 || signature.length > 73) {
+      throw FormatException('Invalid DER signature length.');
+    }
+    if (signature[0] != 0x30) {
+      throw FormatException('Invalid DER sequence tag.');
+    }
+    if (signature[1] != signature.length - 3) {
+      throw FormatException('Invalid DER sequence length.');
+    }
+    if (signature[2] != 0x02) {
+      throw FormatException('Invalid DER R integer tag.');
+    }
+
+    final int rLen = signature[3];
+    if (rLen == 0 || 5 + rLen >= signature.length) {
+      throw FormatException('Invalid DER R length.');
+    }
+    if ((signature[4] & 0x80) != 0) {
+      throw FormatException('DER R must be positive.');
+    }
+    if (rLen > 1 && signature[4] == 0x00 && (signature[5] & 0x80) == 0) {
+      throw FormatException('DER R is not minimally encoded.');
+    }
+
+    final int sTagIndex = 4 + rLen;
+    final int sLengthIndex = sTagIndex + 1;
+    if (signature[sTagIndex] != 0x02) {
+      throw FormatException('Invalid DER S integer tag.');
+    }
+
+    final int sLen = signature[sLengthIndex];
+    final int sStart = sLengthIndex + 1;
+    final int derEnd = signature.length - 1;
+    if (sLen == 0 || sStart + sLen != derEnd) {
+      throw FormatException('Invalid DER S length.');
+    }
+    if ((signature[sStart] & 0x80) != 0) {
+      throw FormatException('DER S must be positive.');
+    }
+    if (sLen > 1 &&
+        signature[sStart] == 0x00 &&
+        (signature[sStart + 1] & 0x80) == 0) {
+      throw FormatException('DER S is not minimally encoded.');
+    }
   }
 
   // static Uint8List _ensureDerInt(Uint8List raw) {

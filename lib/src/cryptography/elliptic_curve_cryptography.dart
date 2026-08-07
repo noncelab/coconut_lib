@@ -70,11 +70,14 @@ class Ecc {
   }
 
   static bool isSignature(Uint8List value) {
+    if (value.length != 64) {
+      return false;
+    }
+
     Uint8List r = value.sublist(0, 32);
     Uint8List s = value.sublist(32, 64);
 
-    return value.length == 64 &&
-        _compare(r, EC_GROUP_ORDER as Uint8List) < 0 &&
+    return _compare(r, EC_GROUP_ORDER as Uint8List) < 0 &&
         _compare(s, EC_GROUP_ORDER as Uint8List) < 0;
   }
 

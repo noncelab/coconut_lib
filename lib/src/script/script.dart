@@ -14,7 +14,7 @@ class Script {
         Uint8List raw = _rawSerialize();
         length += raw.length;
 
-        if (raw[0] == 0x00 && raw.length == 1) {
+        if (raw.isEmpty || (raw.length == 1 && raw[0] == 0x00)) {
           return length;
         }
         length += Codec.encodeVariableInteger(raw.length).length;
@@ -27,47 +27,77 @@ class Script {
   /// Parse the script from the given script bytes.
   static List<dynamic> parseToCommand(Uint8List script,
       {bool isCoinbase = false}) {
+    if (script.isEmpty) {
+      throw FormatException('Script is empty.');
+    }
+
     if (isCoinbase) {
+      if (script.length < 2) {
+        throw FormatException('Invalid coinbase script.');
+      }
       Script coinbaseScript = Script(script.sublist(1));
       return coinbaseScript.commands;
     }
 
     int offset = 0;
-    int length = Codec.decodeVariableInteger(script, offset);
-    offset += (script[0] < 0xfd)
+    final int prefixLength = (script[0] < 0xfd)
         ? 1
         : (script[0] == 0xfd)
             ? 3
             : (script[0] == 0xfe)
                 ? 5
                 : 9;
+    if (script.length < prefixLength) {
+      throw FormatException('Invalid script length prefix.');
+    }
+    int length = Codec.decodeVariableInteger(script, offset);
+    offset += prefixLength;
     List<dynamic> cmds = [];
 
     if (script.length < offset + length) {
-      throw Exception('parsing script failed');
+      throw FormatException('Script is shorter than its declared length.');
     }
+    final int scriptEnd = offset + length;
 
     int count = 0;
     while (count < length) {
+      if (offset >= scriptEnd) {
+        throw FormatException('Unexpected end of script.');
+      }
       int currentByte = script[offset];
       offset += 1;
       count += 1;
       if (currentByte >= 1 && currentByte <= 75) {
         int n = currentByte;
+        if (offset + n > scriptEnd) {
+          throw FormatException('Pushdata exceeds script length.');
+        }
         cmds.add(script.sublist(offset, offset + n));
         offset += n;
         count += n;
       } else if (currentByte == 76) {
+        if (offset + 1 > scriptEnd) {
+          throw FormatException('Missing OP_PUSHDATA1 length.');
+        }
         int dataLength =
             Converter.littleEndianToInt(script.sublist(offset, offset + 1));
         offset += 1;
+        if (offset + dataLength > scriptEnd) {
+          throw FormatException('OP_PUSHDATA1 data exceeds script length.');
+        }
         cmds.add(script.sublist(offset, offset + dataLength));
         offset += dataLength;
         count += dataLength + 1;
       } else if (currentByte == 77) {
+        if (offset + 2 > scriptEnd) {
+          throw FormatException('Missing OP_PUSHDATA2 length.');
+        }
         int dataLength =
             Converter.littleEndianToInt(script.sublist(offset, offset + 2));
         offset += 2;
+        if (offset + dataLength > scriptEnd) {
+          throw FormatException('OP_PUSHDATA2 data exceeds script length.');
+        }
         cmds.add(script.sublist(offset, offset + dataLength));
         offset += dataLength;
         count += dataLength + 2;
