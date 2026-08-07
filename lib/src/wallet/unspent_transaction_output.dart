@@ -2,6 +2,9 @@ part of '../../coconut_lib.dart';
 
 /// Represents an UTXO.
 class Utxo {
+  static const int maxOutputIndex = 0xffffffff;
+  static const int maxMoney = 21000000 * 100000000;
+
   final String _transactionHash;
   final int _index;
   final int _amount;
@@ -9,14 +12,38 @@ class Utxo {
 
   /// @nodoc
   Utxo(
-    this._transactionHash,
-    this._index,
-    this._amount,
+    String transactionHash,
+    int index,
+    int amount,
     this._derivationPath,
-  ) {
+  )   : _transactionHash = _validateTransactionHash(transactionHash),
+        _index = _validateIndex(index),
+        _amount = _validateAmount(amount) {
     if (!WalletUtility.validateDerivationPath(_derivationPath)) {
       throw Exception("Invalid derivation path (e.g., m/44'/0'/0'/0/0)");
     }
+  }
+
+  static String _validateTransactionHash(String transactionHash) {
+    if (!RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(transactionHash)) {
+      throw FormatException(
+          'Transaction hash must be a 32-byte hexadecimal string.');
+    }
+    return transactionHash;
+  }
+
+  static int _validateIndex(int index) {
+    if (index < 0 || index > maxOutputIndex) {
+      throw RangeError.range(index, 0, maxOutputIndex, 'index');
+    }
+    return index;
+  }
+
+  static int _validateAmount(int amount) {
+    if (amount < 0 || amount > maxMoney) {
+      throw RangeError.range(amount, 0, maxMoney, 'amount');
+    }
+    return amount;
   }
 
   /// Get the transaction hash of this UTXO.
