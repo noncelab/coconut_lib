@@ -1,10 +1,21 @@
 part of '../../coconut_lib.dart';
 
 class InheritancePolicy extends Policy {
-  KeyStore beneficiaryKeyStore;
-  int locktime;
+  static const int maxLocktime = 0x7fffffff;
 
-  InheritancePolicy(this.beneficiaryKeyStore, this.locktime) : super();
+  KeyStore beneficiaryKeyStore;
+  final int locktime;
+
+  InheritancePolicy(this.beneficiaryKeyStore, int locktime)
+      : locktime = _validateLocktime(locktime),
+        super();
+
+  static int _validateLocktime(int locktime) {
+    if (locktime < 0 || locktime > maxLocktime) {
+      throw RangeError.range(locktime, 0, maxLocktime, 'locktime');
+    }
+    return locktime;
+  }
 
   factory InheritancePolicy.fromDescriptorAndLocktime(
       String descriptor, int locktime) {

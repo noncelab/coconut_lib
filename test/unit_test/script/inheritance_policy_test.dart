@@ -15,6 +15,27 @@ void main() {
       beneficiaryVault = MockFactory.createBeneficiaryVault(passphrase: 'B');
     });
 
+    group('constructor', () {
+      test('accepts ScriptNum locktime boundaries', () {
+        final KeyStore keyStore = beneficiaryVault.keyStoreList[0];
+
+        expect(InheritancePolicy(keyStore, 0).locktime, 0);
+        expect(
+            InheritancePolicy(keyStore, InheritancePolicy.maxLocktime).locktime,
+            InheritancePolicy.maxLocktime);
+      });
+
+      test('rejects locktime outside the supported ScriptNum range', () {
+        final KeyStore keyStore = beneficiaryVault.keyStoreList[0];
+
+        expect(() => InheritancePolicy(keyStore, -1), throwsRangeError);
+        expect(
+            () =>
+                InheritancePolicy(keyStore, InheritancePolicy.maxLocktime + 1),
+            throwsRangeError);
+      });
+    });
+
     group('fromDescriptorAndLocktime', () {
       test('creates policy for taproot-only beneficiary descriptor', () {
         final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
