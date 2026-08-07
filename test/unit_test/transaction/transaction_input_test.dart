@@ -214,7 +214,7 @@ void main() {
             'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',
             1);
         input.setTaprootScriptPathSpendingSignature(
-            'aa' * 64, '51', 'c0' + ('11' * 32));
+            'aa' * 64, '51', 'c0${'11' * 32}');
         expect(input.witnessList.length, 3);
       });
     });
@@ -281,7 +281,7 @@ void main() {
           '5221028106e5b5449e0b78e7e06c6435f724b9797db0926ed3ba59b01d6e3dee8fd74b2102869102bed3322707dfebeaf06f9e0f89b5d133e48ee481bcd624dfc1fa1b188052ae'
         ];
         TransactionOutput utxo =
-            TransactionOutput.parse('a086010000000000220020' + ('00' * 32));
+            TransactionOutput.parse('a086010000000000220020${'00' * 32}');
         expect(input.verifySpend(Uint8List(32), utxo), false);
       });
 
@@ -293,7 +293,7 @@ void main() {
             1);
         input.witnessList = ['11' * 64, '51', 'c0']; // too short control block
         TransactionOutput utxo =
-            TransactionOutput.parse('a086010000000000225120' + ('11' * 32));
+            TransactionOutput.parse('a086010000000000225120${'11' * 32}');
         expect(input.verifySpend(Uint8List(32), utxo), false);
       });
 

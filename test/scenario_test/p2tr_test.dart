@@ -551,8 +551,6 @@ void main() {
 
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
       // print(unsignedPsbt.serialize());
-      String vaultNoncePsbt = vault.addPublicNonce(unsignedPsbt.serialize());
-      // print(vaultNoncePsbt);
       String dadNoncePsbt = dadVault.addPublicNonce(unsignedPsbt.serialize());
       String momNoncePsbt = momVault.addPublicNonce(dadNoncePsbt);
       String momSignedPsbt = momVault.addSignatureToPsbt(momNoncePsbt);

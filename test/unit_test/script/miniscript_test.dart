@@ -181,7 +181,7 @@ void main() {
 
       test('inheritance compile throws when pubkey is not x-only 32 bytes', () {
         final String nonXOnly33 =
-            '02' + ('11' * 32); // compressed key-like 33-byte input
+            '02${'11' * 32}'; // compressed key-like 33-byte input
         expect(
             () => Miniscript.andV(Miniscript.v(Miniscript.pk(nonXOnly33)),
                     Miniscript.after(5))

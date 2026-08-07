@@ -636,7 +636,7 @@ void main() {
       test('updates tapScriptSig', () {
         final PsbtInput tapInput =
             MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
-        tapInput.addTapScriptSig('bb' * 64, '02' + ('11' * 32));
+        tapInput.addTapScriptSig('bb' * 64, '02${'11' * 32}');
         expect(tapInput.tapScriptSig, isNotNull);
       });
     });
@@ -646,7 +646,7 @@ void main() {
         final PsbtInput tapInput =
             MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
         tapInput.addMuSig2PubNonce(
-            '02' + ('22' * 32), '03' + ('33' * 32), '44' * 32, '55' * 66);
+            '02${'22' * 32}', '03${'33' * 32}', '44' * 32, '55' * 66);
         expect(tapInput.muSig2PubNonces, isNotNull);
       });
     });
@@ -656,7 +656,7 @@ void main() {
         final PsbtInput tapInput =
             MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
         tapInput.addMuSig2PartialSig(
-            '66' * 64, '02' + ('22' * 32), '03' + ('33' * 32), '44' * 32);
+            '66' * 64, '02${'22' * 32}', '03${'33' * 32}', '44' * 32);
         expect(tapInput.muSig2PartialSigs, isNotNull);
       });
     });
