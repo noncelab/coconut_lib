@@ -11,11 +11,39 @@ void main() {
     });
 
     group('fromSeedList', () {
-      test('creates key stores and valid address', () {
-        final wallet = TaprootWallet.fromSeedList(
-            [MockFactory.getCommonSeed(passphrase: 'A')], []);
-        expect(wallet.keyStoreList.length, 1);
-        expect(wallet.getAddress(0).startsWith('bcrt1p'), true);
+      test('rejects seed-bearing key stores', () {
+        expect(
+            () => TaprootWallet.fromSeedList(
+                [MockFactory.getCommonSeed(passphrase: 'A')], []),
+            throwsArgumentError);
+      });
+    });
+
+    group('fromKeyStoreList', () {
+      test('rejects a seed-bearing key store', () {
+        final KeyStore keyStore = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+
+        expect(() => TaprootWallet.fromKeyStoreList([keyStore], []),
+            throwsArgumentError);
+      });
+
+      test('rejects a policy with a seed-bearing beneficiary key store', () {
+        final TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
+        final KeyStore beneficiaryKeyStore = KeyStore.fromSeed(
+            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+        final InheritancePolicy policy =
+            InheritancePolicy(beneficiaryKeyStore, 1000);
+
+        expect(
+            () => TaprootWallet.fromKeyStoreList([
+                  KeyStore.fromExtendedPublicKey(
+                      vault.keyStoreList[0].extendedPublicKey.serialize(),
+                      vault.keyStoreList[0].masterFingerprint)
+                ], [
+                  policy
+                ]),
+            throwsArgumentError);
       });
     });
 

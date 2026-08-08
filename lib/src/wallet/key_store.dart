@@ -33,6 +33,13 @@ class KeyStore {
   /// Check if the key store has seed.
   bool get hasSeed => _seed != null;
 
+  static void _ensureWatchOnly(Iterable<KeyStore> keyStores) {
+    if (keyStores.any((keyStore) => keyStore.hasSeed)) {
+      throw ArgumentError(
+          'Wallet accepts public-only key stores. Use a Vault for seed-bearing key stores.');
+    }
+  }
+
   /// Whether this key store and [other] represent the same public BIP32 node.
   bool hasSamePublicIdentity(KeyStore other) {
     final ExtendedPublicKey current = extendedPublicKey;

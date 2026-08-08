@@ -13,6 +13,9 @@ abstract class SingleSignatureWalletBase extends WalletBase {
   SingleSignatureWalletBase(this._keyStore, AddressType _addressType,
       String _derivationPath, this._isVault)
       : super(_addressType, _derivationPath) {
+    if (!_isVault) {
+      KeyStore._ensureWatchOnly([_keyStore]);
+    }
     if (NetworkType.currentNetworkType.isTestnet !=
         AddressType.isTestnetVersion(_keyStore._extendedPublicKey.version)) {
       throw Exception('Network type mismatch.');

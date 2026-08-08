@@ -54,8 +54,11 @@ class InheritancePolicy extends Policy {
 
   @override
   String toMiniscript() {
+    final KeyStore publicBeneficiaryKeyStore = KeyStore.fromExtendedPublicKey(
+        beneficiaryKeyStore.extendedPublicKey.serialize(),
+        beneficiaryKeyStore.masterFingerprint);
     TaprootWallet beneficiaryWallet =
-        TaprootWallet.fromKeyStoreList([beneficiaryKeyStore], []);
+        TaprootWallet.fromKeyStoreList([publicBeneficiaryKeyStore], []);
     return 'and_v(v:pk(${beneficiaryWallet.getKeyOriginExpression()}),after($locktime))';
   }
 

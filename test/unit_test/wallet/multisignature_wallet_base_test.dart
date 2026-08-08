@@ -25,6 +25,13 @@ void main() {
         expect(vault.keyStoreList, isA<List<KeyStore>>());
         expect(vault.keyStoreList.length, 3);
       });
+
+      test('watch-only wallet rejects seed-bearing key stores', () {
+        expect(
+            () => MultisignatureWallet(
+                2, AddressType.p2wsh, vault.derivationPath, vault.keyStoreList),
+            throwsArgumentError);
+      });
     });
     group('getAddress', () {
       test('Get address from vault', () {

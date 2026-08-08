@@ -4,7 +4,20 @@ part of '../../coconut_lib.dart';
 class TaprootWallet extends TaprootWalletBase {
   TaprootWallet._(List<KeyStore> keyStoreList, List<Policy> policyList,
       String derivationPath)
-      : super(keyStoreList, policyList, derivationPath, false);
+      : super(_validateKeyStores(keyStoreList), _validatePolicies(policyList),
+            derivationPath, false);
+
+  static List<KeyStore> _validateKeyStores(List<KeyStore> keyStores) {
+    KeyStore._ensureWatchOnly(keyStores);
+    return keyStores;
+  }
+
+  static List<Policy> _validatePolicies(List<Policy> policies) {
+    KeyStore._ensureWatchOnly(policies
+        .whereType<InheritancePolicy>()
+        .map((policy) => policy.beneficiaryKeyStore));
+    return policies;
+  }
 
   /// Create a Taproot wallet from a list of keyStores.
   factory TaprootWallet.fromKeyStoreList(

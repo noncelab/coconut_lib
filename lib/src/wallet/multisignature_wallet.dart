@@ -3,8 +3,15 @@ part of '../../coconut_lib.dart';
 /// Represents a multisignature wallet.
 class MultisignatureWallet extends MultisignatureWalletBase {
   /// @nodoc
-  MultisignatureWallet(super.requiredSignature, super.addressType,
-      super.derivationPath, super.keyStores);
+  MultisignatureWallet(int requiredSignature, AddressType addressType,
+      String derivationPath, List<KeyStore> keyStores)
+      : super(requiredSignature, addressType, derivationPath,
+            _validateKeyStores(keyStores));
+
+  static List<KeyStore> _validateKeyStores(List<KeyStore> keyStores) {
+    KeyStore._ensureWatchOnly(keyStores);
+    return keyStores;
+  }
 
   /// Create a multisignature wallet from descriptor.
   factory MultisignatureWallet.fromDescriptor(String descriptor,
