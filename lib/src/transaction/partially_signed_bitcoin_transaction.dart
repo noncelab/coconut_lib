@@ -183,7 +183,7 @@ class Psbt {
       try {
         validateMultisignaturePolicy(wallet);
         return true;
-      } catch (_) {
+      } on PsbtException {
         return false;
       }
     } else if (wallet is TaprootVault) {
@@ -219,7 +219,7 @@ class Psbt {
       try {
         validateTaprootPolicy(wallet);
         return true;
-      } catch (_) {
+      } on PsbtException {
         return false;
       }
     } else {
@@ -233,7 +233,8 @@ class Psbt {
   /// UTXO does not match the script independently derived from the vault.
   void validateMultisignaturePolicy(MultisignatureVault wallet) {
     if (addressType != AddressType.p2wsh || inputs.isEmpty) {
-      throw Exception('PSBT is not a P2WSH multisignature transaction.');
+      throw PsbtException(CoconutErrorCode.policyMismatch,
+          'PSBT is not a P2WSH multisignature transaction.');
     }
 
     for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
@@ -242,16 +243,21 @@ class Psbt {
       final MultisignatureScript? witnessScript = input.witnessScript;
       final List<DerivationPath>? derivations = input.bip32Derivation;
       if (witnessUtxo == null || witnessScript == null || derivations == null) {
-        throw Exception(
-            'Input $inputIndex is missing multisignature policy metadata.');
+        throw PsbtException(CoconutErrorCode.missingMetadata,
+            'Input is missing multisignature policy metadata.',
+            inputIndex: inputIndex);
       }
       if (derivations.length != wallet.keyStoreList.length) {
-        throw Exception('Input $inputIndex has an invalid signer set.');
+        throw PsbtException(
+            CoconutErrorCode.signerMismatch, 'Input has an invalid signer set.',
+            inputIndex: inputIndex);
       }
 
       final Set<String> paths = derivations.map((entry) => entry.path).toSet();
       if (paths.length != 1) {
-        throw Exception('Input $inputIndex has inconsistent derivation paths.');
+        throw PsbtException(CoconutErrorCode.policyMismatch,
+            'Input has inconsistent derivation paths.',
+            inputIndex: inputIndex);
       }
       final String path = paths.single;
       final List<String> vaultPathSegments = wallet.derivationPath.split('/');
@@ -271,13 +277,16 @@ class Psbt {
           (change != 0 && change != 1) ||
           addressIndex == null ||
           addressIndex < 0) {
-        throw Exception('Input $inputIndex uses a path outside the vault.');
+        throw PsbtException(CoconutErrorCode.derivationPathMismatch,
+            'Input uses a path outside the vault.',
+            inputIndex: inputIndex, context: {'path': path});
       }
 
       final String expectedWitnessScript = wallet.getWitnessScript(path);
       if (witnessScript.rawSerialize() != expectedWitnessScript) {
-        throw Exception(
-            'Input $inputIndex does not match the vault multisig policy.');
+        throw PsbtException(CoconutErrorCode.policyMismatch,
+            'Input does not match the vault multisig policy.',
+            inputIndex: inputIndex);
       }
 
       final Set<String> expectedDerivations =
@@ -294,15 +303,17 @@ class Psbt {
       if (actualDerivations.length != derivations.length ||
           actualDerivations.length != expectedDerivations.length ||
           !actualDerivations.containsAll(expectedDerivations)) {
-        throw Exception(
-            'Input $inputIndex derivations do not match the vault signer set.');
+        throw PsbtException(CoconutErrorCode.signerMismatch,
+            'Input derivations do not match the vault signer set.',
+            inputIndex: inputIndex);
       }
 
       final String expectedScriptPubKey =
           '0020${Hash.sha256fromHex(expectedWitnessScript)}';
       if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
-        throw Exception(
-            'Input $inputIndex witness UTXO does not commit to the witness script.');
+        throw PsbtException(CoconutErrorCode.utxoMismatch,
+            'Input witness UTXO does not commit to the witness script.',
+            inputIndex: inputIndex);
       }
 
       final Set<String> witnessPublicKeys = witnessScript
@@ -311,8 +322,9 @@ class Psbt {
           .toSet();
       for (final Signature signature in input.partialSig ?? <Signature>[]) {
         if (!witnessPublicKeys.contains(signature.publicKey)) {
-          throw Exception(
-              'Input $inputIndex contains a signature outside the vault policy.');
+          throw PsbtException(CoconutErrorCode.signerMismatch,
+              'Input contains a signature outside the vault policy.',
+              inputIndex: inputIndex);
         }
       }
     }
@@ -321,7 +333,8 @@ class Psbt {
   /// Validates every Taproot input against [wallet]'s complete policy.
   void validateTaprootPolicy(TaprootVault wallet) {
     if (addressType != AddressType.p2tr || inputs.isEmpty) {
-      throw Exception('PSBT is not a Taproot transaction.');
+      throw PsbtException(CoconutErrorCode.policyMismatch,
+          'PSBT is not a Taproot transaction.');
     }
 
     for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
@@ -332,13 +345,16 @@ class Psbt {
           derivations == null ||
           derivations.isEmpty ||
           input.internalKey == null) {
-        throw Exception(
-            'Input $inputIndex is missing Taproot policy metadata.');
+        throw PsbtException(CoconutErrorCode.missingMetadata,
+            'Input is missing Taproot policy metadata.',
+            inputIndex: inputIndex);
       }
 
       final Set<String> paths = derivations.map((entry) => entry.path).toSet();
       if (paths.length != 1) {
-        throw Exception('Input $inputIndex has inconsistent derivation paths.');
+        throw PsbtException(CoconutErrorCode.policyMismatch,
+            'Input has inconsistent derivation paths.',
+            inputIndex: inputIndex);
       }
       final String path = paths.single;
       final List<int> childPath =
@@ -349,21 +365,24 @@ class Psbt {
       final String expectedInternalKey = Codec.encodeHex(
           wallet.getInternalKey(addressIndex, isChange: isChange));
       if (input.internalKey != expectedInternalKey) {
-        throw Exception(
-            'Input $inputIndex has an invalid Taproot internal key.');
+        throw PsbtException(CoconutErrorCode.policyMismatch,
+            'Input has an invalid Taproot internal key.',
+            inputIndex: inputIndex);
       }
       final String expectedMerkleRoot = Codec.encodeHex(
           wallet.getMerkleRoot(addressIndex, isChange: isChange));
       if ((input.tapMerkleRoot ?? '') != expectedMerkleRoot) {
-        throw Exception(
-            'Input $inputIndex has an invalid Taproot merkle root.');
+        throw PsbtException(CoconutErrorCode.policyMismatch,
+            'Input has an invalid Taproot merkle root.',
+            inputIndex: inputIndex);
       }
 
       final String expectedScriptPubKey =
           '5120${Codec.encodeHex(wallet.getOutputKey(addressIndex, isChange: isChange))}';
       if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
-        throw Exception(
-            'Input $inputIndex witness UTXO does not match the Taproot policy.');
+        throw PsbtException(CoconutErrorCode.utxoMismatch,
+            'Input witness UTXO does not match the Taproot policy.',
+            inputIndex: inputIndex);
       }
 
       if (input.tapLeafScript != null) {
@@ -383,7 +402,9 @@ class Psbt {
     if (inputSegments.length != walletSegments.length + 2 ||
         inputSegments.sublist(0, walletSegments.length).join('/') !=
             walletPath) {
-      throw Exception('Input $inputIndex uses a path outside the vault.');
+      throw PsbtException(CoconutErrorCode.derivationPathMismatch,
+          'Input uses a path outside the vault.',
+          inputIndex: inputIndex, context: {'path': path});
     }
     final int? change = int.tryParse(inputSegments[walletSegments.length]);
     final int? addressIndex =
@@ -391,7 +412,9 @@ class Psbt {
     if ((change != 0 && change != 1) ||
         addressIndex == null ||
         addressIndex < 0) {
-      throw Exception('Input $inputIndex uses an invalid vault child path.');
+      throw PsbtException(CoconutErrorCode.derivationPathMismatch,
+          'Input uses an invalid vault child path.',
+          inputIndex: inputIndex, context: {'path': path});
     }
     return <int>[change!, addressIndex];
   }
@@ -418,14 +441,17 @@ class Psbt {
         actualDerivations.length != derivations.length ||
         actualDerivations.length != expectedDerivations.length ||
         !actualDerivations.containsAll(expectedDerivations)) {
-      throw Exception(
-          'Input $inputIndex derivations do not match the Taproot key policy.');
+      throw PsbtException(CoconutErrorCode.signerMismatch,
+          'Input derivations do not match the Taproot key policy.',
+          inputIndex: inputIndex);
     }
 
     if (wallet.keyStoreList.length == 1) {
       if (input.muSig2AggregatedPublicKey != null ||
           input.muSig2ParticipantPubkeys != null) {
-        throw Exception('Input $inputIndex has unexpected MuSig2 metadata.');
+        throw PsbtException(CoconutErrorCode.policyMismatch,
+            'Input has unexpected MuSig2 metadata.',
+            inputIndex: inputIndex);
       }
       return;
     }
@@ -441,14 +467,17 @@ class Psbt {
         participants.length != expectedParticipants.length ||
         participants.toSet().length != participants.length ||
         !participants.toSet().containsAll(expectedParticipants)) {
-      throw Exception('Input $inputIndex has an invalid MuSig2 signer set.');
+      throw PsbtException(CoconutErrorCode.signerMismatch,
+          'Input has an invalid MuSig2 signer set.',
+          inputIndex: inputIndex);
     }
     final String expectedAggregatedPublicKey = Codec.encodeHex(
         wallet.getAggregatedPublicKey(addressIndex,
             isChange: isChange, isXOnly: false));
     if (aggregatedPublicKey != expectedAggregatedPublicKey) {
-      throw Exception(
-          'Input $inputIndex has an invalid MuSig2 aggregated public key.');
+      throw PsbtException(CoconutErrorCode.signerMismatch,
+          'Input has an invalid MuSig2 aggregated public key.',
+          inputIndex: inputIndex);
     }
   }
 
@@ -466,16 +495,18 @@ class Psbt {
         actualScript);
     if (policyIndex < 0 ||
         wallet.policyList[policyIndex] is! InheritancePolicy) {
-      throw Exception(
-          'Input $inputIndex uses an unknown Taproot script policy.');
+      throw PsbtException(CoconutErrorCode.policyMismatch,
+          'Input uses an unknown Taproot script policy.',
+          inputIndex: inputIndex);
     }
     final InheritancePolicy policy =
         wallet.policyList[policyIndex] as InheritancePolicy;
     final String expectedControlBlock =
         wallet.getControlBlock(policyIndex, addressIndex, isChange: isChange);
     if (input.controlBlock != expectedControlBlock) {
-      throw Exception(
-          'Input $inputIndex has an invalid Taproot control block.');
+      throw PsbtException(CoconutErrorCode.policyMismatch,
+          'Input has an invalid Taproot control block.',
+          inputIndex: inputIndex);
     }
 
     final String leafHash = Codec.encodeHex(
@@ -489,13 +520,15 @@ class Psbt {
         derivations.single.publicKey != publicKey ||
         derivations.single.leafHashes.length != 1 ||
         derivations.single.leafHashes.single != leafHash) {
-      throw Exception(
-          'Input $inputIndex derivation does not match the Taproot script policy.');
+      throw PsbtException(CoconutErrorCode.signerMismatch,
+          'Input derivation does not match the Taproot script policy.',
+          inputIndex: inputIndex);
     }
     for (final Signature signature in input.tapScriptSig ?? <Signature>[]) {
       if (signature.publicKey != publicKey) {
-        throw Exception(
-            'Input $inputIndex contains a signature outside the Taproot script policy.');
+        throw PsbtException(CoconutErrorCode.signerMismatch,
+            'Input contains a signature outside the Taproot script policy.',
+            inputIndex: inputIndex);
       }
     }
   }
@@ -634,7 +667,7 @@ class Psbt {
           String concatenatedPubKeys = psbtMap["inputs"][i][key];
           muSig2participantPubKeyList ??= [];
           if (concatenatedPubKeys.length % 66 != 0) {
-            throw Exception(
+            throw FormatException(
                 "Invalid participant public key list: length is not multiple of 66 (got ${concatenatedPubKeys.length})");
           }
           int numberOfKeys = concatenatedPubKeys.length ~/ 66;
@@ -838,10 +871,15 @@ class Psbt {
     }
 
     if (tx.utxoList.isEmpty) {
-      throw Exception('No UTXOs in transaction');
+      throw PsbtException(
+          CoconutErrorCode.missingMetadata, 'Transaction has no UTXOs.');
     }
     if (tx.inputs.length != tx.utxoList.length) {
-      throw Exception('Transaction input and UTXO count mismatch');
+      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+          'Transaction input and UTXO count mismatch.', context: {
+        'inputCount': tx.inputs.length,
+        'utxoCount': tx.utxoList.length
+      });
     }
     final Set<String> outpoints = <String>{};
     for (int i = 0; i < tx.inputs.length; i++) {
@@ -850,12 +888,20 @@ class Psbt {
       if (input.transactionHash.toLowerCase() !=
               utxo.transactionHash.toLowerCase() ||
           input.index != utxo.index) {
-        throw Exception('Transaction input and UTXO outpoint mismatch');
+        throw PsbtException(CoconutErrorCode.utxoMismatch,
+            'Transaction input and UTXO outpoint mismatch.',
+            inputIndex: i,
+            context: {
+              'transactionHash': utxo.transactionHash,
+              'index': utxo.index
+            });
       }
       final String outpoint =
           '${utxo.transactionHash.toLowerCase()}:${utxo.index}';
       if (!outpoints.add(outpoint)) {
-        throw Exception('Duplicate transaction input outpoint');
+        throw PsbtException(CoconutErrorCode.duplicateUtxo,
+            'Duplicate transaction input outpoint.',
+            inputIndex: i, context: {'outpoint': outpoint});
       }
     }
 
@@ -1031,7 +1077,9 @@ class Psbt {
             final int policyIndex = taprootWallet.policyList.indexWhere(
                 (p) => p.toMiniscript() == inheritancePolicy.toMiniscript());
             if (policyIndex < 0) {
-              throw Exception('Applied policy not found in wallet policy list');
+              throw PsbtException(CoconutErrorCode.policyMismatch,
+                  'Applied policy was not found in wallet policy list.',
+                  inputIndex: i);
             }
             String controlBlock = taprootWallet.getControlBlock(
                 policyIndex, tx.utxoList[i].accountIndex,
@@ -1370,7 +1418,9 @@ class Psbt {
     if (addressType == AddressType.p2wsh) {
       for (int i = 0; i < inputs.length; i++) {
         if (inputs[i].totalSigner < inputs[i].requiredSignature) {
-          throw Exception('Not enough signatures');
+          throw PsbtException(CoconutErrorCode.insufficientSignatures,
+              'Input does not have enough signatures.',
+              inputIndex: i);
         }
         signedTransaction.inputs[i].setSignature(
             addressType, inputs[i].partialSig!,
@@ -1384,7 +1434,9 @@ class Psbt {
             witnessScript: inputs[i].witnessScript!.rawSerialize())) {
           continue;
         } else {
-          throw Exception('Invalid Signatures');
+          throw PsbtException(CoconutErrorCode.invalidSignature,
+              'Input contains invalid signatures.',
+              inputIndex: i);
         }
       }
       //p2wpkh single signature
@@ -1400,7 +1452,9 @@ class Psbt {
           if (signedTransaction.validateEcdsa(i, inputs[i].witnessUtxo!)) {
             continue;
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(CoconutErrorCode.invalidSignature,
+                'Input contains an invalid signature.',
+                inputIndex: i);
           }
         } else if (inputs[i].finalScriptWitness != null &&
             inputs[i].finalScriptWitness!.isNotEmpty) {
@@ -1412,19 +1466,30 @@ class Psbt {
           if (signedTransaction.validateEcdsa(i, inputs[i].witnessUtxo!)) {
             continue;
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(CoconutErrorCode.invalidSignature,
+                'Input contains an invalid finalized signature.',
+                inputIndex: i);
           }
         } else {
-          throw Exception('Not enough signatures');
+          throw PsbtException(CoconutErrorCode.insufficientSignatures,
+              'Input does not have enough signatures.',
+              inputIndex: i);
         }
       }
     } else if (addressType == AddressType.p2tr) {
       List<TransactionOutput> utxoList = [];
       for (int i = 0; i < inputs.length; i++) {
-        utxoList.add(inputs[i].witnessUtxo!);
+        final TransactionOutput? witnessUtxo = inputs[i].witnessUtxo;
+        if (witnessUtxo == null) {
+          throw PsbtException(CoconutErrorCode.missingMetadata,
+              'Input is missing its witness UTXO.',
+              inputIndex: i);
+        }
+        utxoList.add(witnessUtxo);
       }
       for (int i = 0; i < inputs.length; i++) {
-        if (inputs[i].tapScriptSig != null) {
+        if (inputs[i].tapScriptSig != null &&
+            inputs[i].tapScriptSig!.isNotEmpty) {
           //Script path spending
           _validateTaprootSignatureEncoding(
               inputs[i], inputs[i].tapScriptSig![0].signature);
@@ -1436,19 +1501,29 @@ class Psbt {
         } else if (inputs[i].tapScriptSig == null &&
             inputs[i].muSig2AggregatedPublicKey == null) {
           // key path spending
-          _validateTaprootSignatureEncoding(inputs[i], inputs[i].tapKeySig!);
+          final String? tapKeySig = inputs[i].tapKeySig;
+          if (tapKeySig == null) {
+            throw PsbtException(CoconutErrorCode.insufficientSignatures,
+                'Input is missing its Taproot key-path signature.',
+                inputIndex: i);
+          }
+          _validateTaprootSignatureEncoding(inputs[i], tapKeySig);
           signedTransaction.inputs[i]
-              .setTaprootKeyPathSpendingSignature(inputs[i].tapKeySig!);
+              .setTaprootKeyPathSpendingSignature(tapKeySig);
           if (signedTransaction.validateSchnorr(i, utxoList)) {
             continue;
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(CoconutErrorCode.invalidSignature,
+                'Input contains an invalid Taproot signature.',
+                inputIndex: i);
           }
         } else if (inputs[i].tapScriptSig == null &&
             inputs[i].muSig2AggregatedPublicKey != null) {
           //MuSig2
           if (inputs[i].totalSigner < inputs[i].requiredSignature) {
-            throw Exception('Not enough signatures');
+            throw PsbtException(CoconutErrorCode.insufficientSignatures,
+                'Input does not have enough MuSig2 partial signatures.',
+                inputIndex: i);
           }
 
           Uint8List aggregatedPubKey =
@@ -1488,12 +1563,15 @@ class Psbt {
                         inputs[i].taprootSighashType
                       ])));
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(CoconutErrorCode.invalidSignature,
+                'Input contains invalid MuSig2 signatures.',
+                inputIndex: i);
           }
         }
       }
       if (!signedTransaction.validateSpend(utxoList)) {
-        throw Exception('Invalid Transaction');
+        throw PsbtException(CoconutErrorCode.invalidTransaction,
+            'Finalized PSBT produced an invalid transaction.');
       }
     } else {
       throw Exception('Unsupported Address Type');
@@ -1717,7 +1795,8 @@ class PsbtInput {
     // check if the public key is in the bip32 derivation list
     if (bip32Derivation != null) {
       if (!bip32Derivation!.any((element) => element.publicKey == publicKey)) {
-        throw Exception('Public key not in PSBT input');
+        throw PsbtException(CoconutErrorCode.signerMismatch,
+            'Public key is not included in the PSBT input.');
       }
     }
     partialSig!.add(Signature(signature, publicKey));

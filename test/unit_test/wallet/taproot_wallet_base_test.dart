@@ -244,7 +244,12 @@ void main() {
         final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
 
         expect(forgedPsbt.matchesVault(vault), isFalse);
-        expect(() => forgedPsbt.validateTaprootPolicy(vault), throwsException);
+        expect(
+            () => forgedPsbt.validateTaprootPolicy(vault),
+            throwsA(isA<PsbtException>()
+                .having((error) => error.code, 'code',
+                    CoconutErrorCode.policyMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 1)));
         expect(() => vault.addPublicNonce(forgedPsbt.serialize()),
             throwsException);
       });
@@ -262,7 +267,12 @@ void main() {
         final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
 
         expect(forgedPsbt.matchesVault(vault), isFalse);
-        expect(() => forgedPsbt.validateTaprootPolicy(vault), throwsException);
+        expect(
+            () => forgedPsbt.validateTaprootPolicy(vault),
+            throwsA(isA<PsbtException>()
+                .having((error) => error.code, 'code',
+                    CoconutErrorCode.signerMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
 
       test('rejects a forged script-path control block', () {
@@ -292,8 +302,12 @@ void main() {
         final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
 
         expect(forgedPsbt.matchesVault(beneficiaryVault), isFalse);
-        expect(() => forgedPsbt.validateTaprootPolicy(beneficiaryVault),
-            throwsException);
+        expect(
+            () => forgedPsbt.validateTaprootPolicy(beneficiaryVault),
+            throwsA(isA<PsbtException>()
+                .having((error) => error.code, 'code',
+                    CoconutErrorCode.policyMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
     });
 

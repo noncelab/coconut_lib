@@ -405,7 +405,10 @@ void main() {
             vault);
         tx.utxoList.add(tx.utxoList.single);
 
-        expect(() => Psbt.fromTransaction(tx, vault), throwsException);
+        expect(
+            () => Psbt.fromTransaction(tx, vault),
+            throwsA(isA<PsbtException>().having((error) => error.code, 'code',
+                CoconutErrorCode.transactionInputMismatch)));
       });
 
       test('rejects a UTXO with a different output index', () {
@@ -421,7 +424,12 @@ void main() {
         tx.utxoList[0] = Utxo(original.transactionHash, original.index + 1,
             original.amount, original.derivationPath);
 
-        expect(() => Psbt.fromTransaction(tx, vault), throwsException);
+        expect(
+            () => Psbt.fromTransaction(tx, vault),
+            throwsA(isA<PsbtException>()
+                .having((error) => error.code, 'code',
+                    CoconutErrorCode.utxoMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
 
       test('rejects duplicate input outpoints', () {
@@ -435,7 +443,12 @@ void main() {
             3,
             vault);
 
-        expect(() => Psbt.fromTransaction(tx, vault), throwsException);
+        expect(
+            () => Psbt.fromTransaction(tx, vault),
+            throwsA(isA<PsbtException>()
+                .having((error) => error.code, 'code',
+                    CoconutErrorCode.duplicateUtxo)
+                .having((error) => error.inputIndex, 'inputIndex', 1)));
       });
     });
     group('Psbt.parse', () {

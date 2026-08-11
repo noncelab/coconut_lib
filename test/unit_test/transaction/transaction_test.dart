@@ -117,6 +117,20 @@ void main() {
         }
       });
 
+      test('reports insufficient funds with a stable domain code', () {
+        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        expect(
+            () => Transaction.forSinglePayment(
+                utxos.sublist(0, 1),
+                receiveAddress,
+                '${vault.derivationPath}/1/0',
+                utxos.first.amount,
+                1,
+                vault),
+            throwsA(isA<TransactionException>().having((error) => error.code,
+                'code', CoconutErrorCode.insufficientFunds)));
+      });
+
       test(
           'Generate transaction from utxo list when change amount is under dust',
           () {
