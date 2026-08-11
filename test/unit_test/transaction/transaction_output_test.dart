@@ -63,6 +63,16 @@ void main() {
         output.setAmount(2000);
         expect(output.amount, 2000);
       });
+
+      test('Reject amounts outside the Bitcoin money range', () {
+        const String address = 'bc1qkfr6qzkvrnpvpd97p57r3krxl8qg6fz24nzjsa';
+        final TransactionOutput output =
+            TransactionOutput.forPayment(1000, address);
+
+        expect(() => output.setAmount(-1), throwsRangeError);
+        expect(() => output.setAmount(TransactionOutput.maxMoney + 1),
+            throwsRangeError);
+      });
     });
     group('TransactionOutput.forPayment', () {
       test('Generate transaction output for payment', () {
@@ -71,6 +81,17 @@ void main() {
         TransactionOutput output =
             TransactionOutput.forPayment(amount, address);
         expect(output, isA<TransactionOutput>());
+      });
+
+      test('Reject negative and over-MAX_MONEY payment amounts', () {
+        const String address = 'bc1qkfr6qzkvrnpvpd97p57r3krxl8qg6fz24nzjsa';
+
+        expect(
+            () => TransactionOutput.forPayment(-1, address), throwsRangeError);
+        expect(
+            () => TransactionOutput.forPayment(
+                TransactionOutput.maxMoney + 1, address),
+            throwsRangeError);
       });
 
       test('Accept 20-byte and 32-byte witness-v0 programs', () {

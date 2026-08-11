@@ -87,6 +87,7 @@ class Transaction {
       {int version = 2,
       int lockTime = 0,
       Policy? policy}) {
+    _validateFeeRate(feeRate);
     int totalInputAmount = 0;
     List<TransactionInput> inputs = [];
     List<TransactionOutput> outputs = [];
@@ -164,6 +165,7 @@ class Transaction {
   factory Transaction.forSweep(
       List<Utxo> utxoList, String address, double feeRate, WalletBase wallet,
       {int version = 2, int lockTime = 0, Policy? policy}) {
+    _validateFeeRate(feeRate);
     List<TransactionInput> inputs = [];
     List<TransactionOutput> outputs = [];
     int inputAmount = 0;
@@ -225,6 +227,7 @@ class Transaction {
       {int version = 2,
       int lockTime = 0,
       Policy? policy}) {
+    _validateFeeRate(feeRate);
     int totalInputAmount = 0;
     List<TransactionInput> inputs = [];
     List<TransactionOutput> outputs = [];
@@ -1091,6 +1094,7 @@ class Transaction {
   /// Estimate the fee of the transaction.
   int estimateFee(double feeRatePerByte, AddressType addressType,
       {int? requiredSignature, int? totalSigner, int? leafCount}) {
+    _validateFeeRate(feeRatePerByte);
     double vByte = estimateVirtualByte(addressType,
         requiredSignature: requiredSignature,
         totalSigner: totalSigner,
@@ -1101,6 +1105,7 @@ class Transaction {
   /// Add utxo to the transaction.
   void addInputWithUtxo(Utxo newUtxo, double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
+    _validateFeeRate(feeRate);
     for (TransactionInput input in inputs) {
       if (input.transactionHash == newUtxo.transactionHash &&
           input.index == newUtxo.index) {
@@ -1157,6 +1162,7 @@ class Transaction {
   /// Remove utxo from the transaction.
   void removeInputWithUtxo(Utxo utxoToRemove, double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
+    _validateFeeRate(feeRate);
     if (!_utxoList.contains(utxoToRemove)) {
       throw Exception('UTXO not found in the UTXO list');
     }
@@ -1213,6 +1219,7 @@ class Transaction {
 
   void updateFeeRate(double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
+    _validateFeeRate(feeRate);
     int fee = (_estimateVirtualByteForWallet(this, wallet,
                 requiredSignature: requiredSignature,
                 totalSigner: totalSigner) *
@@ -1267,6 +1274,14 @@ class Transaction {
         }
       }
     }
+  }
+
+  static double _validateFeeRate(double feeRate) {
+    if (!feeRate.isFinite || feeRate < 0) {
+      throw ArgumentError.value(
+          feeRate, 'feeRate', 'Fee rate must be finite and non-negative.');
+    }
+    return feeRate;
   }
 
   int _getTotalSendingAmount() {

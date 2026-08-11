@@ -2,6 +2,8 @@ part of '../../coconut_lib.dart';
 
 /// Represents a transaction output.
 class TransactionOutput {
+  static const int maxMoney = 21000000 * 100000000;
+
   Uint8List _amount;
   ScriptPublicKey _scriptPubKey;
   String? derivationPath;
@@ -18,12 +20,14 @@ class TransactionOutput {
   int get length => _amount.length + _scriptPubKey.length;
 
   /// @nodoc
-  TransactionOutput(this._amount, this._scriptPubKey,
-      {this.derivationPath, this.isChangeOutput});
+  TransactionOutput(Uint8List amount, this._scriptPubKey,
+      {this.derivationPath, this.isChangeOutput})
+      : _amount = _validateAmountBytes(amount);
 
   factory TransactionOutput.forPayment(int amount, String address,
       {String? derivationPath, bool isChangeOutput = false}) {
-    Uint8List amountBytes = Converter.intToLittleEndianBytes(amount, 8);
+    Uint8List amountBytes =
+        Converter.intToLittleEndianBytes(_validateAmount(amount), 8);
     if (address.startsWith('1') ||
         address.startsWith('m') ||
         address.startsWith('n')) {
@@ -79,7 +83,24 @@ class TransactionOutput {
 
   /// Get the Bitcoin amount of the output.
   void setAmount(int amount) {
-    _amount = Converter.intToLittleEndianBytes(amount, 8);
+    _amount = Converter.intToLittleEndianBytes(_validateAmount(amount), 8);
+  }
+
+  static int _validateAmount(int amount) {
+    if (amount < 0 || amount > maxMoney) {
+      throw RangeError.range(amount, 0, maxMoney, 'amount');
+    }
+    return amount;
+  }
+
+  static Uint8List _validateAmountBytes(Uint8List amount) {
+    if (amount.length != 8) {
+      throw ArgumentError.value(amount.length, 'amount',
+          'Transaction output amount must be exactly 8 bytes.');
+    }
+    final int value = Converter.littleEndianToInt(amount);
+    _validateAmount(value);
+    return Uint8List.fromList(amount);
   }
 
   /// Serialize the transaction output.

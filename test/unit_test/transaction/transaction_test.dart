@@ -97,6 +97,26 @@ void main() {
     group('Transaction.forSinglePayment', () {
       List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
       String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
+      test('Reject invalid payment amounts and fee rates', () {
+        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        final String changeAddressPath = '${vault.derivationPath}/1/0';
+
+        expect(
+            () => Transaction.forSinglePayment(utxos.sublist(0, 1),
+                receiveAddress, changeAddressPath, -1, 1, vault),
+            throwsRangeError);
+        for (final double feeRate in <double>[
+          -1,
+          double.nan,
+          double.infinity
+        ]) {
+          expect(
+              () => Transaction.forSinglePayment(utxos.sublist(0, 1),
+                  receiveAddress, changeAddressPath, 1000, feeRate, vault),
+              throwsArgumentError);
+        }
+      });
+
       test(
           'Generate transaction from utxo list when change amount is under dust',
           () {
@@ -511,6 +531,19 @@ void main() {
       List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
       String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
       String changeAddressPath = '${vault.derivationPath}/1/0';
+      test('Reject negative and non-finite fee rates', () {
+        final Transaction tx = Transaction.forBatchPayment(utxos.sublist(0, 4),
+            {receiveAddress: 24000}, changeAddressPath, 1, vault);
+
+        for (final double feeRate in <double>[
+          -1,
+          double.nan,
+          double.infinity
+        ]) {
+          expect(() => tx.updateFeeRate(feeRate, vault), throwsArgumentError);
+        }
+      });
+
       test('Lower fee rate', () {
         double beforeFeeRate = 4;
         double afterFeeRate = 2;
