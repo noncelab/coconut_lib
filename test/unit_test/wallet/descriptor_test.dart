@@ -50,11 +50,11 @@ void main() {
         expect(
             () => Descriptor.forMultisignature(
                 AddressType.p2wsh, [keyStore], "48h/0h/0h/2h", 0),
-            throwsException);
+            throwsArgumentError);
         expect(
             () => Descriptor.forMultisignature(
                 AddressType.p2wsh, [keyStore, keyStore], "48h/0h/0h/2h", 1),
-            throwsException);
+            throwsArgumentError);
       });
     });
     group('Descriptor.parse(String descriptor)', () {
@@ -104,7 +104,7 @@ void main() {
         const descriptor = 'wsh(sortedmulti(1,$expression,$expression))';
 
         expect(() => Descriptor.parse(descriptor, ignoreChecksum: true),
-            throwsException);
+            throwsArgumentError);
       });
       test('Parse p2wsh descriptor (unsorted multisig)', () {
         String desc =
