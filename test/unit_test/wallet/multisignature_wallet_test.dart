@@ -14,6 +14,24 @@ void main() async {
       vault = MockFactory.createP2wshVault();
     });
     group('MultisignatureWallet.fromDescriptor', () {
+      test('stores independent public-only key stores', () {
+        final publicKeyStores = vault.keyStoreList
+            .map((keyStore) => KeyStore.fromExtendedPublicKey(
+                keyStore.extendedPublicKey.serialize(),
+                keyStore.masterFingerprint))
+            .toList();
+        final wallet = MultisignatureWallet(vault.requiredSignature,
+            vault.addressType, vault.derivationPath, publicKeyStores);
+
+        expect(wallet.keyStoreList, isNot(same(publicKeyStores)));
+        for (int i = 0; i < publicKeyStores.length; i++) {
+          expect(wallet.keyStoreList[i], isNot(same(publicKeyStores[i])));
+          expect(wallet.keyStoreList[i].hdWallet.isNeutered(), isTrue);
+          expect(wallet.keyStoreList[i].hasSeed, isFalse);
+        }
+        expect(() => wallet.keyStoreList.clear(), throwsUnsupportedError);
+      });
+
       test('Generate multisignature wallet from descriptor', () {
         String descriptor = vault.descriptor;
         MultisignatureWallet wallet =

@@ -20,6 +20,29 @@ void main() {
     });
 
     group('fromKeyStoreList', () {
+      test('copies key stores and policies and exposes immutable lists', () {
+        final TaprootVault vault = MockFactory.createP2trVaultWithPolicies();
+        final KeyStore parent = KeyStore.fromExtendedPublicKey(
+            vault.keyStoreList.first.extendedPublicKey.serialize(),
+            vault.keyStoreList.first.masterFingerprint);
+        final InheritancePolicy originalPolicy =
+            vault.policyList.whereType<InheritancePolicy>().first;
+        final KeyStore beneficiary = KeyStore.fromExtendedPublicKey(
+            originalPolicy.beneficiaryKeyStore.extendedPublicKey.serialize(),
+            originalPolicy.beneficiaryKeyStore.masterFingerprint);
+        final policy = InheritancePolicy(beneficiary, originalPolicy.locktime);
+        final wallet = TaprootWallet.fromKeyStoreList([parent], [policy]);
+
+        expect(wallet.keyStoreList.first, isNot(same(parent)));
+        expect(wallet.keyStoreList.first.hdWallet.isNeutered(), isTrue);
+        final copiedPolicy = wallet.policyList.single as InheritancePolicy;
+        expect(copiedPolicy, isNot(same(policy)));
+        expect(copiedPolicy.beneficiaryKeyStore, isNot(same(beneficiary)));
+        expect(copiedPolicy.beneficiaryKeyStore.hdWallet.isNeutered(), isTrue);
+        expect(() => wallet.keyStoreList.clear(), throwsUnsupportedError);
+        expect(() => wallet.policyList.clear(), throwsUnsupportedError);
+      });
+
       test('rejects a seed-bearing key store', () {
         final KeyStore keyStore = KeyStore.fromSeed(
             MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);

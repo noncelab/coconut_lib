@@ -25,19 +25,31 @@ class KeyStore {
   /// The seed of the key store.
   Seed get seed => _seed!;
 
-  /// Set the seed of the key store.
-  set seed(Seed? seed) {
-    _seed = seed;
-  }
-
   /// Check if the key store has seed.
   bool get hasSeed => _seed != null;
 
   static void _ensureWatchOnly(Iterable<KeyStore> keyStores) {
-    if (keyStores.any((keyStore) => keyStore.hasSeed)) {
+    if (keyStores.any(
+        (keyStore) => keyStore.hasSeed || !keyStore.hdWallet.isNeutered())) {
       throw ArgumentError(
           'Wallet accepts public-only key stores. Use a Vault for seed-bearing key stores.');
     }
+  }
+
+  /// Creates an independent public-only copy of [source].
+  ///
+  /// Seed-bearing key stores are rejected so that constructing a watch-only
+  /// wallet never silently discards secret material supplied by the caller.
+  factory KeyStore.publicOnly(KeyStore source) {
+    if (source.hasSeed) {
+      throw ArgumentError(
+          'Wallet accepts public-only key stores. Use a Vault for seed-bearing key stores.');
+    }
+    final ExtendedPublicKey extendedPublicKey = ExtendedPublicKey.parse(
+        source.extendedPublicKey.serialize(),
+        validateNetwork: false);
+    return KeyStore(source.masterFingerprint, source.hdWallet.neutered(),
+        extendedPublicKey);
   }
 
   /// Whether this key store and [other] represent the same public BIP32 node.

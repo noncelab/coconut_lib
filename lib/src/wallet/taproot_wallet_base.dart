@@ -6,18 +6,20 @@ abstract class TaprootWalletBase extends WalletBase {
   final bool _isVault;
 
   /// Get the list of keyStores.
-  List<KeyStore> get keyStoreList => _keyStoreList;
+  List<KeyStore> get keyStoreList => List.unmodifiable(_keyStoreList);
 
   /// Check if this is a vault.
   bool get isVault => _isVault;
 
   /// Get the list of miniscripts.
-  List<Policy> get policyList => _policyList;
+  List<Policy> get policyList => List.unmodifiable(_policyList);
 
   /// @nodoc
-  TaprootWalletBase(this._keyStoreList, this._policyList,
-      String _derivationPath, this._isVault)
-      : super(AddressType.p2tr, _derivationPath) {
+  TaprootWalletBase(List<KeyStore> keyStoreList, List<Policy> policyList,
+      String derivationPath, this._isVault)
+      : _keyStoreList = List<KeyStore>.of(keyStoreList),
+        _policyList = List<Policy>.of(policyList),
+        super(AddressType.p2tr, derivationPath) {
     if (!_addressType.isTaproot) {
       throw Exception('Address type must be Taproot.');
     }

@@ -177,12 +177,12 @@ class TaprootVault extends TaprootWalletBase {
     KeyStore keyStoreFromSeed =
         KeyStore.fromSeed(seed, addressType, accountIndex: accountIndex);
 
-    final int index = keyStoreList.indexWhere(
+    final int index = _keyStoreList.indexWhere(
         (keyStore) => keyStore.hasSamePublicIdentity(keyStoreFromSeed));
     if (index < 0) {
       throw StateError('Seed does not match any key store.');
     }
-    keyStoreList[index] = keyStoreFromSeed;
+    _keyStoreList[index] = keyStoreFromSeed;
   }
 
   void bindSeedToBeneficiaryKeyStore(Seed seed, {int accountIndex = 0}) {

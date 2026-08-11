@@ -17,6 +17,22 @@ void main() async {
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
     group('SingleSignatureWallet', () {
+      test('stores only a neutered copy of a private HD wallet', () {
+        final keyStore =
+            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+        final target = SingleSignatureWallet(
+            keyStore.masterFingerprint,
+            keyStore.hdWallet,
+            AddressType.p2wpkh,
+            WalletUtility.getDerivationPath(AddressType.p2wpkh, 0),
+            keyStore.extendedPublicKey);
+
+        expect(keyStore.hdWallet.isNeutered(), isFalse);
+        expect(target.keyStore.hdWallet.isNeutered(), isTrue);
+        expect(target.keyStore.hasSeed, isFalse);
+        expect(target.keyStore.hdWallet.privateKey, isNull);
+      });
+
       test('rejects a key from another network', () {
         NetworkType.setNetworkType(NetworkType.testnet);
         final keyStore =

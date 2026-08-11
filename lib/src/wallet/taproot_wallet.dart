@@ -8,15 +8,17 @@ class TaprootWallet extends TaprootWalletBase {
             derivationPath, false);
 
   static List<KeyStore> _validateKeyStores(List<KeyStore> keyStores) {
-    KeyStore._ensureWatchOnly(keyStores);
-    return keyStores;
+    return keyStores.map(KeyStore.publicOnly).toList(growable: false);
   }
 
   static List<Policy> _validatePolicies(List<Policy> policies) {
-    KeyStore._ensureWatchOnly(policies
-        .whereType<InheritancePolicy>()
-        .map((policy) => policy.beneficiaryKeyStore));
-    return policies;
+    return policies.map((policy) {
+      if (policy is InheritancePolicy) {
+        return InheritancePolicy(
+            KeyStore.publicOnly(policy.beneficiaryKeyStore), policy.locktime);
+      }
+      throw ArgumentError('Unsupported Taproot policy type.');
+    }).toList(growable: false);
   }
 
   /// Create a Taproot wallet from a list of keyStores.

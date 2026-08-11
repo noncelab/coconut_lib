@@ -9,8 +9,7 @@ class MultisignatureWallet extends MultisignatureWalletBase {
             _validateKeyStores(keyStores));
 
   static List<KeyStore> _validateKeyStores(List<KeyStore> keyStores) {
-    KeyStore._ensureWatchOnly(keyStores);
-    return keyStores;
+    return keyStores.map(KeyStore.publicOnly).toList(growable: false);
   }
 
   /// Create a multisignature wallet from descriptor.

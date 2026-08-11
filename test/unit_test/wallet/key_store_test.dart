@@ -45,13 +45,13 @@ void main() {
         expect(keyStore.seed, seed);
       });
 
-      test('binds and removes a seed', () {
+      test('creates an independent public-only copy', () {
         final watchOnly = KeyStore.fromExtendedPublicKey(
             keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
-        watchOnly.seed = seed;
-        expect(watchOnly.seed, seed);
-        watchOnly.seed = null;
-        expect(watchOnly.hasSeed, isFalse);
+        final copy = KeyStore.publicOnly(watchOnly);
+        expect(copy.hasSeed, isFalse);
+        expect(copy.hdWallet.isNeutered(), isTrue);
+        expect(copy, isNot(same(watchOnly)));
       });
     });
     group('hasSeed', () {
