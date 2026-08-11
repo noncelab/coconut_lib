@@ -71,7 +71,7 @@ class TransactionOutput {
   factory TransactionOutput.parse(String output) {
     Uint8List bytes = Codec.decodeHex(output);
     if (bytes.length < 10) {
-      throw Exception('Invalid transaction output ($output)');
+      throw const FormatException('Truncated transaction output.');
     }
     var amount = bytes.sublist(0, 8);
     var script = bytes.sublist(8, bytes.length);

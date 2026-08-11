@@ -15,6 +15,9 @@ void main() {
         String hexString = 'ad';
         expect(Codec.decodeHex(hexString), [173]);
       });
+      test('Reject odd-length hexadecimal', () {
+        expect(() => Codec.decodeHex('abc'), throwsFormatException);
+      });
     });
     group('decodeVariableInteger', () {
       test('1-byte integer (0x00 ~ 0xfc)', () {
@@ -54,17 +57,20 @@ void main() {
 
       test('Invalid input: too short for 2-byte integer', () {
         Uint8List input = Uint8List.fromList([0xfd]);
-        expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
+        expect(
+            () => Codec.decodeVariableInteger(input, 0), throwsFormatException);
       });
 
       test('Invalid input: too short for 4-byte integer', () {
         Uint8List input = Uint8List.fromList([0xfe, 0x12, 0x34]);
-        expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
+        expect(
+            () => Codec.decodeVariableInteger(input, 0), throwsFormatException);
       });
 
       test('Invalid input: too short for 8-byte integer', () {
         Uint8List input = Uint8List.fromList([0xff, 0x12, 0x34, 0x56]);
-        expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
+        expect(
+            () => Codec.decodeVariableInteger(input, 0), throwsFormatException);
       });
     });
     group('getVariableIntegerLength', () {
@@ -81,7 +87,7 @@ void main() {
 
       test('throws when the offset is outside the input', () {
         expect(() => Codec.getVariableIntegerLength(Uint8List(0), 0),
-            throwsRangeError);
+            throwsFormatException);
       });
     });
     group('encodeVariableInteger', () {

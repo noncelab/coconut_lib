@@ -43,7 +43,12 @@ void main() {
     });
     group('TransactionInput.parse', () {
       test('throws on too short input', () {
-        expect(() => TransactionInput.parse('0011'), throwsException);
+        expect(() => TransactionInput.parse('0011'), throwsFormatException);
+      });
+
+      test('throws when the script length exceeds the remaining input', () {
+        final input = '${'00' * 32}0100000005aabb';
+        expect(() => TransactionInput.parse(input), throwsFormatException);
       });
 
       test('Generate transaction input from parsing on p2pkh', () {
@@ -79,6 +84,11 @@ void main() {
       });
     });
     group('TransactionInput.parseForPsbt', () {
+      test('Reject truncated unsigned input', () {
+        expect(() => TransactionInput.parseForPsbt('00' * 40),
+            throwsFormatException);
+      });
+
       test('Generate transaction input for psbt', () {
         String inputText =
             'd06050454abde3bdd947312b9f54439acb097608a47b0b36a23d76820a3a40440000000000ffffffff';

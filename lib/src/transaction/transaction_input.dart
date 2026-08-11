@@ -42,8 +42,8 @@ class TransactionInput {
   /// Parse the transaction input from the given input string.
   factory TransactionInput.parse(String input) {
     Uint8List bytes = Codec.decodeHex(input);
-    if (bytes.length < 36) {
-      throw Exception('Invalid transaction input ($input)');
+    if (bytes.length < 41) {
+      throw const FormatException('Truncated transaction input.');
     }
     //print("full : " + Converter.bytesToHex(bytes));
     var txHash = bytes.sublist(0, 32);
@@ -55,6 +55,9 @@ class TransactionInput {
             '0000000000000000000000000000000000000000000000000000000000000000' &&
         Codec.encodeHex(index) == 'ffffffff') {
       scriptSize = bytes[36];
+      if (37 + scriptSize + 4 > bytes.length) {
+        throw const FormatException('Truncated coinbase transaction input.');
+      }
       var sequence =
           bytes.sublist(36 + 1 + scriptSize, 36 + 1 + scriptSize + 4);
       var script = bytes.sublist(36, 36 + 1 + scriptSize);
@@ -71,6 +74,9 @@ class TransactionInput {
       script = ScriptSignature.parse(Codec.encodeHex(scriptSig));
     }
     scriptSize = script.serialize().length ~/ 2;
+    if (36 + scriptSize + 4 > bytes.length) {
+      throw const FormatException('Truncated transaction input sequence.');
+    }
     var sequence = bytes.sublist(36 + scriptSize, 36 + scriptSize + 4);
     return TransactionInput(txHash, index, script, sequence);
   }
@@ -78,6 +84,13 @@ class TransactionInput {
   /// Parse the transaction input from the given input string for PSBT.
   factory TransactionInput.parseForPsbt(String input) {
     Uint8List bytes = Codec.decodeHex(input);
+    if (bytes.length < 41) {
+      throw const FormatException('Truncated unsigned transaction input.');
+    }
+    if (bytes[36] != 0x00) {
+      throw const FormatException(
+          'Unsigned transaction input must have an empty scriptSig.');
+    }
     //print("full : " + Converter.bytesToHex(bytes));
     var txHash = bytes.sublist(0, 32);
     //print("txHash : " + Converter.bytesToHex(txHash));

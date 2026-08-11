@@ -438,6 +438,23 @@ void main() {
       });
     });
     group('Psbt.parse', () {
+      test('Reject malformed PSBT lengths and trailing data', () {
+        expect(() => Psbt.parse(base64Encode([0x70, 0x73])),
+            throwsFormatException);
+        expect(
+            () =>
+                Psbt.parse(base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0xfd])),
+            throwsFormatException);
+        expect(
+            () => Psbt.parse(
+                base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0x02, 0x00])),
+            throwsFormatException);
+
+        final bytes = base64Decode(unsignedPsbt.serialize());
+        expect(() => Psbt.parse(base64Encode([...bytes, 0x01])),
+            throwsFormatException);
+      });
+
       test('Generate psbt from base64 1', () {
         Psbt psbt = Psbt.parse(unsignedPsbt.serialize());
         expect(psbt.serialize(), unsignedPsbt.serialize());

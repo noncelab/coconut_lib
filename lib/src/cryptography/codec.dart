@@ -4,6 +4,10 @@ class Codec {
   Codec._();
 
   static Uint8List decodeHex(String hexString) {
+    if (hexString.length.isOdd) {
+      throw const FormatException(
+          'Hex string must contain an even number of characters.');
+    }
     List<int> bytes = [];
     for (int i = 0; i < hexString.length; i += 2) {
       String byte = hexString.substring(i, i + 2);
@@ -23,7 +27,20 @@ class Codec {
   }
 
   static int decodeVariableInteger(Uint8List s, int offset) {
+    if (offset < 0 || offset >= s.length) {
+      throw const FormatException('CompactSize prefix is missing.');
+    }
     final firstByte = s[offset];
+    final int encodedLength = firstByte < 0xfd
+        ? 1
+        : firstByte == 0xfd
+            ? 3
+            : firstByte == 0xfe
+                ? 5
+                : 9;
+    if (offset + encodedLength > s.length) {
+      throw const FormatException('Truncated CompactSize value.');
+    }
     if (firstByte < 0xfd) {
       return firstByte;
     } else if (firstByte == 0xfd) {
@@ -39,6 +56,9 @@ class Codec {
   }
 
   static int getVariableIntegerLength(Uint8List bytes, int offset) {
+    if (offset < 0 || offset >= bytes.length) {
+      throw const FormatException('CompactSize prefix is missing.');
+    }
     final int prefix = bytes[offset];
     if (prefix < 0xfd) return 1;
     if (prefix == 0xfd) return 3;

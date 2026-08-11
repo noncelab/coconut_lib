@@ -316,9 +316,13 @@ class Transaction {
   factory Transaction.parse(String transaction,
       {bool isEmptySignature = false}) {
     Uint8List txBytes = Codec.decodeHex(transaction);
-
-    Uint8List sublist = txBytes.sublist(4);
-    bool isSegwit = sublist[0] == 0x00;
+    if (txBytes.length < 5) {
+      throw const FormatException('Truncated transaction header.');
+    }
+    bool isSegwit = txBytes[4] == 0x00;
+    if (isSegwit && txBytes.length < 6) {
+      throw const FormatException('Truncated segwit marker and flag.');
+    }
 
     // Move the pointer back by 5 bytes
     //sublist = txBytes.sublist(0, txBytes.length - 5);
@@ -342,16 +346,25 @@ class Transaction {
   static Uint8List _parseLocktime(Uint8List txBytes, int offset) {
     const locktimeLength = 4;
     if (offset + locktimeLength > txBytes.length) {
-      throw Exception('Transaction : Invalid locktime length');
+      throw const FormatException('Transaction has a truncated locktime.');
     }
     if (offset + locktimeLength != txBytes.length) {
-      throw Exception('Transaction : Unexpected trailing bytes after locktime');
+      throw const FormatException(
+          'Transaction has unexpected trailing bytes after locktime.');
     }
     return txBytes.sublist(offset, offset + locktimeLength);
   }
 
+  static void _requireBytes(
+      Uint8List bytes, int offset, int length, String field) {
+    if (offset < 0 || length < 0 || offset > bytes.length - length) {
+      throw FormatException('Truncated transaction $field.');
+    }
+  }
+
   factory Transaction._parseSegwit(Uint8List txBytes) {
     int offset = 0;
+    _requireBytes(txBytes, offset, 6, 'header');
     Uint8List version = txBytes.sublist(0, 4);
     offset += 4;
     Uint8List marker = txBytes.sublist(offset, offset + 2);
@@ -365,6 +378,7 @@ class Transaction {
     List<TransactionInput> inputs = [];
     //print(Converter.bytesToHex(txBytes.sublist(offset)));
     for (int i = 0; i < numInputs; i++) {
+      _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input =
           TransactionInput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       inputs.add(input);
@@ -375,6 +389,7 @@ class Transaction {
     offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
+      _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
           TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       outputs.add(output);
@@ -392,6 +407,7 @@ class Transaction {
         if (itemLen == 0) {
           items.add(0);
         } else {
+          _requireBytes(txBytes, offset, itemLen, 'witness item');
           items.add(txBytes.sublist(offset, offset + itemLen));
           offset += itemLen;
         }
@@ -415,6 +431,7 @@ class Transaction {
 
   factory Transaction._parseLegacy(Uint8List txBytes, bool isEmptySignature) {
     int offset = 0;
+    _requireBytes(txBytes, offset, 5, 'header');
     Uint8List version = txBytes.sublist(0, 4);
     offset += 4;
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
@@ -422,6 +439,7 @@ class Transaction {
     offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
     for (int i = 0; i < numInputs; i++) {
+      _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input =
           TransactionInput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       // print("input : ${input.serialize()}");
@@ -438,6 +456,7 @@ class Transaction {
     // print("numOutputs : $numOutputs");
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
+      _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
           TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       outputs.add(output);
@@ -452,6 +471,7 @@ class Transaction {
   factory Transaction.parseUnsignedTransaction(String transaction) {
     int offset = 0;
     Uint8List txBytes = Codec.decodeHex(transaction);
+    _requireBytes(txBytes, offset, 5, 'header');
     Uint8List version = txBytes.sublist(0, 4);
     offset += 4;
 
@@ -460,6 +480,7 @@ class Transaction {
     List<TransactionInput> inputs = [];
 
     for (int i = 0; i < numInputs; i++) {
+      _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input = TransactionInput.parseForPsbt(
           Codec.encodeHex(txBytes.sublist(offset)));
       inputs.add(input);
@@ -476,6 +497,7 @@ class Transaction {
     offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
+      _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
           TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       outputs.add(output);

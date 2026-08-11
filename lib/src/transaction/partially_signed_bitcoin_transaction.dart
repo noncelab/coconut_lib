@@ -1219,87 +1219,84 @@ class Psbt {
     return Psbt(keyMap);
   }
 
+  static ({Map<String, String> map, int offset}) _parseMap(
+      Uint8List bytes, int offset) {
+    final Map<String, String> result = {};
+    while (true) {
+      final int keyLen = Codec.decodeVariableInteger(bytes, offset);
+      offset += Codec.getVariableIntegerLength(bytes, offset);
+      if (keyLen == 0) {
+        return (map: result, offset: offset);
+      }
+      if (keyLen > bytes.length - offset) {
+        throw const FormatException('PSBT key exceeds remaining data.');
+      }
+      final Uint8List key = bytes.sublist(offset, offset + keyLen);
+      offset += keyLen;
+
+      final int valueLen = Codec.decodeVariableInteger(bytes, offset);
+      offset += Codec.getVariableIntegerLength(bytes, offset);
+      if (valueLen > bytes.length - offset) {
+        throw const FormatException('PSBT value exceeds remaining data.');
+      }
+      final Uint8List value = bytes.sublist(offset, offset + valueLen);
+      offset += valueLen;
+
+      final String encodedKey = Codec.encodeHex(key);
+      if (result.containsKey(encodedKey)) {
+        throw const FormatException('PSBT map contains a duplicate key.');
+      }
+      result[encodedKey] = Codec.encodeHex(value);
+    }
+  }
+
   /// Parse a PSBT from a base64 string.
   factory Psbt.parse(String psbtBase64) {
     int offset = 0;
 
     Uint8List psbtBytes = base64Decode(psbtBase64);
+    if (psbtBytes.length < 5) {
+      throw const FormatException('Truncated PSBT header.');
+    }
     final version = psbtBytes.sublist(0, 5);
     if (version[0] != 0x70 ||
         version[1] != 0x73 ||
         version[2] != 0x62 ||
         version[3] != 0x74 ||
         version[4] != 0xff) {
-      throw Exception('Invalid PSBT');
+      throw const FormatException('Invalid PSBT magic bytes.');
     }
     offset += 5;
 
     Map<String, dynamic> psbtData = {"global": {}, "inputs": [], "outputs": []};
 
     // Global
-    Map<String, String> globalMap = {};
-    // print(' ---> GLOBAL ---');
-    while (true) {
-      int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-      offset += Codec.getVariableIntegerLength(psbtBytes, offset);
-      if (keyLen == 0) {
-        break;
-      }
-      Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
-      offset += keyLen;
-      int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-      offset += Codec.getVariableIntegerLength(psbtBytes, offset);
-      Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
-      offset += valueLen;
-      globalMap[Codec.encodeHex(key)] = Codec.encodeHex(value);
-    }
-    psbtData["global"] = globalMap;
+    final globalResult = _parseMap(psbtBytes, offset);
+    offset = globalResult.offset;
+    psbtData["global"] = globalResult.map;
 
     // Inputs
     if (psbtData["global"]["00"] == null) {
-      throw Exception('Invalid PSBT');
+      throw const FormatException('PSBT is missing the unsigned transaction.');
     }
     Transaction globalTx =
         Transaction.parseUnsignedTransaction(psbtData["global"]["00"]);
 
     for (int i = 0; i < globalTx.inputs.length; i++) {
-      Map<String, String> inputData = {};
-      while (true) {
-        int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
-        if (keyLen == 0) {
-          break;
-        }
-        Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
-        offset += keyLen;
-        int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
-        Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
-        offset += valueLen;
-        inputData[Codec.encodeHex(key)] = Codec.encodeHex(value);
-      }
-      psbtData["inputs"].add(inputData);
+      final inputResult = _parseMap(psbtBytes, offset);
+      offset = inputResult.offset;
+      psbtData["inputs"].add(inputResult.map);
     }
 
     // Outputs
     for (int i = 0; i < globalTx.outputs.length; i++) {
-      Map<String, String> outputData = {};
-      while (true) {
-        int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        // print(' -key len ${keyLen.toString()}-');
-        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
-        if (keyLen == 0) {
-          break;
-        }
-        Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
-        offset += keyLen;
-        int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += Codec.getVariableIntegerLength(psbtBytes, offset);
-        Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
-        offset += valueLen;
-        outputData[Codec.encodeHex(key)] = Codec.encodeHex(value);
-      }
-      psbtData["outputs"].add(outputData);
+      final outputResult = _parseMap(psbtBytes, offset);
+      offset = outputResult.offset;
+      psbtData["outputs"].add(outputResult.map);
+    }
+
+    if (psbtBytes.sublist(offset).any((byte) => byte != 0x00)) {
+      throw const FormatException('Unexpected trailing data after PSBT maps.');
     }
 
     return Psbt(psbtData);
@@ -1322,10 +1319,16 @@ class Psbt {
       if (itemLen == 0) {
         witnessList.add('00');
       } else {
+        if (itemLen > witnessBytes.length - offset) {
+          throw const FormatException('Witness item exceeds remaining data.');
+        }
         witnessList.add(
             Codec.encodeHex(witnessBytes.sublist(offset, offset + itemLen)));
         offset += itemLen;
       }
+    }
+    if (offset != witnessBytes.length) {
+      throw const FormatException('Unexpected trailing witness data.');
     }
     return witnessList;
   }

@@ -210,6 +210,15 @@ void main() {
       });
     });
     group('Transaction.parse', () {
+      test('Reject malformed serialized transactions with FormatException', () {
+        expect(() => Transaction.parse('0'), throwsFormatException);
+        expect(() => Transaction.parse('00000000'), throwsFormatException);
+        expect(
+            () => Transaction.parse(
+                segwitTransaction.serialize().substring(0, 20)),
+            throwsFormatException);
+      });
+
       test('Generate transaction from parsing', () {
         String segwitTransactionText =
             '0100000000010126a348fa555f96162bc9e178d54dd8ebecf7f08ef20cc8415f3b4bd6756ada490300000000ffffffff035b5a2300000000001600144e778a823f6b0cd146fb9e63e33a80786c61ebc7ee5f03000000000017a914daffddf6f584eacfa1adbd88a98fdfc1e6f3510b87b4600f0000000000220020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d04004730440220311e2611916105cdc8b3be34ab2be50c97bebcaad598accc1c20b8244bdf3d77022072777a3754a231b57e404b94dbf7ee8d9cf20b29f35c9b310468a84aa792c1bd014730440220540695e2faab7ea0e7a54e744b2bf14234791eff4618ff74ebed481d85d0d5be02202f08aaef8b6e13dfba904d5af60811630b7dde051bec534af8008c1c6d1ff732016952210375e00eb72e29da82b89367947f29ef34afb75e8654f6ea368e0acdfd92976b7c2103a1b26313f430c4b15bb1fdce663207659d8cac749a0e53d70eff01874496feff2103c96d495bfdd5ba4145e3e046fee45e84a8a48ad05bd8dbb395c011a32cf9f88053ae00000000';
