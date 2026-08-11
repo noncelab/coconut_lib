@@ -21,17 +21,17 @@ void main() {
         expect(targetVault, isA<MultisignatureVault>());
         expect(vault.descriptor, targetVault.descriptor);
         expect(() => MultisignatureVault.fromKeyStoreList(keyStoreList, 4),
-            throwsException);
+            throwsArgumentError);
       });
 
       test('Reject invalid threshold and duplicate account xpub', () {
         expect(
             () => MultisignatureVault.fromKeyStoreList(vault.keyStoreList, 0),
-            throwsException);
+            throwsArgumentError);
         expect(
             () => MultisignatureVault.fromKeyStoreList(
                 [vault.keyStoreList.first, vault.keyStoreList.first], 1),
-            throwsException);
+            throwsArgumentError);
       });
 
       test('Reject duplicate derived public key', () {
@@ -43,7 +43,7 @@ void main() {
         expect(
             () => MultisignatureVault.fromKeyStoreList(
                 [first, keyStoreWithCollidingDerivation], 1),
-            throwsException);
+            throwsArgumentError);
       });
     });
 
@@ -63,7 +63,7 @@ void main() {
       test('Reject duplicate seed', () {
         final seed = vault.keyStoreList.first.seed;
         expect(() => MultisignatureVault.fromSeedList([seed, seed], 1),
-            throwsException);
+            throwsArgumentError);
       });
     });
     group('MultisignatureVault.fromCoordinatorBsms', () {
@@ -85,7 +85,7 @@ void main() {
             'BSMS 1.0\n$descriptor\n/0/*,/1/*\n${vault.getAddress(0)}';
 
         expect(() => MultisignatureVault.fromCoordinatorBsms(coordinator),
-            throwsException);
+            throwsArgumentError);
       });
     });
     group('bindSeedToKeyStore', () {
@@ -152,7 +152,7 @@ void main() {
         json['keyStores'] = [json['keyStores'][0], json['keyStores'][0]];
 
         expect(() => MultisignatureVault.fromJson(jsonEncode(json)),
-            throwsException);
+            throwsArgumentError);
       });
     });
   });

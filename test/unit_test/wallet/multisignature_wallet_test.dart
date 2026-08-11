@@ -59,11 +59,11 @@ void main() async {
         expect(
             () => MultisignatureWallet.fromDescriptor(duplicateBody,
                 ignoreChecksum: true),
-            throwsException);
+            throwsArgumentError);
         expect(
             () => MultisignatureWallet.fromDescriptor(zeroThresholdBody,
                 ignoreChecksum: true),
-            throwsException);
+            throwsArgumentError);
       });
 
       test('Single signature address type exception', () {
