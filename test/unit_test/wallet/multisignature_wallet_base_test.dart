@@ -51,6 +51,13 @@ void main() {
         expect(vault.getAddressWithDerivationPath("m/48'/1'/0'/2'/10/5"),
             'tb1qq0q7qav557ea92qszuytkyh33ly8elz0whcuwsycux59pzqnyulsc5vskx');
       });
+
+      test('rejects paths outside the wallet account', () {
+        expect(() => vault.getAddressWithDerivationPath("m/48'/1'/1'/2'/0/0"),
+            throwsException);
+        expect(() => vault.getAddressWithDerivationPath("m/48'/1'/0'/2'/x/0"),
+            throwsException);
+      });
     });
     group('getKeyOriginExpression', () {
       test('contains every signer fingerprint', () {

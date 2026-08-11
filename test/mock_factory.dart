@@ -172,15 +172,20 @@ abstract class MockFactory {
 
   static Psbt createP2wpkhUnsignedPsbt() {
     SingleSignatureVault vault = createP2wpkhVault();
-    Transaction tx = Transaction.forSinglePayment(createUtxoList(count: 1),
-        vault.getAddress(1), '${vault.derivationPath}/1/1', 15000, 3, vault);
+    Transaction tx = Transaction.forSinglePayment(
+        createUtxoList(count: 1, derivationPath: '${vault.derivationPath}/0/0'),
+        vault.getAddress(1),
+        '${vault.derivationPath}/1/1',
+        15000,
+        3,
+        vault);
     return Psbt.fromTransaction(tx, vault);
   }
 
   static Psbt createP2wshUnsignedPsbt() {
     MultisignatureVault vault = createP2wshVault();
     Transaction tx = Transaction.forSinglePayment(
-        createUtxoList(count: 2, derivationPath: "m/48'/1'/0'/2'/0/0"),
+        createUtxoList(count: 2, derivationPath: '${vault.derivationPath}/0/0'),
         vault.getAddress(1),
         '${vault.derivationPath}/1/1',
         15000,
@@ -192,7 +197,7 @@ abstract class MockFactory {
   static Psbt createP2wshSignedPsbt() {
     MultisignatureVault vault = createP2wshVault();
     Transaction tx = Transaction.forSinglePayment(
-        createUtxoList(count: 2, derivationPath: "m/48'/1'/0'/2'/0/0"),
+        createUtxoList(count: 2, derivationPath: '${vault.derivationPath}/0/0'),
         vault.getAddress(1),
         '${vault.derivationPath}/1/1',
         15000,
@@ -205,8 +210,13 @@ abstract class MockFactory {
 
   static Psbt createP2wpkhSignedPsbt() {
     SingleSignatureVault vault = createP2wpkhVault();
-    Transaction tx = Transaction.forSinglePayment(createUtxoList(count: 1),
-        vault.getAddress(1), '${vault.derivationPath}/1/1', 15000, 3, vault);
+    Transaction tx = Transaction.forSinglePayment(
+        createUtxoList(count: 1, derivationPath: '${vault.derivationPath}/0/0'),
+        vault.getAddress(1),
+        '${vault.derivationPath}/1/1',
+        15000,
+        3,
+        vault);
     Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
 
     return Psbt.parse(vault.addSignatureToPsbt(unsignedPsbt.serialize()));
@@ -215,7 +225,8 @@ abstract class MockFactory {
   static Psbt createP2trKeyPathSpendingUnsignedPsbt() {
     TaprootVault vault = createP2trKeyPathSpendingVault();
     Transaction tx = Transaction.forSinglePayment(
-        createTaprootUtxoList(count: 1),
+        createTaprootUtxoList(
+            count: 1, derivationPath: '${vault.derivationPath}/0/0'),
         vault.getAddress(1),
         '${vault.derivationPath}/1/1',
         15000,
@@ -227,7 +238,8 @@ abstract class MockFactory {
   static Psbt createP2trKeyPathSpendingSignedPsbt() {
     TaprootVault vault = createP2trKeyPathSpendingVault();
     Transaction tx = Transaction.forSinglePayment(
-        createTaprootUtxoList(count: 1),
+        createTaprootUtxoList(
+            count: 1, derivationPath: '${vault.derivationPath}/0/0'),
         vault.getAddress(1),
         '${vault.derivationPath}/1/1',
         15000,

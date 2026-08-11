@@ -127,6 +127,8 @@ void main() {
       test('throws on mismatch path', () {
         expect(() => vault.getAddressWithDerivationPath("m/84'/1'/0'/0/0"),
             throwsException);
+        expect(() => vault.getAddressWithDerivationPath("m/86'/1'/0x/0/0"),
+            throwsException);
       });
     });
 

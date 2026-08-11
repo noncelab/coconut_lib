@@ -40,6 +40,13 @@ void main() {
         expect(wallet.getAddressWithDerivationPath("m/84'/1'/0'/1/0"),
             "tb1qyg29ghzqe5fweer9tyga4dtccxhnx4yqudfygp");
       });
+
+      test('rejects paths outside the wallet account', () {
+        expect(() => wallet.getAddressWithDerivationPath("m/84'/1'/1'/0/0"),
+            throwsException);
+        expect(() => wallet.getAddressWithDerivationPath("m/84'/1'/0x/0/0"),
+            throwsException);
+      });
     });
     group('getKeyOriginExpression', () {
       test('Get key origin expression', () {

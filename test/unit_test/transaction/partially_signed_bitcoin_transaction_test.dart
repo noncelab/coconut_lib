@@ -382,7 +382,8 @@ void main() {
       test('Generate psbt from transaction object (multisig)', () {
         MultisignatureVault vault = MockFactory.createP2wshVault();
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            MockFactory.createUtxoList(
+                count: 1, derivationPath: '${vault.derivationPath}/0/0'),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,

@@ -50,11 +50,11 @@ abstract class SingleSignatureWalletBase extends WalletBase {
 
   @override
   String getAddressWithDerivationPath(String derivationPath) {
-    if (!WalletUtility.validateDerivationPath(_derivationPath)) {
+    if (!WalletUtility.validateDerivationPath(derivationPath)) {
       throw Exception("Invalid derivation path (e.g., m/44'/0'/0'/0/0)");
     }
 
-    if (!derivationPath.startsWith(derivationPath)) {
+    if (!derivationPath.startsWith('$_derivationPath/')) {
       throw Exception("Derivation path does not match");
     }
 
