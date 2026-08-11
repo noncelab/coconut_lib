@@ -392,6 +392,50 @@ void main() {
         final String serialized = psbt.serialize();
         expect(Psbt.parse(serialized).serialize(), serialized);
       });
+
+      test('rejects a transaction input and UTXO count mismatch', () {
+        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        final Transaction tx = Transaction.forSinglePayment(
+            MockFactory.createUtxoList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        tx.utxoList.add(tx.utxoList.single);
+
+        expect(() => Psbt.fromTransaction(tx, vault), throwsException);
+      });
+
+      test('rejects a UTXO with a different output index', () {
+        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        final Transaction tx = Transaction.forSinglePayment(
+            MockFactory.createUtxoList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        final Utxo original = tx.utxoList.single;
+        tx.utxoList[0] = Utxo(original.transactionHash, original.index + 1,
+            original.amount, original.derivationPath);
+
+        expect(() => Psbt.fromTransaction(tx, vault), throwsException);
+      });
+
+      test('rejects duplicate input outpoints', () {
+        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        final Utxo utxo = MockFactory.createUtxoList(count: 1).single;
+        final Transaction tx = Transaction.forSinglePayment(
+            [utxo, utxo],
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+
+        expect(() => Psbt.fromTransaction(tx, vault), throwsException);
+      });
     });
     group('Psbt.parse', () {
       test('Generate psbt from base64 1', () {

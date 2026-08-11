@@ -840,9 +840,22 @@ class Psbt {
     if (tx.utxoList.isEmpty) {
       throw Exception('No UTXOs in transaction');
     }
+    if (tx.inputs.length != tx.utxoList.length) {
+      throw Exception('Transaction input and UTXO count mismatch');
+    }
+    final Set<String> outpoints = <String>{};
     for (int i = 0; i < tx.inputs.length; i++) {
-      if (tx.inputs[i].transactionHash != tx.utxoList[i].transactionHash) {
-        throw Exception('Transaction input and UTXO list mismatch');
+      final TransactionInput input = tx.inputs[i];
+      final Utxo utxo = tx.utxoList[i];
+      if (input.transactionHash.toLowerCase() !=
+              utxo.transactionHash.toLowerCase() ||
+          input.index != utxo.index) {
+        throw Exception('Transaction input and UTXO outpoint mismatch');
+      }
+      final String outpoint =
+          '${utxo.transactionHash.toLowerCase()}:${utxo.index}';
+      if (!outpoints.add(outpoint)) {
+        throw Exception('Duplicate transaction input outpoint');
       }
     }
 
