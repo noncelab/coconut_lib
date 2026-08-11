@@ -93,7 +93,7 @@ class ScriptPublicKey extends Script {
     codec.data.removeAt(0);
     var data8Bits = Converter.convertBits(codec.data, 5, 8, pad: false);
     if (data8Bits.length != 32) {
-      throw Exception(
+      throw FormatException(
           "Invalid Taproot address: data8Bits length is ${data8Bits.length}, expected 32.");
     }
     return ScriptPublicKey([

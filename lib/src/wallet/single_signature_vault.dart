@@ -71,11 +71,15 @@ class SingleSignatureVault extends SingleSignatureWalletBase {
 
   /// Create a single signature vault from a json string.
   factory SingleSignatureVault.fromJson(String json) {
-    Map<String, dynamic> map = jsonDecode(json);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(json, name: 'SingleSignatureVault JSON');
     return SingleSignatureVault._(
-        KeyStore.fromJson(map['keyStore']),
-        AddressType.getAddressTypeFromName(map['addressTypeName']),
-        map['derivationPath']);
+        KeyStore.fromJson(Codec._readJsonField<String>(map, 'keyStore',
+            name: 'SingleSignatureVault JSON')),
+        AddressType.getAddressTypeFromName(Codec._readJsonField<String>(
+            map, 'addressTypeName', name: 'SingleSignatureVault JSON')),
+        Codec._readJsonField<String>(map, 'derivationPath',
+            name: 'SingleSignatureVault JSON'));
   }
 
   /// Display BSMS for multisig setup.

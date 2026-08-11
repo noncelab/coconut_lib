@@ -76,16 +76,14 @@ class InheritancePolicy extends Policy {
   }
 
   factory InheritancePolicy.fromJson(String jsonStr) {
-    final Map<String, dynamic> map = jsonDecode(jsonStr);
-
-    final int locktime = map['locktime'];
-
-    final dynamic ks = map['beneficiaryKeyStore'];
-    if (ks == null) {
-      throw Exception(
-          'Invalid InheritancePolicy json: missing beneficiaryKeyStore');
-    }
-    final KeyStore beneficiaryKeyStore = KeyStore.fromJson(ks as String);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(jsonStr, name: 'InheritancePolicy JSON');
+    final int locktime = Codec._readJsonField<int>(map, 'locktime',
+        name: 'InheritancePolicy JSON');
+    final String keyStoreJson = Codec._readJsonField<String>(
+        map, 'beneficiaryKeyStore',
+        name: 'InheritancePolicy JSON');
+    final KeyStore beneficiaryKeyStore = KeyStore.fromJson(keyStoreJson);
 
     return InheritancePolicy(beneficiaryKeyStore, locktime);
   }

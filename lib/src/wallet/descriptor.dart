@@ -115,7 +115,7 @@ class Descriptor {
   /// Parse the descriptor.
   factory Descriptor.parse(String descriptor, {bool ignoreChecksum = false}) {
     if (ignoreChecksum == false && !Checksum.isValidChecksum(descriptor)) {
-      throw Exception('Invalid descriptor format.');
+      throw const FormatException('Invalid descriptor checksum or format.');
     }
     AddressType addressType =
         Descriptor.getAddressTypeFromDescriptor(descriptor);
@@ -140,7 +140,7 @@ class Descriptor {
         require = int.parse(multisigContent.split(',')[0]);
         pubKeyContent = multisigContent.split(',').sublist(1);
       } else {
-        throw Exception('No multisig descriptor found.');
+        throw const FormatException('No multisig descriptor found.');
       }
     } else if (addressType == AddressType.p2tr) {
       // Parse tr(internal_key, {miniscript1}, {miniscript2}, ...)
@@ -176,7 +176,7 @@ class Descriptor {
       }
 
       if (topLevelParts.isEmpty) {
-        throw Exception('Invalid taproot descriptor format.');
+        throw const FormatException('Invalid Taproot descriptor format.');
       }
 
       // First part is internal key
@@ -211,7 +211,7 @@ class Descriptor {
           miniscriptList
               .add(miniscriptPart.substring(1, miniscriptPart.length - 1));
         } else {
-          throw Exception('Invalid miniscript format: $miniscriptPart');
+          throw FormatException('Invalid miniscript format: $miniscriptPart');
         }
       }
 

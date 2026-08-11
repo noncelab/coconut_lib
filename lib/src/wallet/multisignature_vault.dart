@@ -57,15 +57,25 @@ class MultisignatureVault extends MultisignatureWalletBase {
 
   /// Create a multisignature vault from a json string.
   factory MultisignatureVault.fromJson(String jsonStr) {
-    Map<String, dynamic> json = jsonDecode(jsonStr);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'MultisignatureVault JSON');
     List<KeyStore> keyStores = [];
-    for (var keyStoreJson in json['keyStores']) {
+    for (final dynamic keyStoreJson in Codec._readJsonField<List<dynamic>>(
+        json, 'keyStores',
+        name: 'MultisignatureVault JSON')) {
+      if (keyStoreJson is! String) {
+        throw const FormatException(
+            'MultisignatureVault keyStores must contain JSON strings.');
+      }
       keyStores.add(KeyStore.fromJson(keyStoreJson));
     }
     return MultisignatureVault.fromKeyStoreList(
-        keyStores, json['requiredSignature'],
-        addressType:
-            AddressType.getAddressTypeFromName(json['addressTypeName']),
+        keyStores,
+        Codec._readJsonField<int>(json, 'requiredSignature',
+            name: 'MultisignatureVault JSON'),
+        addressType: AddressType.getAddressTypeFromName(
+            Codec._readJsonField<String>(json, 'addressTypeName',
+                name: 'MultisignatureVault JSON')),
         accountIndex: 0);
   }
 

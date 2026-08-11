@@ -111,8 +111,8 @@ class MultisignatureScript extends Script {
     String opCode = ScriptOperationCode.getOpCode(commands[0]);
     try {
       required = int.parse(opCode.replaceAll("OP_", ""));
-    } catch (e) {
-      throw Exception('Script is not a P2WSH');
+    } on FormatException {
+      throw const FormatException('Script is not a P2WSH multisig script.');
     }
     return required;
   }

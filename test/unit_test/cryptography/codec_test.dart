@@ -326,12 +326,12 @@ void main() {
       });
 
       test('Empty input should throw an exception', () {
-        expect(() => Codec.decodeBase58(""), throwsException);
+        expect(() => Codec.decodeBase58(""), throwsFormatException);
       });
 
       test('Invalid Base58 characters should throw an exception', () {
         expect(() => Codec.decodeBase58("O0I!"),
-            throwsException); // 'O', '0', 'I' are invalid in Base58
+            throwsFormatException); // 'O', '0', 'I' are invalid in Base58
       });
     });
 

@@ -149,11 +149,15 @@ class KeyStore {
 
   ///@nodoc
   factory KeyStore.fromJson(String json) {
-    Map<String, dynamic> map = jsonDecode(json);
-    String fingerprint = map['fingerprint'];
-    HDWallet hdWallet = HDWallet.fromJson(map['hdWallet']);
-    ExtendedPublicKey extendedPublicKey =
-        ExtendedPublicKey.parse(map['extendedPublicKey']);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(json, name: 'KeyStore JSON');
+    final String fingerprint =
+        Codec._readJsonField<String>(map, 'fingerprint', name: 'KeyStore JSON');
+    final HDWallet hdWallet = HDWallet.fromJson(
+        Codec._readJsonField<String>(map, 'hdWallet', name: 'KeyStore JSON'));
+    final ExtendedPublicKey extendedPublicKey = ExtendedPublicKey.parse(
+        Codec._readJsonField<String>(map, 'extendedPublicKey',
+            name: 'KeyStore JSON'));
     // Seed? seed = map['seed'] != null ? Seed.fromJson(map['seed']) : null;
     return KeyStore(fingerprint, hdWallet, extendedPublicKey);
   }

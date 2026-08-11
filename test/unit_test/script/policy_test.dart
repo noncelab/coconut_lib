@@ -78,11 +78,15 @@ void main() {
           'type': 'unknown_type',
           'dummy': 'x',
         });
-        expect(() => Policy.fromJson(json), throwsException);
+        expect(() => Policy.fromJson(json), throwsFormatException);
       });
 
       test('throws when neither type nor miniscript present', () {
-        expect(() => Policy.fromJson('{}'), throwsException);
+        expect(() => Policy.fromJson('{}'), throwsFormatException);
+      });
+
+      test('throws when JSON is not an object', () {
+        expect(() => Policy.fromJson('[]'), throwsFormatException);
       });
     });
 

@@ -3,6 +3,24 @@ part of '../../coconut_lib.dart';
 class Codec {
   Codec._();
 
+  static Map<String, dynamic> _decodeJsonObject(String source,
+      {String name = 'JSON'}) {
+    final dynamic decoded = jsonDecode(source);
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException('$name must be a JSON object.');
+    }
+    return decoded;
+  }
+
+  static T _readJsonField<T>(Map<String, dynamic> object, String field,
+      {String name = 'JSON'}) {
+    final dynamic value = object[field];
+    if (value is! T) {
+      throw FormatException('$name field "$field" must be a $T.');
+    }
+    return value;
+  }
+
   static Uint8List decodeHex(String hexString) {
     if (hexString.length.isOdd) {
       throw const FormatException(
@@ -117,11 +135,15 @@ class Codec {
     String alphabet =
         '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     if (base58Text.isEmpty) {
-      throw Exception('Base58 : Not Base58 string');
+      throw const FormatException('Base58 value is empty.');
     }
     List<int> bytes = [0];
     for (int i = 0; i < base58Text.length; i++) {
       int value = alphabet.indexOf(base58Text[i]);
+      if (value < 0) {
+        throw FormatException(
+            'Invalid Base58 character at position $i: ${base58Text[i]}');
+      }
 
       var carry = value;
       for (var j = 0; j < bytes.length; ++j) {
@@ -143,6 +165,9 @@ class Codec {
   }
 
   static Uint8List _decodeBase58Raw(Uint8List buffer) {
+    if (buffer.length < 4) {
+      throw const FormatException('Base58Check value is too short.');
+    }
     Uint8List payload = buffer.sublist(0, buffer.length - 4);
     Uint8List checksum = buffer.sublist(buffer.length - 4);
     Uint8List target =
@@ -151,7 +176,7 @@ class Codec {
         checksum[1] != target[1] ||
         checksum[2] != target[2] ||
         checksum[3] != target[3]) {
-      throw Exception("Invalid checksum");
+      throw const FormatException('Invalid Base58 checksum.');
     }
     return payload;
   }

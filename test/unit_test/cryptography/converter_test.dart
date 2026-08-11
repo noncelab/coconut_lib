@@ -71,6 +71,9 @@ void main() {
         String binary = '1010';
         expect(Converter.binToHex(binary), 'A');
       });
+      test('Reject invalid binary length', () {
+        expect(() => Converter.binToHex('101'), throwsFormatException);
+      });
     });
     group('binToBytes', () {
       test('Get bytes from binary', () {
@@ -155,22 +158,22 @@ void main() {
             equals(expectedOutput));
       });
 
-      test('Illegal zero padding should throw Exception', () {
+      test('Illegal zero padding should throw FormatException', () {
         var input = [1, 2, 3];
         expect(() => Converter.convertBits(input, 8, 5, pad: false),
-            throwsException);
+            throwsFormatException);
       });
 
-      test('Negative values should throw Exception', () {
+      test('Negative values should throw FormatException', () {
         var input = [-1, 2, 3];
         expect(() => Converter.convertBits(input, 8, 5, pad: true),
-            throwsException);
+            throwsFormatException);
       });
 
-      test('Values out of range should throw Exception', () {
+      test('Values out of range should throw FormatException', () {
         var input = [256]; // 8-bit max is 255
         expect(() => Converter.convertBits(input, 8, 5, pad: true),
-            throwsException);
+            throwsFormatException);
       });
     });
     group("derToRawSignature", () {

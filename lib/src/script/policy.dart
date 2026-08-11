@@ -51,7 +51,8 @@ abstract class Policy {
   /// - `{ "type": "inheritance", ... }`
   /// - `{ "miniscript": "..." }` (legacy / compact form)
   static Policy fromJson(String jsonStr) {
-    final Map<String, dynamic> map = jsonDecode(jsonStr);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(jsonStr, name: 'Policy JSON');
 
     final String? type = map['type'];
     if (type != null) {
@@ -59,7 +60,7 @@ abstract class Policy {
         case 'inheritance':
           return InheritancePolicy.fromJson(jsonStr);
         default:
-          throw Exception('Unsupported policy type: $type');
+          throw FormatException('Unsupported policy type: $type');
       }
     }
 
@@ -68,6 +69,7 @@ abstract class Policy {
       return Policy.fromMiniscript(miniscript);
     }
 
-    throw Exception('Invalid policy json: missing "type" or "miniscript".');
+    throw const FormatException(
+        'Invalid policy JSON: missing "type" or "miniscript".');
   }
 }

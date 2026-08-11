@@ -99,7 +99,8 @@ class Converter {
 
   static String binToHex(String binary) {
     if (binary.length % 4 != 0) {
-      throw Exception('Invalid binary string(not multiple of 4)');
+      throw const FormatException(
+          'Binary string length must be a multiple of 4.');
     }
     String hex = '';
     for (int i = 0; i < binary.length; i += 4) {
@@ -214,7 +215,7 @@ class Converter {
 
     for (var v in data) {
       if (v < 0 || (v >> from) != 0) {
-        throw Exception();
+        throw const FormatException('Input value exceeds source bit width.');
       }
       acc = (acc << from) | v;
       bits += from;
@@ -229,9 +230,9 @@ class Converter {
         result.add((acc << (to - bits)) & maxv);
       }
     } else if (bits >= from) {
-      throw Exception('illegal zero padding');
+      throw const FormatException('Illegal zero padding.');
     } else if (((acc << (to - bits)) & maxv) != 0) {
-      throw Exception('non zero');
+      throw const FormatException('Non-zero padding.');
     }
 
     return result;

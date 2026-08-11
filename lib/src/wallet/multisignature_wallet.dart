@@ -51,8 +51,11 @@ class MultisignatureWallet extends MultisignatureWalletBase {
 
   /// Parse the multisignature wallet from json string.
   factory MultisignatureWallet.fromJson(String jsonStr) {
-    Map<String, dynamic> json = jsonDecode(jsonStr);
-    return MultisignatureWallet.fromDescriptor(json['descriptor']);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'MultisignatureWallet JSON');
+    return MultisignatureWallet.fromDescriptor(Codec._readJsonField<String>(
+        json, 'descriptor',
+        name: 'MultisignatureWallet JSON'));
   }
 
   /// Get Json string of the multisignature wallet.

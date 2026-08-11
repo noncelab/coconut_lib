@@ -117,21 +117,37 @@ class TaprootVault extends TaprootWalletBase {
 
   /// Create a Taproot vault from a json string.
   factory TaprootVault.fromJson(String jsonStr) {
-    final Map<String, dynamic> json = jsonDecode(jsonStr);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'TaprootVault JSON');
     if (json['isVault'] == false) {
-      throw Exception('JSON is for TaprootWallet; use TaprootWallet.fromJson');
+      throw const FormatException(
+          'JSON is for TaprootWallet; use TaprootWallet.fromJson.');
     }
-    final String path = json['derivationPath'] as String;
+    final String path = Codec._readJsonField<String>(json, 'derivationPath',
+        name: 'TaprootVault JSON');
     final List<KeyStore> keyStores = [];
-    for (final dynamic keyStoreJson in json['keyStores'] as List<dynamic>) {
-      keyStores.add(KeyStore.fromJson(keyStoreJson as String));
+    for (final dynamic keyStoreJson in Codec._readJsonField<List<dynamic>>(
+        json, 'keyStores',
+        name: 'TaprootVault JSON')) {
+      if (keyStoreJson is! String) {
+        throw const FormatException(
+            'TaprootVault keyStores must contain JSON strings.');
+      }
+      keyStores.add(KeyStore.fromJson(keyStoreJson));
     }
 
     final List<Policy> policies = [];
     final dynamic policiesJson = json['policies'];
     if (policiesJson != null) {
-      for (final dynamic policyJson in policiesJson as List<dynamic>) {
-        policies.add(Policy.fromJson(policyJson as String));
+      if (policiesJson is! List<dynamic>) {
+        throw const FormatException('TaprootVault policies must be a list.');
+      }
+      for (final dynamic policyJson in policiesJson) {
+        if (policyJson is! String) {
+          throw const FormatException(
+              'TaprootVault policies must contain JSON strings.');
+        }
+        policies.add(Policy.fromJson(policyJson));
       }
     }
 

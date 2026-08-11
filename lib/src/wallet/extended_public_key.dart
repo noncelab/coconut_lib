@@ -101,7 +101,8 @@ class ExtendedPublicKey {
     }
     Uint8List buffer = Codec.decodeBase58(expub);
     if (buffer.length != 78) {
-      throw Exception("ExtendedPublicKey :Invalid buffer length");
+      throw const FormatException(
+          'Invalid extended public key payload length.');
     }
     ByteData bytes = buffer.buffer.asByteData();
     var version = bytes.getUint32(0);
@@ -113,12 +114,16 @@ class ExtendedPublicKey {
     Uint8List fingerprint = Uint8List.fromList(buffer.sublist(5, 9));
     if (depth == 0) {
       if (!fingerprint.every((b) => b == 0)) {
-        throw Exception("HDWallet :Invalid parent fingerprint");
+        throw const FormatException(
+            'Master extended public key has a parent fingerprint.');
       }
     }
 
     var index = bytes.getUint32(9);
-    if (depth == 0 && index != 0) throw Exception("HDWallet : Invalid index");
+    if (depth == 0 && index != 0) {
+      throw const FormatException(
+          'Master extended public key has a child index.');
+    }
 
     Uint8List chainCode = buffer.sublist(13, 45);
     Uint8List publicKey = buffer.sublist(45, 78);

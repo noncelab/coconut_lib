@@ -80,13 +80,20 @@ class HDWallet {
 
   /// @nodoc
   factory HDWallet.fromJson(String json) {
-    Map<String, dynamic> map = jsonDecode(json);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(json, name: 'HDWallet JSON');
+    final String publicKey =
+        Codec._readJsonField<String>(map, 'publicKey', name: 'HDWallet JSON');
+    final String chainCode =
+        Codec._readJsonField<String>(map, 'chainCode', name: 'HDWallet JSON');
     if (map.containsKey('privateKey')) {
-      return HDWallet(Codec.decodeHex(map['privateKey']),
-          Codec.decodeHex(map['publicKey']), Codec.decodeHex(map['chainCode']));
+      final String privateKey = Codec._readJsonField<String>(map, 'privateKey',
+          name: 'HDWallet JSON');
+      return HDWallet(Codec.decodeHex(privateKey), Codec.decodeHex(publicKey),
+          Codec.decodeHex(chainCode));
     } else {
       return HDWallet.fromPublicKey(
-          Codec.decodeHex(map['publicKey']), Codec.decodeHex(map['chainCode']));
+          Codec.decodeHex(publicKey), Codec.decodeHex(chainCode));
     }
   }
 

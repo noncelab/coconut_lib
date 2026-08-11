@@ -410,6 +410,12 @@ void main() {
       });
     });
     group('fromJson', () {
+      test('Reject malformed JSON object and missing fields', () {
+        expect(() => HDWallet.fromJson('[]'), throwsFormatException);
+        expect(
+            () => HDWallet.fromJson('{"publicKey": 1}'), throwsFormatException);
+      });
+
       test('Generate HDwallet with private key from json', () {
         String json =
             '''{"privateKey":"6a8c473974ffabbf2bac36adadd328baabf8b6d7a269b69bb808d80d64f17f41","publicKey":"03f8f8a1412b9e56dd9576f49ae0a6499757ea592bd491f910c8f519ef0ea7cf3c","chainCode":"4cfac59caf9be1428410291697177b2efc8373a29f7ad4a34694163686a4d20b"}''';

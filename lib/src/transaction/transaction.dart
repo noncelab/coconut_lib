@@ -370,7 +370,7 @@ class Transaction {
     Uint8List marker = txBytes.sublist(offset, offset + 2);
     offset += 2;
     if (!(marker[0] == 0x00 && marker[1] == 0x01)) {
-      throw Exception('Transaction : Not a segwit transaction maker');
+      throw const FormatException('Invalid segwit marker and flag.');
     }
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
     //print(numInputs);

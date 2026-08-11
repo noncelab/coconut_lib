@@ -58,8 +58,11 @@ class SingleSignatureWallet extends SingleSignatureWalletBase {
 
   /// Parse the single signature wallet from json string.
   factory SingleSignatureWallet.fromJson(String jsonStr) {
-    Map<String, dynamic> json = jsonDecode(jsonStr);
-    return SingleSignatureWallet.fromDescriptor(json['descriptor']);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'SingleSignatureWallet JSON');
+    return SingleSignatureWallet.fromDescriptor(Codec._readJsonField<String>(
+        json, 'descriptor',
+        name: 'SingleSignatureWallet JSON'));
   }
 
   factory SingleSignatureWallet.fromCryptoAccountPayload(
