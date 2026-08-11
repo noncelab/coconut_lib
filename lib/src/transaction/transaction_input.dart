@@ -241,6 +241,12 @@ class TransactionInput {
       Uint8List outputKey =
           Uint8List.fromList((utxo.scriptPubKey.commands[1] as Uint8List));
       Uint8List signature = Codec.decodeHex(witnessList[0]);
+      if (signature.length == 65) {
+        if (signature.last == 0x00) return false;
+        signature = signature.sublist(0, 64);
+      } else if (signature.length != 64) {
+        return false;
+      }
       if (witnessList.length == 1) {
         // Key path spending
         return Ecc.verifySchnorr(sigHash, outputKey, signature);

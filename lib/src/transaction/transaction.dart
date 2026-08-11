@@ -857,12 +857,30 @@ class Transaction {
 
   /// Validate taproot signature
   bool validateSchnorr(int inputIndex, List<TransactionOutput> utxoList) {
-    Uint8List sigHash =
-        Codec.decodeHex(getTaprootSigHash(inputIndex, utxoList));
+    final Uint8List encodedSignature =
+        Codec.decodeHex(inputs[inputIndex].witnessList[0]);
+    final int hashType = _taprootHashTypeFromSignature(encodedSignature);
+    Uint8List sigHash = Codec.decodeHex(
+        getTaprootSigHash(inputIndex, utxoList, hashType: hashType));
 
     Uint8List publicKey = utxoList[inputIndex].scriptPubKey.commands[1];
-    Uint8List signature = Codec.decodeHex(inputs[inputIndex].witnessList[0]);
+    Uint8List signature = encodedSignature.length == 65
+        ? encodedSignature.sublist(0, 64)
+        : encodedSignature;
     return Ecc.verifySchnorr(sigHash, publicKey, signature);
+  }
+
+  static int _taprootHashTypeFromSignature(Uint8List signature) {
+    if (signature.length == 64) return 0x00;
+    if (signature.length != 65 || signature.last == 0x00) {
+      throw FormatException(
+          'Invalid Taproot signature length or sighash type.');
+    }
+    if (signature.last != 0x01) {
+      throw UnsupportedError(
+          'Unsupported Taproot sighash type: 0x${signature.last.toRadixString(16).padLeft(2, '0')}');
+    }
+    return signature.last;
   }
 
   bool validateSpend(List<TransactionOutput> utxoList) {
@@ -878,6 +896,9 @@ class Transaction {
             inputIndex, utxo, AddressType.p2wsh,
             witnessScript: input.witnessList.last));
       } else if (utxo.scriptPubKey.isP2tr()) {
+        final Uint8List taprootSignature =
+            Codec.decodeHex(input.witnessList[0]);
+        final int hashType = _taprootHashTypeFromSignature(taprootSignature);
         bool isKeyPathSpending;
         if (input.witnessList.length == 1) {
           isKeyPathSpending = true;
@@ -887,7 +908,8 @@ class Transaction {
           throw Exception('Invalid Taproot Transaction');
         }
         if (isKeyPathSpending) {
-          sigHash = Codec.decodeHex(getTaprootSigHash(inputIndex, utxoList));
+          sigHash = Codec.decodeHex(
+              getTaprootSigHash(inputIndex, utxoList, hashType: hashType));
         } else {
           final Uint8List controlBlockBytes =
               Codec.decodeHex(input.witnessList[2]);
@@ -903,6 +925,7 @@ class Transaction {
           sigHash = Codec.decodeHex(getTaprootSigHash(
             inputIndex,
             utxoList,
+            hashType: hashType,
             isTapscript: true,
             tapleafHash: tapleafHash,
             keyVersion: 0,

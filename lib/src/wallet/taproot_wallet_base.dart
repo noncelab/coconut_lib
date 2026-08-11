@@ -210,8 +210,9 @@ abstract class TaprootWalletBase extends WalletBase {
       }
 
       // Default (key-path) taproot sighash; may be overridden for tapscript spends.
-      String sigHash = psbtObject.unsignedTransaction!
-          .getTaprootSigHash(inputIndex, utxoList);
+      String sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+          inputIndex, utxoList,
+          hashType: psbtInput.taprootSighashType);
       List<DerivationPath>? derivationPathList = psbtInput.tapBip32Derivation;
       //Script path spending
       if (psbtInput.tapLeafScript != null) {
@@ -222,6 +223,7 @@ abstract class TaprootWalletBase extends WalletBase {
             'TapLeaf', Uint8List.fromList([0xc0, ...size, ...raw]));
         sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
             inputIndex, utxoList,
+            hashType: psbtInput.taprootSighashType,
             // tapscript keyVersion is 0 (BIP342); leaf version is committed in tapleafHash
             isTapscript: true,
             tapleafHash: tapleafHash,

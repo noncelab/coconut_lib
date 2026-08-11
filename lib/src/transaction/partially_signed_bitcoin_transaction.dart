@@ -526,6 +526,15 @@ class Psbt {
       if (psbtMap["inputs"][i].containsKey("01")) {
         witnessUtxo = TransactionOutput.parse(psbtMap["inputs"][i]["01"]);
       }
+      int? sighashType;
+      if (psbtMap["inputs"][i].containsKey("03")) {
+        final Uint8List sighashBytes =
+            Codec.decodeHex(psbtMap["inputs"][i]["03"]);
+        if (sighashBytes.length != 4) {
+          throw FormatException('Invalid PSBT input sighash type length.');
+        }
+        sighashType = Converter.littleEndianToInt(sighashBytes);
+      }
 
       List<DerivationPath> inputDerivationPathList = [];
       List<Signature> partialSigList = [];
@@ -695,6 +704,7 @@ class Psbt {
       if (finalScriptWitness.isNotEmpty) {
         input.finalScriptWitness = finalScriptWitness;
       }
+      input.sighashType = sighashType;
       inputs.add(input);
     }
 
@@ -914,9 +924,11 @@ class Psbt {
       String witnessUtxoKey = getKeyType(inputKeyType, 'WITNESS_UTXO');
       inputData[witnessUtxoKey] = witnessUtxoList[i].serialize();
 
-      String sigHashTypeKey = getKeyType(inputKeyType, 'SIGHASH_TYPE');
-      inputData[sigHashTypeKey] =
-          Codec.encodeHex(Converter.intToLittleEndianBytes(1, 4));
+      if (!wallet.addressType.isTaproot) {
+        String sigHashTypeKey = getKeyType(inputKeyType, 'SIGHASH_TYPE');
+        inputData[sigHashTypeKey] =
+            Codec.encodeHex(Converter.intToLittleEndianBytes(1, 4));
+      }
 
       // Each address type
       if (wallet.addressType == AddressType.p2wpkh) {
@@ -1398,6 +1410,8 @@ class Psbt {
       for (int i = 0; i < inputs.length; i++) {
         if (inputs[i].tapScriptSig != null) {
           //Script path spending
+          _validateTaprootSignatureEncoding(
+              inputs[i], inputs[i].tapScriptSig![0].signature);
           signedTransaction.inputs[i].setTaprootScriptPathSpendingSignature(
               inputs[i].tapScriptSig![0].signature,
               // Witness must contain raw tapscript bytes (no length prefix).
@@ -1406,6 +1420,7 @@ class Psbt {
         } else if (inputs[i].tapScriptSig == null &&
             inputs[i].muSig2AggregatedPublicKey == null) {
           // key path spending
+          _validateTaprootSignatureEncoding(inputs[i], inputs[i].tapKeySig!);
           signedTransaction.inputs[i]
               .setTaprootKeyPathSpendingSignature(inputs[i].tapKeySig!);
           if (signedTransaction.validateSchnorr(i, utxoList)) {
@@ -1424,8 +1439,9 @@ class Psbt {
               Codec.decodeHex(inputs[i].muSig2AggregatedPublicKey!);
           Uint8List aggregatedPubNonce =
               Codec.decodeHex(inputs[i].getAggregatedPublicNonce());
-          Uint8List message =
-              Codec.decodeHex(signedTransaction.getTaprootSigHash(i, utxoList));
+          Uint8List message = Codec.decodeHex(
+              signedTransaction.getTaprootSigHash(i, utxoList,
+                  hashType: inputs[i].taprootSighashType));
 
           SessionContext sessionContext = SessionContext(
             inputs[i]
@@ -1449,7 +1465,12 @@ class Psbt {
               Ecc.getEncoded(sessionContext.aggregateQ, true).sublist(1),
               aggregatedSignature)) {
             signedTransaction.inputs[i].setTaprootKeyPathSpendingSignature(
-                Codec.encodeHex(aggregatedSignature));
+                Codec.encodeHex(inputs[i].taprootSighashType == 0
+                    ? aggregatedSignature
+                    : Uint8List.fromList([
+                        ...aggregatedSignature,
+                        inputs[i].taprootSighashType
+                      ])));
           } else {
             throw Exception('Invalid Signatures');
           }
@@ -1478,12 +1499,30 @@ class Psbt {
           Codec.decodeHex(publicKey),
           Converter.derToRawSignature(Codec.decodeHex(signature)));
     } else {
+      final Uint8List signatureBytes =
+          _validateTaprootSignatureEncoding(inputs[inputIndex], signature);
       isValid = Ecc.verifySchnorr(
-          Codec.decodeHex(sigHash),
-          Codec.decodeHex(publicKey),
-          Converter.derToRawSignature(Codec.decodeHex(signature)));
+          Codec.decodeHex(sigHash), Codec.decodeHex(publicKey), signatureBytes);
     }
     return isValid;
+  }
+
+  static Uint8List _validateTaprootSignatureEncoding(
+      PsbtInput input, String signatureHex) {
+    final Uint8List signature = Codec.decodeHex(signatureHex);
+    final int encodedHashType;
+    if (signature.length == 64) {
+      encodedHashType = 0x00;
+    } else if (signature.length == 65 && signature.last != 0x00) {
+      encodedHashType = signature.last;
+    } else {
+      throw FormatException('Invalid Taproot signature encoding.');
+    }
+    if (encodedHashType != input.taprootSighashType) {
+      throw FormatException(
+          'Taproot signature sighash type does not match PSBT input.');
+    }
+    return signature.length == 65 ? signature.sublist(0, 64) : signature;
   }
 
   String _getSigHash(int inputIndex) {
@@ -1511,7 +1550,8 @@ class Psbt {
       for (int j = 0; j < unsignedTransaction!.inputs.length; j++) {
         utxoList.add(inputs[j].witnessUtxo!);
       }
-      sigHash = unsignedTransaction!.getTaprootSigHash(inputIndex, utxoList);
+      sigHash = unsignedTransaction!.getTaprootSigHash(inputIndex, utxoList,
+          hashType: psbtInput.taprootSighashType);
     }
     return sigHash;
   }
@@ -1568,6 +1608,7 @@ class PsbtInput {
   List<DerivationPath>? bip32Derivation; //0x03
   MultisignatureScript? witnessScript; //0x05
   List<String>? finalScriptWitness; //0x08
+  int? sighashType; //0x03
 
   //Field for taproot
   String? internalKey; //0x17
@@ -1633,6 +1674,18 @@ class PsbtInput {
 
   int get totalSigner {
     return derivationPathList.length;
+  }
+
+  /// Effective Taproot sighash type used for signing this input.
+  ///
+  /// This library currently signs SIGHASH_DEFAULT and SIGHASH_ALL only.
+  int get taprootSighashType {
+    final int type = sighashType ?? 0x00;
+    if (type != 0x00 && type != 0x01) {
+      throw UnsupportedError(
+          'Unsupported Taproot sighash type: 0x${type.toRadixString(16).padLeft(2, '0')}');
+    }
+    return type;
   }
 
   int get signedCount {

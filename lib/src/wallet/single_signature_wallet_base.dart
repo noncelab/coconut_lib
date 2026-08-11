@@ -106,8 +106,9 @@ abstract class SingleSignatureWalletBase extends WalletBase {
             j++) {
           utxoList.add(psbtObject.inputs[j].witnessUtxo!);
         }
-        sigHash = psbtObject.unsignedTransaction!
-            .getTaprootSigHash(inputIndex, utxoList);
+        sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+            inputIndex, utxoList,
+            hashType: input.taprootSighashType);
       }
 
       for (DerivationPath derivationPath in derivationPathList!) {

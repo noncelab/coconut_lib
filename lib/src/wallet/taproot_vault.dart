@@ -85,8 +85,9 @@ class TaprootVault extends TaprootWalletBase {
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {
-      String sigHash = psbtObject.unsignedTransaction!
-          .getTaprootSigHash(inputIndex, utxoList);
+      String sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+          inputIndex, utxoList,
+          hashType: psbtObject.inputs[inputIndex].taprootSighashType);
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
       for (DerivationPath derivationPath in psbtInput.tapBip32Derivation!) {
         for (KeyStore keyStore in keyStoreList) {

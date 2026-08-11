@@ -279,8 +279,9 @@ class KeyStore {
         inputIndex < psbtObject.unsignedTransaction!.inputs.length;
         inputIndex++) {
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
-      String sigHash = psbtObject.unsignedTransaction!
-          .getTaprootSigHash(inputIndex, utxoList);
+      String sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+          inputIndex, utxoList,
+          hashType: psbtInput.taprootSighashType);
       for (DerivationPath derivationPath in psbtInput.tapBip32Derivation!) {
         if (masterFingerprint == derivationPath.masterFingerprint) {
           addPublicNonceToPsbtInput(psbtInput, derivationPath.path, sigHash);
@@ -354,8 +355,9 @@ class KeyStore {
             j++) {
           utxoList.add(psbtObject.inputs[j].witnessUtxo!);
         }
-        sigHash = psbtObject.unsignedTransaction!
-            .getTaprootSigHash(inputIndex, utxoList);
+        sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+            inputIndex, utxoList,
+            hashType: psbtInput.taprootSighashType);
       }
       //get derivation path
       late String derivationPath;
@@ -501,6 +503,13 @@ class KeyStore {
       } else {
         throw Exception('Invalid PSBT input.');
       }
+    }
+
+    if (addressType.isTaproot &&
+        sessionContext == null &&
+        psbtInput.taprootSighashType != 0) {
+      signature =
+          '$signature${Converter.decToHexWithPadding(psbtInput.taprootSighashType, 2)}';
     }
 
     // 4. Attach signature to PSBT

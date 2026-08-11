@@ -502,6 +502,45 @@ void main() {
             signedPsbt.getSignedTransaction(AddressType.p2wpkh).serialize();
         expect(Transaction.parse(signedTxHex).serialize(), signedTxHex);
       });
+
+      test('Taproot defaults to SIGHASH_DEFAULT without a PSBT sighash field',
+          () {
+        final Psbt psbt = MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+
+        expect(inputMap.containsKey('03'), isFalse);
+        expect(Psbt.parse(psbt.serialize()).inputs[0].sighashType, isNull);
+      });
+
+      test('Taproot SIGHASH_ALL is parsed, signed and finalized consistently',
+          () {
+        final TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
+        final Psbt unsigned =
+            MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        unsigned.toKeyMap()['inputs'][0]['03'] = '01000000';
+        final Psbt withSighashAll = Psbt.fromMap(unsigned.toKeyMap());
+
+        final Psbt signed =
+            Psbt.parse(vault.addSignatureToPsbt(withSighashAll.serialize()));
+        expect(signed.inputs[0].sighashType, 0x01);
+        expect(signed.inputs[0].tapKeySig, hasLength(130));
+        expect(signed.inputs[0].tapKeySig, endsWith('01'));
+
+        final Transaction transaction =
+            signed.getSignedTransaction(AddressType.p2tr);
+        expect(transaction.inputs[0].witnessList.single, endsWith('01'));
+      });
+
+      test('rejects unsupported Taproot sighash types before signing', () {
+        final TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
+        final Psbt unsigned =
+            MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        unsigned.toKeyMap()['inputs'][0]['03'] = '02000000';
+        final Psbt unsupported = Psbt.fromMap(unsigned.toKeyMap());
+
+        expect(() => vault.addSignatureToPsbt(unsupported.serialize()),
+            throwsUnsupportedError);
+      });
     });
 
     group('validateSignature', () {
@@ -522,10 +561,7 @@ void main() {
         final Uint8List outputKey =
             input.witnessUtxo!.scriptPubKey.commands[1] as Uint8List;
         final String outputKeyHex = Codec.encodeHex(outputKey);
-        final String signatureDerHex = Codec.encodeHex(
-            Converter.rawToDerSignature(Codec.decodeHex(input.tapKeySig!)));
-
-        expect(signedPsbt.validateSignature(0, signatureDerHex, outputKeyHex),
+        expect(signedPsbt.validateSignature(0, input.tapKeySig!, outputKeyHex),
             true);
       });
     });
