@@ -232,15 +232,14 @@ class TransactionInput {
       int validSigs = 0;
 
       for (Uint8List sig in signatures) {
+        late final Uint8List rawSignature;
+        try {
+          rawSignature = Converter.derToRawSignature(sig);
+        } on FormatException {
+          return false;
+        }
         for (Uint8List pub in pubKeys) {
-          int rLen = sig[3];
-          Uint8List r = sig.sublist(4, 4 + rLen);
-          if (r[0] == 0) r = r.sublist(1);
-          int sLen = sig[4 + rLen + 1];
-          Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
-          Uint8List rs = Uint8List.fromList([...r, ...s]);
-
-          if (Ecc.verifyEcdsa(sigHash, pub, rs)) {
+          if (Ecc.verifyEcdsa(sigHash, pub, rawSignature)) {
             validSigs += 1;
             continue;
           }

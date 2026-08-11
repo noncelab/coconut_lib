@@ -255,6 +255,34 @@ void main() {
             true);
       });
 
+      test('returns false on malformed p2wsh DER signatures', () {
+        final Psbt psbt = MockFactory.createP2wshSignedPsbt();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+
+        const malformedSignatures = [
+          '30', // truncated sequence
+          '310602010102010101', // wrong sequence tag
+          '300602018002010101', // negative R
+          '30070202000102010101', // non-minimal R
+          '300602010102020101', // inconsistent S length
+        ];
+
+        for (final signature in malformedSignatures) {
+          final input = signedTx.inputs[0];
+          final originalSignature = input.witnessList[1];
+          input.witnessList[1] = signature;
+          expect(input.verifySpend(sigHash, utxo), false);
+          input.witnessList[1] = originalSignature;
+        }
+      });
+
       test('returns true on valid taproot key-path spend', () {
         final Psbt psbt = MockFactory.createP2trKeyPathSpendingSignedPsbt();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
