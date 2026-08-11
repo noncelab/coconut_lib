@@ -21,7 +21,7 @@ abstract class TaprootWalletBase extends WalletBase {
         _policyList = List<Policy>.of(policyList),
         super(AddressType.p2tr, derivationPath) {
     if (!_addressType.isTaproot) {
-      throw Exception('Address type must be Taproot.');
+      throw StateError('Taproot wallet must use a Taproot address type.');
     }
 
     _keyStoreList
@@ -30,14 +30,16 @@ abstract class TaprootWalletBase extends WalletBase {
     for (KeyStore keyStore in _keyStoreList) {
       if (NetworkType.currentNetworkType.isTestnet !=
           AddressType.isTestnetVersion(keyStore.extendedPublicKey.version)) {
-        throw Exception('Network type mismatch.');
+        throw WalletException(
+            CoconutErrorCode.networkMismatch, 'Network type mismatch.');
       }
     }
 
     // Check derivation path
     final segments = derivationPath.split('/');
     if (segments.length < 3 || segments[0] != 'm') {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Invalid wallet derivation path.');
     }
     final coinTypeSegment = segments[2];
 
@@ -45,9 +47,11 @@ abstract class TaprootWalletBase extends WalletBase {
         int.tryParse(coinTypeSegment.replaceAll(RegExp(r"[h']"), ""));
 
     if (coinType == 1 && !NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     } else if (coinType == 0 && NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     }
 
     // Deterministic policy order: TapLeaf hash at receive index 0 (lexicographic).
@@ -79,7 +83,8 @@ abstract class TaprootWalletBase extends WalletBase {
       return getAggregatedPublicKey(addressIndex,
           isChange: isChange, isXOnly: true);
     } else {
-      throw Exception('No key store found');
+      throw WalletException(
+          CoconutErrorCode.missingMetadata, 'No key store found.');
     }
   }
 
@@ -116,11 +121,14 @@ abstract class TaprootWalletBase extends WalletBase {
   @override
   String getAddressWithDerivationPath(String derivationPath) {
     if (!WalletUtility.validateDerivationPath(derivationPath)) {
-      throw Exception("Invalid derivation path (e.g., m/44'/0'/0'/0/0)");
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          "Invalid derivation path (e.g., m/44'/0'/0'/0/0).");
     }
 
     if (!derivationPath.startsWith('$_derivationPath/')) {
-      throw Exception("Derivation path does not match");
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Derivation path does not belong to this wallet.',
+          context: {'path': derivationPath, 'walletPath': _derivationPath});
     }
     int addressIndex =
         WalletUtility.getAccountIndexFromDerivationPath(derivationPath);
@@ -142,14 +150,16 @@ abstract class TaprootWalletBase extends WalletBase {
   bool hasPublicKeyInPsbt(String psbt) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
-      throw Exception('Address Type is not matched.');
+      throw PsbtException(
+          CoconutErrorCode.policyMismatch, 'PSBT address type does not match.');
     }
     if (addressType != AddressType.p2tr) {
-      throw Exception('Address type must be Taproot.');
+      throw StateError('Taproot wallet must use a Taproot address type.');
     }
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
     Set<KeyStore> targetkeyStoreSet = {};
     for (PsbtInput psbtInput in psbtObject.inputs) {
@@ -174,24 +184,27 @@ abstract class TaprootWalletBase extends WalletBase {
   String addSignatureToPsbt(String psbt) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
-      throw Exception('Address Type is not matched.');
+      throw PsbtException(
+          CoconutErrorCode.policyMismatch, 'PSBT address type does not match.');
     }
 
     if (addressType != AddressType.p2tr) {
-      throw Exception('Address type must be Taproot.');
+      throw StateError('Taproot wallet must use a Taproot address type.');
     }
 
     if (!hasPublicKeyInPsbt(psbt)) {
-      throw Exception('No keyStore can sign to the PSBT.');
+      throw SigningException(
+          CoconutErrorCode.signerMismatch, 'No key store can sign this PSBT.');
     }
 
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
 
     if (this is! TaprootVault) {
-      throw Exception('Taproot policy validation requires a vault.');
+      throw StateError('Taproot policy validation requires a vault.');
     }
     psbtObject.validateTaprootPolicy(this as TaprootVault);
 
@@ -257,7 +270,7 @@ abstract class TaprootWalletBase extends WalletBase {
       //MuSig2
       else if (psbtInput.tapLeafScript == null && keyStoreList.length > 1) {
         if (psbtInput.tapLeafScript != null) {
-          throw Exception(
+          throw UnsupportedError(
               'Only single signature address type is supported for script path spending.');
         }
         SessionContext? sessionContext;
@@ -388,7 +401,7 @@ abstract class TaprootWalletBase extends WalletBase {
   String getControlBlock(int policyIndex, int addressIndex,
       {bool isChange = false}) {
     if (_policyList.isEmpty) {
-      throw Exception('No script policies found.');
+      throw StateError('No script policies found.');
     }
     if (policyIndex < 0 || policyIndex >= _policyList.length) {
       throw RangeError.range(
@@ -467,7 +480,7 @@ abstract class TaprootWalletBase extends WalletBase {
       }
 
       if (nextIndex < 0) {
-        throw Exception('Failed to build Taproot merkle path');
+        throw StateError('Failed to build Taproot merkle path.');
       }
 
       level = next;

@@ -18,12 +18,14 @@ abstract class SingleSignatureWalletBase extends WalletBase {
     }
     if (NetworkType.currentNetworkType.isTestnet !=
         AddressType.isTestnetVersion(_keyStore._extendedPublicKey.version)) {
-      throw Exception('Network type mismatch.');
+      throw WalletException(
+          CoconutErrorCode.networkMismatch, 'Network type mismatch.');
     }
     // check derivation path
     final segments = derivationPath.split('/');
     if (segments.length < 3 || segments[0] != 'm') {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Invalid wallet derivation path.');
     }
     final coinTypeSegment = segments[2];
 
@@ -31,9 +33,11 @@ abstract class SingleSignatureWalletBase extends WalletBase {
         int.tryParse(coinTypeSegment.replaceAll(RegExp(r"[h']"), ""));
 
     if (coinType == 1 && !NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     } else if (coinType == 0 && NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     }
 
     _descriptor = Descriptor.forSingleSignature(
@@ -51,11 +55,14 @@ abstract class SingleSignatureWalletBase extends WalletBase {
   @override
   String getAddressWithDerivationPath(String derivationPath) {
     if (!WalletUtility.validateDerivationPath(derivationPath)) {
-      throw Exception("Invalid derivation path (e.g., m/44'/0'/0'/0/0)");
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          "Invalid derivation path (e.g., m/44'/0'/0'/0/0).");
     }
 
     if (!derivationPath.startsWith('$_derivationPath/')) {
-      throw Exception("Derivation path does not match");
+      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+          'Derivation path does not belong to this wallet.',
+          context: {'path': derivationPath, 'walletPath': _derivationPath});
     }
 
     String pubkey = _keyStore.getPublicKey(
@@ -78,12 +85,14 @@ abstract class SingleSignatureWalletBase extends WalletBase {
   String addSignatureToPsbt(String psbt) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
-      throw Exception('Address Type is not matched.');
+      throw PsbtException(
+          CoconutErrorCode.policyMismatch, 'PSBT address type does not match.');
     }
 
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
 
     for (int inputIndex = 0;

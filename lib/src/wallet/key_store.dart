@@ -115,7 +115,8 @@ class KeyStore {
         mnemonicLength != 18 &&
         mnemonicLength != 21 &&
         mnemonicLength != 24) {
-      throw Exception('MnemonicLength must be 12, 15, 18, 21, or 24.');
+      throw ArgumentError.value(
+          mnemonicLength, 'mnemonicLength', 'Must be 12, 15, 18, 21, or 24.');
     }
 
     Seed seed =
@@ -169,7 +170,10 @@ class KeyStore {
       bool isXOnly = false,
       Uint8List? merkleRoot,
       Uint8List? aggregatedPublicKey}) {
-    if (!hasSeed) throw Exception('No private key in this key store');
+    if (!hasSeed) {
+      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+          'No private key in this key store.');
+    }
     HDWallet child = getChildHdWallet(isChange).derive(index);
     Uint8List privKey = child.getPrivateKey(applyTweak, isXOnly,
         merkleRoot: merkleRoot, aggregatedPublicKey: aggregatedPublicKey);
@@ -209,7 +213,8 @@ class KeyStore {
   bool hasPublicKeyInPsbt(String psbt) {
     Psbt psbtObj = Psbt.parse(psbt);
     if (psbtObj.inputs.isEmpty) {
-      throw Exception("PSBT has no inputs.");
+      throw PsbtException(
+          CoconutErrorCode.missingMetadata, 'PSBT has no inputs.');
     }
 
     if (psbtObj.inputs[0].bip32Derivation != null) {
@@ -256,25 +261,29 @@ class KeyStore {
       }
       return false;
     } else {
-      throw Exception("Derivation path is not included in psbt.");
+      throw PsbtException(CoconutErrorCode.missingMetadata,
+          'Derivation path is not included in the PSBT.');
     }
   }
 
   String addPublicNonceToPsbt(String psbt) {
     if (!hasSeed) {
-      throw Exception('This key store does not have seed');
+      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+          'This key store does not have a seed.');
     }
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != AddressType.p2tr) {
-      throw Exception('Only p2tr needs public nonce.');
+      throw UnsupportedError('Public nonces are supported only for P2TR.');
     }
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
     List<TransactionOutput> utxoList = [];
     if (hasPublicKeyInPsbt(psbtObject.serialize()) == false) {
-      throw Exception('This vault can not sign this PSBT');
+      throw SigningException(CoconutErrorCode.signerMismatch,
+          'This key store cannot sign the PSBT.');
     }
     for (int j = 0; j < psbtObject.unsignedTransaction!.inputs.length; j++) {
       utxoList.add(psbtObject.inputs[j].witnessUtxo!);
@@ -299,7 +308,8 @@ class KeyStore {
       PsbtInput psbtInput, String derivationPath, String sigHash,
       {String extraInput = ''}) {
     if (!hasSeed) {
-      throw Exception('This vault does not have seed');
+      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+          'This key store does not have a seed.');
     }
 
     int accountIndex =
@@ -316,15 +326,18 @@ class KeyStore {
 
   String addSignatureToPsbt(String psbt, AddressType addressType) {
     if (!hasSeed) {
-      throw Exception('This vault does not have seed');
+      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+          'This key store does not have a seed.');
     }
     Psbt psbtObject = Psbt.parse(psbt);
     if (hasPublicKeyInPsbt(psbtObject.serialize()) == false) {
-      throw Exception('This vault can not sign this PSBT');
+      throw SigningException(CoconutErrorCode.signerMismatch,
+          'This key store cannot sign the PSBT.');
     }
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
 
     for (int inputIndex = 0;
@@ -375,7 +388,9 @@ class KeyStore {
           break;
         }
         if (i == psbtInput.derivationPathList.length - 1) {
-          throw Exception('Derivation path not found');
+          throw PsbtException(CoconutErrorCode.missingMetadata,
+              'A matching derivation path was not found in the PSBT.',
+              inputIndex: inputIndex);
         }
       }
 
@@ -408,7 +423,8 @@ class KeyStore {
       String derivationPath, String sigHash,
       {String? aggregatedPublicKey, SessionContext? sessionContext}) {
     if (!hasSeed) {
-      throw Exception('This vault does not have seed.');
+      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+          'This key store does not have a seed.');
     }
     int accountIndex =
         WalletUtility.getAccountIndexFromDerivationPath(derivationPath);
@@ -451,7 +467,8 @@ class KeyStore {
             getPublicKey(accountIndex, isChange: isChange, isXOnly: false);
         if (psbtInput.tapBip32Derivation!.length !=
             psbtInput.muSig2PubNonces!.length) {
-          throw Exception("Not enough public nonce.");
+          throw SigningException(CoconutErrorCode.nonceUnavailable,
+              'Not enough public nonces are present.');
         }
         final String nonceKey = _createMuSig2NonceKey(
             publicKey, psbtInput.muSig2AggregatedPublicKey!, sigHash);
@@ -470,7 +487,8 @@ class KeyStore {
           secretNonce.fillRange(0, secretNonce.length, 0);
         }
       } else {
-        throw Exception('Invalid PSBT input.');
+        throw PsbtException(
+            CoconutErrorCode.invalidPsbt, 'Invalid PSBT input.');
       }
     }
 
@@ -483,29 +501,34 @@ class KeyStore {
       // ECDSA
       if (!Ecc.verifyEcdsa(Codec.decodeHex(sigHash), publicKeyByte,
           Converter.derToRawSignature(signatureByte))) {
-        throw Exception('Invalid signature');
+        throw SigningException(CoconutErrorCode.invalidSignature,
+            'Generated signature is invalid.');
       }
     } else {
       // Schnorr
       if (psbtInput.tapLeafScript != null) {
         if (!Ecc.verifySchnorr(
             Codec.decodeHex(sigHash), publicKeyByte, signatureByte)) {
-          throw Exception('Invalid signature');
+          throw SigningException(CoconutErrorCode.invalidSignature,
+              'Generated signature is invalid.');
         }
       } else if (psbtInput.tapLeafScript == null && sessionContext == null) {
         if (!Ecc.verifySchnorr(
             Codec.decodeHex(sigHash), publicKeyByte, signatureByte)) {
-          throw Exception('Invalid signature');
+          throw SigningException(CoconutErrorCode.invalidSignature,
+              'Generated signature is invalid.');
         }
       } else if (psbtInput.tapLeafScript == null && sessionContext != null) {
         Uint8List publicNonce = Codec.decodeHex(psbtInput.muSig2PubNonces![
             "${Codec.encodeHex(publicKeyByte)}$aggregatedPublicKey$sigHash"]!);
         if (!Ecc.verifyMuSig2PartialSignature(
             signatureByte, publicNonce, publicKeyByte, sessionContext)) {
-          throw Exception('Invalid signature');
+          throw SigningException(CoconutErrorCode.invalidSignature,
+              'Generated signature is invalid.');
         }
       } else {
-        throw Exception('Invalid PSBT input.');
+        throw PsbtException(
+            CoconutErrorCode.invalidPsbt, 'Invalid PSBT input.');
       }
     }
 
@@ -734,7 +757,8 @@ class KeyStore {
   final tG = (Ecc.G * t)!;
   final qP = (qWork + tG)!;
   if (qP.isInfinity) {
-    throw Exception('MuSig2 ApplyTweak: invalid aggregate point');
+    throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+        'MuSig2 tweak produced an invalid aggregate point.');
   }
   final gaccP = (gPoint * gacc) % Ecc.n;
   final taccP = (t + gPoint * tacc) % Ecc.n;
@@ -792,7 +816,7 @@ class SessionContext {
 
     for (var key in participantPublicKeys) {
       if (key.length != 33) {
-        throw Exception(
+        throw ArgumentError(
             "participantPublicKeys must be 33 bytes (got ${key.length})");
       }
     }

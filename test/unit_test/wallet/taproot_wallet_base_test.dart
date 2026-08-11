@@ -337,7 +337,7 @@ void main() {
     group('getControlBlock', () {
       test('throws when policy list is empty', () {
         final emptyPolicyVault = MockFactory.createP2trKeyPathSpendingVault();
-        expect(() => emptyPolicyVault.getControlBlock(0, 0), throwsException);
+        expect(() => emptyPolicyVault.getControlBlock(0, 0), throwsStateError);
       });
 
       test('throws when policy index is out of range', () {

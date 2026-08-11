@@ -81,8 +81,8 @@ void main() {
       test('rejects address types without witness scripts', () {
         final legacyVault = MultisignatureVault(
             2, AddressType.p2sh, 0, "m/45'/1'/0'", vault.keyStoreList);
-        expect(
-            () => legacyVault.getWitnessScript("m/45'/0/0"), throwsException);
+        expect(() => legacyVault.getWitnessScript("m/45'/0/0"),
+            throwsUnsupportedError);
       });
     });
     group('hasPublicKeyInPsbt', () {
@@ -152,7 +152,7 @@ void main() {
         expect(
             () => MultisignatureVault(
                 2, AddressType.p2wpkh, 0, "m/84'/1'/0'", vault.keyStoreList),
-            throwsException);
+            throwsArgumentError);
       });
 
       test('rejects malformed derivation paths', () {
