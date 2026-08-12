@@ -34,9 +34,9 @@ library.
 ## Architecture
 
 - [wallet](https://github.com/noncelab/coconut_lib/blob/main/lib/src/wallet): Provides a cryptography-based key management method. Create two apps instancing the Wallet and Vault classes.
-[![Wallet Class Diagram](doc/design/wallet_class_diagram.png)](doc/design/wallet_class_diagram.png)
+[![Wallet Class Diagram](doc/design/generated/wallet_class_diagram.png)](doc/design/README.md)
 - [transaction](https://github.com/noncelab/coconut_lib/blob/main/lib/src/transaction): Provides code related to Bitcoin scripts and transactions. Also use PSBT(BIP-0174) to communicate vaults and wallets.
-[![Transaction Class Diagram](doc/design/transaction_class_diagram.png)](doc/design/transaction_class_diagram.png)
+[![Transaction Class Diagram](doc/design/generated/transaction_model.png)](doc/design/README.md)
 
 > For more development information, visit the [coconut_lib docs](https://pub.dev/documentation/coconut_lib/latest/coconut_lib/coconut_lib-library.html).
 

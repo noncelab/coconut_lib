@@ -1,0 +1,80 @@
+@startuml wallet_class_diagram
+!theme plain
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+top to bottom direction
+
+abstract class WalletBase {
+  +addressType: AddressType
+  +derivationPath: String
+  +descriptor: String
+  +getAddress(index, isChange): String
+  +getAddressWithDerivationPath(path): String
+  +hasPublicKeyInPsbt(psbt): bool
+  +addSignatureToPsbt(psbt): String
+}
+
+abstract class SingleSignatureWalletBase
+abstract class MultisignatureWalletBase {
+  +requiredSignature: int
+  +keyStoreList: List<KeyStore>
+  +getWitnessScript(path): String
+}
+abstract class TaprootWalletBase {
+  +keyStoreList: List<KeyStore>
+  +policyList: List<Policy>
+  +getInternalKey(index, isChange): Uint8List
+  +getMerkleRoot(index, isChange): Uint8List
+}
+
+class SingleSignatureWallet <<watch-only>>
+class MultisignatureWallet <<watch-only>>
+class TaprootWallet <<watch-only>>
+class SingleSignatureVault <<signer>>
+class MultisignatureVault <<signer>>
+class TaprootVault <<signer>> {
+  +addPublicNonce(psbt): String
+}
+
+class KeyStore {
+  +masterFingerprint: String
+  +extendedPublicKey: ExtendedPublicKey
+  +hasSeed: bool
+  +publicOnly(source): KeyStore
+}
+class Seed
+class HDWallet
+class ExtendedPublicKey
+class Descriptor
+abstract class Policy
+class InheritancePolicy
+
+WalletBase <|-- SingleSignatureWalletBase
+WalletBase <|-- MultisignatureWalletBase
+WalletBase <|-- TaprootWalletBase
+SingleSignatureWalletBase <|-- SingleSignatureWallet
+SingleSignatureWalletBase <|-- SingleSignatureVault
+MultisignatureWalletBase <|-- MultisignatureWallet
+MultisignatureWalletBase <|-- MultisignatureVault
+TaprootWalletBase <|-- TaprootWallet
+TaprootWalletBase <|-- TaprootVault
+Policy <|-- InheritancePolicy
+
+WalletBase *-- Descriptor
+SingleSignatureWalletBase o-- "1" KeyStore
+MultisignatureWalletBase o-- "1..*" KeyStore
+TaprootWalletBase o-- "1..*" KeyStore
+TaprootWalletBase o-- "0..*" Policy
+InheritancePolicy o-- "beneficiary" KeyStore
+KeyStore o-- HDWallet
+KeyStore o-- ExtendedPublicKey
+KeyStore o-- "0..1" Seed
+
+note right of SingleSignatureWallet
+  Wallet variants require public-only key stores.
+end note
+note right of SingleSignatureVault
+  Vault variants may own seed-bearing key stores.
+end note
+@enduml
