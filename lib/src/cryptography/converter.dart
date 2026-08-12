@@ -1,7 +1,12 @@
 part of '../../coconut_lib.dart';
 
+/// Converts numeric, binary, hexadecimal, endian, and signature formats.
+///
+/// {@category Cryptography and Encoding}
 class Converter {
   Converter._();
+
+  /// Converts a non-negative decimal integer to hexadecimal.
   static String decToHex(int decimalValue) {
     List<String> hexDigits = [
       '0',
@@ -32,16 +37,19 @@ class Converter {
     return hexString.isEmpty ? '0' : hexString.join();
   }
 
+  /// Converts [decimalValue] to hexadecimal padded to [padding] characters.
   static String decToHexWithPadding(int decimalValue, int padding) {
     String hexString = decToHex(decimalValue);
     return hexString.padLeft(padding, '0');
   }
 
+  /// Converts a [BigInt] to hexadecimal.
   static String bigDecToHex(BigInt decimalValue) {
     String hexString = decimalValue.toRadixString(16);
     return hexString;
   }
 
+  /// Encodes [value] as big-endian bytes, optionally fixed to [byteLength].
   static Uint8List bigIntToBytes(BigInt value, {int? byteLength}) {
     if (byteLength != null) {
       final hexStr = value.toRadixString(16).padLeft(byteLength * 2, '0');
@@ -51,6 +59,7 @@ class Converter {
     }
   }
 
+  /// Converts a non-negative decimal integer to binary text.
   static String decToBin(int decimalValue) {
     if (decimalValue == 0) {
       return '0';
@@ -65,14 +74,17 @@ class Converter {
     return binaryDigits.join();
   }
 
+  /// Parses hexadecimal text into an [int].
   static int hexToDec(String hexString) {
     return int.parse(hexString, radix: 16);
   }
 
+  /// Parses hexadecimal text into a [BigInt].
   static BigInt hexToBigDec(String hexString) {
     return BigInt.parse(hexString, radix: 16);
   }
 
+  /// Converts hexadecimal text to four-bits-per-digit binary text.
   static String hexToBin(String hexString) {
     String binary = '';
     for (int i = 0; i < hexString.length; i++) {
@@ -85,10 +97,12 @@ class Converter {
     return binary;
   }
 
+  /// Parses binary text into an [int].
   static int binToDec(String binString) {
     return int.parse(binString, radix: 2);
   }
 
+  /// Interprets [bytes] as an unsigned big-endian integer.
   static int uint8ListToDec(Uint8List bytes) {
     int result = 0;
     for (int i = 0; i < bytes.length; i++) {
@@ -97,6 +111,7 @@ class Converter {
     return result;
   }
 
+  /// Converts nibble-aligned binary text to hexadecimal.
   static String binToHex(String binary) {
     if (binary.length % 4 != 0) {
       throw const FormatException(
@@ -112,6 +127,7 @@ class Converter {
     return hex;
   }
 
+  /// Converts byte-aligned binary text into bytes.
   static Uint8List binToBytes(String binString) {
     // print(binString.length);
     List<int> bytes = [];
@@ -124,10 +140,12 @@ class Converter {
     return Uint8List.fromList(bytes);
   }
 
+  /// Interprets [byteList] as an unsigned big-endian integer.
   static int bytesToDec(Uint8List byteList) {
     return int.parse(Codec.encodeHex(byteList), radix: 16);
   }
 
+  /// Encodes [value] into exactly [length] little-endian bytes.
   static Uint8List intToLittleEndianBytes(int value, int length) {
     Uint8List bytes = Uint8List(length);
     for (int i = 0; i < length; i++) {
@@ -148,6 +166,7 @@ class Converter {
   //   return bytes;
   // }
 
+  /// Decodes an unsigned little-endian integer.
   static int littleEndianToInt(Uint8List bytes) {
     int result = 0;
     for (int i = 0; i < bytes.length; i++) {
@@ -157,16 +176,19 @@ class Converter {
     //return ByteData.sublistView(bytes).getUint64(0, Endian.little);
   }
 
+  /// Converts bytes to a [BigInt] using this library's serialized convention.
   static BigInt littleEndianToBigInt(Uint8List bytes) {
     return BigInt.parse(Codec.encodeHex(bytes), radix: 16);
   }
 
+  /// Reverses the byte order of hexadecimal text.
   static String toLittleEndian(String hexString) {
     List<int> bytes = Codec.decodeHex(hexString).toList();
     bytes = bytes.reversed.toList();
     return Codec.encodeHex(Uint8List.fromList(bytes));
   }
 
+  /// Packs a list of zero/one bits into bytes.
   static Uint8List binaryToBytes(List<int> binary) {
     List<int> eightBits = [];
     if (binary.length < 8) {
@@ -188,6 +210,7 @@ class Converter {
     return bytes;
   }
 
+  /// Expands bytes into a most-significant-bit-first bit list.
   static List<int> bytesToBinary(Uint8List bytes) {
     final bits = <int>[];
     for (final b in bytes) {
@@ -198,6 +221,7 @@ class Converter {
     return bits;
   }
 
+  /// Interprets a zero/one bit list as an unsigned integer.
   static int binaryToDecimal(List<int> binary) {
     int result = 0;
     for (int bit in binary) {
@@ -206,6 +230,7 @@ class Converter {
     return result;
   }
 
+  /// Regroups values from [from]-bit words into [to]-bit words.
   static List<int> convertBits(List<int> data, int from, int to,
       {bool pad = false}) {
     var acc = 0;
@@ -238,6 +263,7 @@ class Converter {
     return result;
   }
 
+  /// Converts a 64-byte compact ECDSA signature to strict DER plus sighash byte.
   static Uint8List rawToDerSignature(Uint8List raw) {
     if (raw.length != 64) {
       throw ArgumentError('Raw signature must be 64 bytes');
@@ -251,6 +277,7 @@ class Converter {
         [0x30, totalLen, 0x02, r.length, ...r, 0x02, s.length, ...s, 0x01]);
   }
 
+  /// Validates strict DER and returns the 64-byte compact ECDSA signature.
   static Uint8List derToRawSignature(Uint8List der) {
     _validateDerSignature(der);
 

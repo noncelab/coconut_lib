@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents an UTXO.
+///
+/// {@category Wallets and Keys}
 class Utxo {
   static const int maxOutputIndex = 0xffffffff;
   static const int maxMoney = 21000000 * 100000000;

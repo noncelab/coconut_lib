@@ -1,5 +1,8 @@
 part of '../../coconut_lib.dart';
 
+/// Taproot script-path policy requiring a beneficiary signature after locktime.
+///
+/// {@category Scripts and Policies}
 class InheritancePolicy extends Policy {
   static const int maxLocktime = 0x7fffffff;
 

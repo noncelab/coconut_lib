@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a descriptor of Bitcoin. (BIP-0380)
+///
+/// {@category Wallets and Keys}
 class Descriptor {
   String _scriptType;
   List<String> _keyOriginExpressionList = [];

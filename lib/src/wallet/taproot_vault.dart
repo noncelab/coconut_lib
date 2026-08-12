@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a Taproot vault with script path spending support.
+///
+/// {@category Wallets and Keys}
 class TaprootVault extends TaprootWalletBase {
   TaprootVault._(List<KeyStore> keyStoreList, List<Policy> policyList,
       String derivationPath)

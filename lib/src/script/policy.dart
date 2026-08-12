@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Base class for script policies.
+///
+/// {@category Scripts and Policies}
 abstract class Policy {
   /// Convert the policy to a script.
   Script toScript(int addressIndex, {bool isChange = false});

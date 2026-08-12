@@ -1,6 +1,12 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a single signature vault.
+/// Seed-bearing single-signature vault for offline signing.
+///
+/// Keep instances inside the trusted signing environment. Export a
+/// [SingleSignatureWallet] or descriptor when an online component needs to
+/// derive addresses and construct transactions without private keys.
+///
+/// {@category Wallets and Keys}
 class SingleSignatureVault extends SingleSignatureWalletBase {
   SingleSignatureVault._(
       KeyStore keyStore, AddressType addressType, String derivationPath)

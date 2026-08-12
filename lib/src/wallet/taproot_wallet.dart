@@ -1,6 +1,11 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a Taproot wallet.
+///
+/// See the [Taproot script-path example](https://github.com/noncelab/coconut_lib/blob/main/doc/example/taproot_script_path.dart)
+/// for inheritance-policy construction and signing.
+///
+/// {@category Wallets and Keys}
 class TaprootWallet extends TaprootWalletBase {
   TaprootWallet._(List<KeyStore> keyStoreList, List<Policy> policyList,
       String derivationPath)

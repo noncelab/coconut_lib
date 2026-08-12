@@ -1,6 +1,13 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a PSBT(BIP-0174).
+/// Partially Signed Bitcoin Transaction used across signing boundaries.
+///
+/// [Psbt.fromTransaction] binds an unsigned transaction to wallet derivation
+/// and prevout metadata. Before signing an imported PSBT, confirm
+/// [matchesVault], inspect its recipients and fee, and validate signatures
+/// during finalization.
+///
+/// {@category PSBT}
 class Psbt {
   /// @nodoc
   static Map<int, String> globalKeyType = {
@@ -116,6 +123,9 @@ class Psbt {
     return sendingAmount;
   }
 
+  /// Infers the common address type from the first input's derivation data.
+  ///
+  /// Returns `null` when the input does not contain a supported derivation map.
   AddressType? get addressType => () {
         if (inputs.isEmpty) {
           throw Exception('Inputs are empty');
@@ -847,6 +857,7 @@ class Psbt {
     }
   }
 
+  /// Returns the hexadecimal PSBT key-value map used for serialization.
   Map<String, dynamic> toKeyMap() {
     return psbtMap;
   }
@@ -1263,6 +1274,7 @@ class Psbt {
     return psbt;
   }
 
+  /// Creates a PSBT from a decoded global, input, and output key map.
   factory Psbt.fromMap(Map<String, dynamic> keyMap) {
     return Psbt(keyMap);
   }
@@ -1350,6 +1362,7 @@ class Psbt {
     return Psbt(psbtData);
   }
 
+  /// Returns the MuSig2 aggregated public nonce for the input at [inputIndex].
   String getAggregatedPublicNonce(int inputIndex) {
     return inputs[inputIndex].getAggregatedPublicNonce();
   }
@@ -1580,6 +1593,9 @@ class Psbt {
     return signedTransaction;
   }
 
+  /// Verifies [signature] for [publicKey] against the selected input sighash.
+  ///
+  /// ECDSA is used for SegWit v0 inputs and Schnorr for Taproot inputs.
   bool validateSignature(int inputIndex, String signature, String publicKey) {
     String sigHash = _getSigHash(inputIndex);
     late bool isValid;
@@ -1650,6 +1666,10 @@ class Psbt {
     return sigHash;
   }
 
+  /// Returns whether an input contains a signature belonging to [keyStore].
+  ///
+  /// Set [isKeyPathSpending] to inspect Taproot key-path signatures instead of
+  /// script-path signatures.
   bool isSigned(KeyStore keyStore, {isKeyPathSpending = false}) {
     for (PsbtInput input in inputs) {
       for (DerivationPath path in input.derivationPathList) {
@@ -1694,7 +1714,12 @@ class Psbt {
   }
 }
 
-/// @nodoc
+/// Decoded per-input metadata in a PSBT.
+///
+/// Fields correspond to the standard PSBT input key types and are populated
+/// while parsing or constructing a [Psbt].
+///
+/// {@category PSBT}
 class PsbtInput {
   //Field for Segwit v0
   TransactionOutput? witnessUtxo; //0x01
@@ -1875,7 +1900,9 @@ class PsbtInput {
   }
 }
 
-/// @nodoc
+/// Decoded per-output metadata in a PSBT.
+///
+/// {@category PSBT}
 class PsbtOutput {
   final List<DerivationPath> bip32Derivations; //0x02
   final List<DerivationPath> tapBip32Derivations; //0x07
@@ -1942,7 +1969,12 @@ class PsbtOutput {
   }
 }
 
-/// @nodoc
+/// Associates a public key with its master fingerprint and BIP32 path.
+///
+/// Taproot derivations may additionally contain the leaf hashes for which the
+/// key participates in script-path spending.
+///
+/// {@category PSBT}
 class DerivationPath {
   final String _publicKey;
   final String _masterFingerprint;

@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents the base class of a wallet and vault.
+///
+/// {@category Wallets and Keys}
 abstract class WalletBase {
   final AddressType _addressType;
   final String _derivationPath;
@@ -28,10 +30,12 @@ abstract class WalletBase {
   /// Get the address from derivation path
   String getAddressWithDerivationPath(String derivationPath);
 
-  // Get the key origin expression of the wallet.
+  /// Returns descriptor key-origin expressions for this wallet's signers.
   String getKeyOriginExpression();
 
+  /// Whether at least one wallet key is referenced by [psbt].
   bool hasPublicKeyInPsbt(String psbt);
 
+  /// Adds every signature available to this wallet or vault to [psbt].
   String addSignatureToPsbt(String psbt);
 }

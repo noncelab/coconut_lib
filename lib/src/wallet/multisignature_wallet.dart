@@ -1,6 +1,11 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a multisignature wallet.
+///
+/// See the [multisignature example](https://github.com/noncelab/coconut_lib/blob/main/doc/example/multisignature.dart)
+/// for watch-only construction, PSBT creation, and offline signing.
+///
+/// {@category Wallets and Keys}
 class MultisignatureWallet extends MultisignatureWalletBase {
   /// @nodoc
   MultisignatureWallet(int requiredSignature, AddressType addressType,

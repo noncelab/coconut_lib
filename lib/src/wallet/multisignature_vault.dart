@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a multisignature vault.
+///
+/// {@category Wallets and Keys}
 class MultisignatureVault extends MultisignatureWalletBase {
   MultisignatureVault(super.requiredSignature, super.addressType,
       int accountIndex, super.derivationPath, super.keyStores);

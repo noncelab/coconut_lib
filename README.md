@@ -28,15 +28,15 @@ You can use the Coconut_lib to create your own air-gap based vault and wallet.
 
 Coconut_lib is fully open source. The entire source code is publicly available
 for anyone to inspect, verify, use, modify, and redistribute under the
-[MIT License](LICENSE). There are no closed-source or proprietary parts of this
+[MIT License](https://github.com/noncelab/coconut_lib/blob/main/LICENSE). There are no closed-source or proprietary parts of this
 library.
 
 ## Architecture
 
 - [wallet](https://github.com/noncelab/coconut_lib/blob/main/lib/src/wallet): Provides a cryptography-based key management method. Create two apps instancing the Wallet and Vault classes.
-[![Wallet Class Diagram](doc/design/generated/wallet_class_diagram.png)](doc/design/README.md)
+[![Wallet Class Diagram](doc/design/generated/wallet_class_diagram.png)](https://github.com/noncelab/coconut_lib/blob/main/doc/design/README.md)
 - [transaction](https://github.com/noncelab/coconut_lib/blob/main/lib/src/transaction): Provides code related to Bitcoin scripts and transactions. Also use PSBT(BIP-0174) to communicate vaults and wallets.
-[![Transaction Class Diagram](doc/design/generated/transaction_model.png)](doc/design/README.md)
+[![Transaction Class Diagram](doc/design/generated/transaction_model.png)](https://github.com/noncelab/coconut_lib/blob/main/doc/design/README.md)
 
 > For more development information, visit the [coconut_lib docs](https://pub.dev/documentation/coconut_lib/latest/coconut_lib/coconut_lib-library.html).
 
@@ -193,4 +193,4 @@ Reference [CONTRIBUTING](https://github.com/noncelab/coconut_lib/blob/main/.gith
 ## License
 
 Coconut_lib is fully open source and distributed under the
-[MIT License](LICENSE).
+[MIT License](https://github.com/noncelab/coconut_lib/blob/main/LICENSE).

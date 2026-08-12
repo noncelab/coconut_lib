@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a transaction input.
+///
+/// {@category Transactions}
 class TransactionInput {
   Uint8List _transactionHash;
   Uint8List _index;

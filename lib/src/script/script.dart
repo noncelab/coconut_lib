@@ -1,6 +1,12 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a script in a transaction.
+/// Bitcoin Script represented as decoded operation codes and pushed data.
+///
+/// Parse untrusted serialized scripts through the supplied parsers so malformed
+/// pushes are rejected before commands are indexed. Prefer [ScriptPublicKey],
+/// [MultisignatureScript], or [Miniscript] when constructing known forms.
+///
+/// {@category Scripts and Policies}
 class Script {
   final List<dynamic> _cmds;
   bool isCoinbase = false;

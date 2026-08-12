@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a public key script.
+///
+/// {@category Scripts and Policies}
 class ScriptPublicKey extends Script {
   ScriptPublicKey(List<dynamic> cmds) : super(cmds) {
     _validateWitnessV0Commands(cmds);

@@ -1,16 +1,60 @@
 part of '../../coconut_lib.dart';
 
 // ignore_for_file: constant_identifier_names
-enum MiniscriptOperation { pk, v, and_v, after, older }
+/// Miniscript fragments supported by this library.
+///
+/// {@category Scripts and Policies}
+enum MiniscriptOperation {
+  /// Public-key signature check.
+  pk,
 
-enum MiniscriptType { boolean, verify, key, wrapped }
+  /// VERIFY wrapper.
+  v,
 
+  /// Sequential logical conjunction.
+  and_v,
+
+  /// Absolute-locktime constraint.
+  after,
+
+  /// Relative-locktime constraint.
+  older,
+}
+
+/// Expression types used to validate supported Miniscript compositions.
+///
+/// {@category Scripts and Policies}
+enum MiniscriptType {
+  /// Expression leaves a boolean value.
+  boolean,
+
+  /// Expression aborts on failure and leaves no value.
+  verify,
+
+  /// Expression represents a public key.
+  key,
+
+  /// Expression is wrapped by another fragment.
+  wrapped,
+}
+
+/// Immutable node in the supported Miniscript expression subset.
+///
+/// {@category Scripts and Policies}
 class Miniscript {
+  /// Operation represented by this node.
   final MiniscriptOperation op;
+
+  /// Type produced by this node.
   final MiniscriptType type;
+
+  /// Child expressions evaluated by this node.
   final List<Miniscript> children;
 
+  /// Public key for a [MiniscriptOperation.pk] node.
   final String? pubkeyHex;
+
+  /// Locktime or sequence value for time-constrained nodes.
   final int? value;
 
   Miniscript._(
@@ -20,6 +64,7 @@ class Miniscript {
       this.pubkeyHex,
       this.value});
 
+  /// Creates a public-key signature-check fragment.
   factory Miniscript.pk(String pubkeyHex) {
     if (pubkeyHex.isEmpty) {
       throw FormatException('pk requires pubkey');
@@ -32,6 +77,7 @@ class Miniscript {
     );
   }
 
+  /// Creates an absolute-locktime `after()` fragment.
   factory Miniscript.after(int value) {
     if (value <= 0) {
       throw FormatException('after requires a positive integer');
@@ -44,6 +90,7 @@ class Miniscript {
     );
   }
 
+  /// Creates a relative-locktime `older()` fragment.
   factory Miniscript.older(int value) {
     if (value <= 0) {
       throw FormatException('older requires a positive integer');
@@ -56,6 +103,7 @@ class Miniscript {
     );
   }
 
+  /// Wraps [child] in a VERIFY expression.
   factory Miniscript.v(Miniscript child) {
     validate(MiniscriptOperation.v, [child]);
     return Miniscript._(
@@ -65,6 +113,7 @@ class Miniscript {
     );
   }
 
+  /// Creates an `and_v` expression from [left] and [right].
   factory Miniscript.andV(Miniscript left, Miniscript right) {
     validate(MiniscriptOperation.and_v, [left, right]);
     return Miniscript._(
@@ -74,15 +123,18 @@ class Miniscript {
     );
   }
 
+  /// Creates a signature-and-absolute-locktime inheritance expression.
   factory Miniscript.forInheritance(int locktime, String pubkeyHex) {
     return Miniscript.andV(
         Miniscript.v(Miniscript.pk(pubkeyHex)), Miniscript.after(locktime));
   }
 
+  /// Creates a key-only backup expression.
   factory Miniscript.forBackup(String pubkeyHex) {
     return Miniscript.pk(pubkeyHex);
   }
 
+  /// Serializes this expression using descriptor Miniscript syntax.
   String serializeForDescriptor() {
     switch (op) {
       case MiniscriptOperation.pk:
@@ -120,6 +172,7 @@ class Miniscript {
     }
   }
 
+  /// Compiles this expression to serialized Bitcoin Script hexadecimal.
   String serializeForScript() {
     final cmds = _compileToCommands();
     if (cmds.isEmpty) {
@@ -229,6 +282,7 @@ class Miniscript {
     }
   }
 
+  /// Validates that [children] can be composed under [op].
   static void validate(MiniscriptOperation op, List<Miniscript> children) {
     switch (op) {
       case MiniscriptOperation.pk:

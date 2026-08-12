@@ -1,6 +1,12 @@
 part of '../../coconut_lib.dart';
 
-/// Key Store is consist of fingerprint, exPub and seed.
+/// BIP32 account key material and its master fingerprint.
+///
+/// A key store may be seed-bearing for vault signing or public-only for wallet
+/// derivation. Watch-only wallet factories reject instances for which [hasSeed]
+/// is `true`; use [KeyStore.publicOnly] only with already-neutered material.
+///
+/// {@category Wallets and Keys}
 class KeyStore {
   String _masterFingerprint;
   HDWallet _hdWallet;
@@ -762,30 +768,46 @@ class KeyStore {
   return (qP, gaccP, taccP);
 }
 
+/// BIP327 MuSig2 session values shared while producing partial signatures.
 class SessionContext {
+  /// Sorted compressed public keys participating in the MuSig2 session.
   final List<Uint8List> participantPublicKeys;
+
+  /// Aggregation of every participant's two public nonces.
   final Uint8List aggregatedPubNonce;
+
+  /// Untweaked compressed aggregate public key.
   final Uint8List aggregatedPublicKey;
+
+  /// Optional Taproot script-tree Merkle root committed by the tweak.
   Uint8List? merkleRoot;
+
+  /// The 32-byte transaction signature hash.
   final Uint8List message;
 
   /// If true, apply BIP341 TapTweak to the internal aggregate key (Taproot key path).
   /// BIP327 unit tests use `false` (no tweaks, v == 0).
   final bool applyTaprootTweak;
 
-  /// Final aggregate public key [Q] after optional tweaks (BIP327 GetSessionValues).
+  /// Final aggregate public key `Q` after optional BIP327 tweaks.
   late ECPoint aggregateQ;
 
-  /// Accumulated [gacc] after [ApplyTweak] (BIP327).
+  /// Accumulated `gacc` scalar after the BIP327 ApplyTweak procedure.
   late BigInt musigGacc;
 
-  /// Accumulated [tacc] after [ApplyTweak] (BIP327).
+  /// Accumulated `tacc` scalar after the BIP327 ApplyTweak procedure.
   late BigInt musigTacc;
 
+  /// BIP327 nonce coefficient.
   late BigInt b;
+
+  /// Final aggregate nonce point.
   late ECPoint R;
+
+  /// BIP340 challenge scalar.
   late BigInt e;
 
+  /// Creates and validates all derived values for a MuSig2 signing session.
   SessionContext(
     this.participantPublicKeys,
     this.aggregatedPubNonce,

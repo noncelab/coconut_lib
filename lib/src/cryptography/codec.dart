@@ -1,5 +1,8 @@
 part of '../../coconut_lib.dart';
 
+/// Encodes and decodes Bitcoin wire-format and key representations.
+///
+/// {@category Cryptography and Encoding}
 class Codec {
   Codec._();
 
@@ -21,6 +24,7 @@ class Codec {
     return value;
   }
 
+  /// Decodes an even-length hexadecimal string into bytes.
   static Uint8List decodeHex(String hexString) {
     if (hexString.length.isOdd) {
       throw const FormatException(
@@ -36,6 +40,7 @@ class Codec {
     return Uint8List.fromList(bytes);
   }
 
+  /// Encodes [byteList] as lowercase hexadecimal.
   static String encodeHex(List<int> byteList) {
     StringBuffer buffer = StringBuffer();
     for (int byte in byteList) {
@@ -44,6 +49,7 @@ class Codec {
     return buffer.toString();
   }
 
+  /// Decodes a Bitcoin CompactSize integer at [offset].
   static int decodeVariableInteger(Uint8List s, int offset) {
     if (offset < 0 || offset >= s.length) {
       throw const FormatException('CompactSize prefix is missing.');
@@ -73,6 +79,7 @@ class Codec {
     }
   }
 
+  /// Returns the encoded CompactSize length indicated at [offset].
   static int getVariableIntegerLength(Uint8List bytes, int offset) {
     if (offset < 0 || offset >= bytes.length) {
       throw const FormatException('CompactSize prefix is missing.');
@@ -84,6 +91,7 @@ class Codec {
     return 9;
   }
 
+  /// Encodes [i] using Bitcoin CompactSize format.
   static Uint8List encodeVariableInteger(int i) {
     if (i < 0xfd) {
       return Uint8List.fromList([i.toInt()]);
@@ -98,6 +106,7 @@ class Codec {
     }
   }
 
+  /// Encodes raw [bytes] using the Bitcoin Base58 alphabet.
   static String encodeBase58(Uint8List bytes) {
     String alphabet =
         '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -123,6 +132,7 @@ class Codec {
     return base58;
   }
 
+  /// Encodes [bytes] using Base58Check with a four-byte checksum.
   static String encodeBase58Checksum(Uint8List bytes) {
     var doubleHash =
         Hash.sha256fromByte(Hash.sha256fromByte(Uint8List.fromList(bytes)));
@@ -131,6 +141,7 @@ class Codec {
     return encodeBase58(payload);
   }
 
+  /// Decodes and verifies a Base58Check string.
   static Uint8List decodeBase58(String base58Text) {
     String alphabet =
         '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -222,16 +233,27 @@ class Codec {
   //   return _decodeWifRaw(Codec.decodeBase58(string), version);
   // }
 
+  /// Encodes private-key metadata as Wallet Import Format.
   static String encodeWif(WIF wif) {
     return Codec.encodeBase58(
         _encodeWifRaw(wif.version, wif.privateKey, wif.compressed));
   }
 }
 
+/// Wallet Import Format payload before Base58Check encoding.
+///
+/// {@category Cryptography and Encoding}
 class WIF {
+  /// Network version byte.
   int version;
+
+  /// The 32-byte private key.
   Uint8List privateKey;
+
+  /// Whether the corresponding public key uses compressed encoding.
   bool compressed;
+
+  /// Creates Wallet Import Format metadata.
   WIF(
       {required this.version,
       required this.privateKey,

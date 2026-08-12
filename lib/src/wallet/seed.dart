@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a seed.
+///
+/// {@category Wallets and Keys}
 class Seed {
   Uint8List _mnemonic = Uint8List.fromList([]); // 12 or 24 words
   Uint8List _passphrase = utf8.encode('');

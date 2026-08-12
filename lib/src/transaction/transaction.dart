@@ -1,6 +1,14 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a transaction.
+/// Mutable Bitcoin transaction with optional prevout and wallet metadata.
+///
+/// Use the payment or sweep factories for wallet transactions because they
+/// validate amounts, estimate fees, and preserve change information. Use
+/// [Transaction.withInputsAndOutputs] for lower-level construction and
+/// [Transaction.parse] only for serialized data that will be validated before
+/// broadcast.
+///
+/// {@category Transactions}
 class Transaction {
   Uint8List _version;
   List<TransactionInput> _inputs;
@@ -9,6 +17,8 @@ class Transaction {
   bool _isSegwit;
   bool _isSweep = false;
   late final Map<String, int> _paymentMap;
+
+  /// Derivation path used to recreate and adjust the change output.
   late String? changeAddressDerivationPath;
 
   late List<Utxo> _utxoList = [];
@@ -53,7 +63,10 @@ class Transaction {
         return total;
       }();
 
+  /// Prevout metadata associated with [inputs].
   List<Utxo> get utxoList => _utxoList;
+
+  /// Sum of all amounts in [utxoList].
   int get totalInputAmount {
     int total = 0;
     for (Utxo utxo in _utxoList) {
@@ -66,6 +79,7 @@ class Transaction {
   Transaction(this._version, this._inputs, this._outputs, this._lockTime,
       this._isSegwit);
 
+  /// Creates a transaction directly from [inputs] and [outputs].
   factory Transaction.withInputsAndOutputs(List<TransactionInput> inputs,
       List<TransactionOutput> outputs, AddressType addressType,
       {int version = 2, int lockTime = 0}) {
@@ -658,7 +672,7 @@ class Transaction {
     return Hash.sha256fromHex(Hash.sha256fromHex(sigHash));
   }
 
-  //BIP341
+  /// Computes the BIP341 signature hash for input [index].
   String getTaprootSigHash(int index, List<TransactionOutput> utxoList,
       {int hashType = 0,
       bool isTapscript = false,
@@ -749,6 +763,7 @@ class Transaction {
     }
   }
 
+  /// Computes the BIP341 hash of serialized input amounts.
   String getHashAmounts(List<int> amountList) {
     List<int> buffer = [];
     for (int amount in amountList) {
@@ -916,6 +931,7 @@ class Transaction {
     return signature.last;
   }
 
+  /// Verifies every input witness against the corresponding prevout.
   bool validateSpend(List<TransactionOutput> utxoList) {
     for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
       TransactionInput input = inputs[inputIndex];
@@ -1006,6 +1022,7 @@ class Transaction {
     return vByte;
   }
 
+  /// Estimates signed virtual size for [addressType] and signing policy.
   double estimateVirtualByte(AddressType addressType,
       {int? requiredSignature, int? totalSigner, int? leafCount}) {
     if (!addressType.isSegwit) {
@@ -1266,6 +1283,7 @@ class Transaction {
     }
   }
 
+  /// Recalculates change or sweep output amount for a new [feeRate].
   void updateFeeRate(double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
     _validateFeeRate(feeRate);
@@ -1312,6 +1330,7 @@ class Transaction {
     }
   }
 
+  /// Selects a Taproot script policy and applies its locktime requirements.
   void setPolicy(Policy policy) {
     _appliedPolicy = policy;
     // If the policy uses CLTV (e.g. InheritancePolicy), make the transaction

@@ -1,5 +1,8 @@
 part of '../../coconut_lib.dart';
 
+/// Parsed or constructed multisignature witness script.
+///
+/// {@category Scripts and Policies}
 class MultisignatureScript extends Script {
   MultisignatureScript(super._cmds);
 

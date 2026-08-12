@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a script signature.
+///
+/// {@category Scripts and Policies}
 class ScriptSignature extends Script {
   ScriptSignature(super.cmds);
 

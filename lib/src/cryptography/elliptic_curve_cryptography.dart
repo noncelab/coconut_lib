@@ -1,6 +1,13 @@
 // ignore_for_file: non_constant_identifier_names, constant_identifier_names
 part of '../../coconut_lib.dart';
 
+/// Low-level secp256k1 point, ECDSA, Schnorr, and MuSig2 operations.
+///
+/// Callers are responsible for choosing the correct transaction digest and key
+/// representation. Wallet and PSBT APIs are safer entry points for ordinary
+/// signing workflows.
+///
+/// {@category Cryptography and Encoding}
 class Ecc {
   static final ZERO32 = Uint8List.fromList(List.generate(32, (index) => 0));
   static final EC_GROUP_ORDER = HEX.decode(

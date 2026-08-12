@@ -1,3 +1,4 @@
+/// Standard 2048-word English BIP39 mnemonic dictionary.
 const wordList = [
   "abandon",
   "ability",

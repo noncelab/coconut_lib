@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a transaction output.
+///
+/// {@category Transactions}
 class TransactionOutput {
   static const int maxMoney = 21000000 * 100000000;
 

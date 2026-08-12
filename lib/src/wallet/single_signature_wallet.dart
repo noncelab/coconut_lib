@@ -1,6 +1,15 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a single signature wallet.
+/// Public-only single-signature wallet for address derivation and ownership
+/// checks.
+///
+/// This type must not contain seed material and cannot sign. Construct it from
+/// an account extended public key or output descriptor, then pair its PSBTs
+/// with a matching [SingleSignatureVault] in the signing environment.
+///
+/// See the [single-signature example](https://github.com/noncelab/coconut_lib/blob/main/doc/example/single_signature.dart).
+///
+/// {@category Wallets and Keys}
 class SingleSignatureWallet extends SingleSignatureWalletBase {
   /// Creates a new single signature wallet.
   SingleSignatureWallet(
@@ -16,7 +25,10 @@ class SingleSignatureWallet extends SingleSignatureWalletBase {
             derivationPath,
             false);
 
-  /// Create a single signature wallet from descriptor.
+  /// Creates a watch-only wallet from an output [descriptor].
+  ///
+  /// The checksum is required unless [ignoreChecksum] is `true`. Multisignature
+  /// descriptors are rejected.
   factory SingleSignatureWallet.fromDescriptor(String descriptor,
       {bool ignoreChecksum = false}) {
     Descriptor descriptorObject =
@@ -41,6 +53,7 @@ class SingleSignatureWallet extends SingleSignatureWalletBase {
         addressType, descriptorObject.getDerivationPath(0), extendedPublicKey);
   }
 
+  /// Creates a watch-only wallet from an account [extendedPublicKey].
   factory SingleSignatureWallet.fromExtendedPublicKey(AddressType addressType,
       String extendedPublicKey, String masterFingerprint) {
     if (addressType.isMultisignature) {
