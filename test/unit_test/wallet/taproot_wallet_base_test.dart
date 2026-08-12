@@ -247,8 +247,8 @@ void main() {
         expect(
             () => forgedPsbt.validateTaprootPolicy(vault),
             throwsA(isA<PsbtException>()
-                .having((error) => error.code, 'code',
-                    CoconutErrorCode.policyMismatch)
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.policyMismatch)
                 .having((error) => error.inputIndex, 'inputIndex', 1)));
         expect(() => vault.addPublicNonce(forgedPsbt.serialize()),
             throwsException);
@@ -270,8 +270,8 @@ void main() {
         expect(
             () => forgedPsbt.validateTaprootPolicy(vault),
             throwsA(isA<PsbtException>()
-                .having((error) => error.code, 'code',
-                    CoconutErrorCode.signerMismatch)
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.signerMismatch)
                 .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
 
@@ -305,8 +305,8 @@ void main() {
         expect(
             () => forgedPsbt.validateTaprootPolicy(beneficiaryVault),
             throwsA(isA<PsbtException>()
-                .having((error) => error.code, 'code',
-                    CoconutErrorCode.policyMismatch)
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.policyMismatch)
                 .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
     });

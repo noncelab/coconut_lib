@@ -28,7 +28,7 @@ abstract class MultisignatureWalletBase extends WalletBase {
 
     final segments = derivationPath.split('/');
     if (segments.length < 3 || segments[0] != 'm') {
-      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
           'Invalid wallet derivation path.');
     }
     final coinTypeSegment = segments[2];
@@ -37,10 +37,10 @@ abstract class MultisignatureWalletBase extends WalletBase {
         int.tryParse(coinTypeSegment.replaceAll(RegExp(r"[h']"), ""));
 
     if (coinType == 1 && !NetworkType.currentNetworkType.isTestnet) {
-      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
           'Derivation path coin type does not match the network.');
     } else if (coinType == 0 && NetworkType.currentNetworkType.isTestnet) {
-      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
           'Derivation path coin type does not match the network.');
     }
 
@@ -48,7 +48,7 @@ abstract class MultisignatureWalletBase extends WalletBase {
       if (NetworkType.currentNetworkType.isTestnet !=
           AddressType.isTestnetVersion(keyStore.extendedPublicKey.version)) {
         throw WalletException(
-            CoconutErrorCode.networkMismatch, 'Network type mismatch.');
+            WalletErrorCode.networkMismatch, 'Network type mismatch.');
       }
     }
 
@@ -108,12 +108,12 @@ abstract class MultisignatureWalletBase extends WalletBase {
   @override
   String getAddressWithDerivationPath(String derivationPath) {
     if (!WalletUtility.validateDerivationPath(derivationPath)) {
-      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
           "Invalid derivation path (e.g., m/44'/0'/0'/0/0).");
     }
 
     if (!derivationPath.startsWith('$_derivationPath/')) {
-      throw WalletException(CoconutErrorCode.derivationPathMismatch,
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
           'Derivation path does not belong to this wallet.',
           context: {'path': derivationPath, 'walletPath': _derivationPath});
     }
@@ -177,12 +177,12 @@ abstract class MultisignatureWalletBase extends WalletBase {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
       throw PsbtException(
-          CoconutErrorCode.policyMismatch, 'PSBT address type does not match.');
+          PsbtErrorCode.policyMismatch, 'PSBT address type does not match.');
     }
 
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+      throw PsbtException(PsbtErrorCode.transactionInputMismatch,
           'PSBT input count does not match the unsigned transaction.');
     }
 

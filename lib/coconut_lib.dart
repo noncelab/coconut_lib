@@ -15,6 +15,10 @@ import 'src/cryptography/mnemonic_wordlist/english.dart' as english_words;
 export 'src/cryptography/mnemonic_wordlist/english.dart';
 
 part 'src/exception/coconut_exception.dart';
+part 'src/exception/transaction_exception.dart';
+part 'src/exception/psbt_exception.dart';
+part 'src/exception/wallet_exception.dart';
+part 'src/exception/signing_exception.dart';
 part 'src/transaction/partially_signed_bitcoin_transaction.dart';
 part 'src/script/script.dart';
 part 'src/script/script_operation_code.dart';

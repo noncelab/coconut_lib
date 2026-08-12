@@ -8,11 +8,11 @@ void main() {
     test('exposes stable code, message, cause, and immutable context', () {
       final cause = FormatException('bad payload');
       final exception = TransactionException(
-          CoconutErrorCode.insufficientFunds, 'Not enough funds',
+          TransactionErrorCode.insufficientFunds, 'Not enough funds',
           cause: cause, context: const {'required': 10, 'available': 5});
 
       expect(exception, isA<Exception>());
-      expect(exception.code, CoconutErrorCode.insufficientFunds);
+      expect(exception.code, TransactionErrorCode.insufficientFunds);
       expect(exception.message, 'Not enough funds');
       expect(exception.cause, same(cause));
       expect(exception.context, {'required': 10, 'available': 5});
@@ -22,7 +22,7 @@ void main() {
 
     test('PSBT exception includes an optional input index in context', () {
       final exception = PsbtException(
-          CoconutErrorCode.policyMismatch, 'Input policy does not match',
+          PsbtErrorCode.policyMismatch, 'Input policy does not match',
           inputIndex: 2, context: const {'field': 'witnessScript'});
 
       expect(exception.inputIndex, 2);
@@ -31,11 +31,11 @@ void main() {
 
     test('provides domain-specific exception types', () {
       expect(
-          WalletException(CoconutErrorCode.networkMismatch, 'Network mismatch'),
+          WalletException(WalletErrorCode.networkMismatch, 'Network mismatch'),
           isA<CoconutException>());
       expect(
           SigningException(
-              CoconutErrorCode.privateKeyUnavailable, 'Missing private key'),
+              SigningErrorCode.privateKeyUnavailable, 'Missing private key'),
           isA<CoconutException>());
     });
   });

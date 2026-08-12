@@ -408,7 +408,7 @@ void main() {
         expect(
             () => Psbt.fromTransaction(tx, vault),
             throwsA(isA<PsbtException>().having((error) => error.code, 'code',
-                CoconutErrorCode.transactionInputMismatch)));
+                PsbtErrorCode.transactionInputMismatch)));
       });
 
       test('rejects a UTXO with a different output index', () {
@@ -427,8 +427,8 @@ void main() {
         expect(
             () => Psbt.fromTransaction(tx, vault),
             throwsA(isA<PsbtException>()
-                .having((error) => error.code, 'code',
-                    CoconutErrorCode.utxoMismatch)
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.utxoMismatch)
                 .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
 
@@ -446,8 +446,8 @@ void main() {
         expect(
             () => Psbt.fromTransaction(tx, vault),
             throwsA(isA<PsbtException>()
-                .having((error) => error.code, 'code',
-                    CoconutErrorCode.duplicateUtxo)
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.duplicateUtxo)
                 .having((error) => error.inputIndex, 'inputIndex', 1)));
       });
     });

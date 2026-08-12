@@ -128,7 +128,7 @@ void main() {
                 1,
                 vault),
             throwsA(isA<TransactionException>().having((error) => error.code,
-                'code', CoconutErrorCode.insufficientFunds)));
+                'code', TransactionErrorCode.insufficientFunds)));
       });
 
       test(

@@ -250,11 +250,11 @@ class Ecc {
 
     ECPoint? P = G * d0;
     if (P == null || P.isInfinity) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Failed to derive a public key for signing.');
     }
     if (P.y!.toBigInteger()!.isOdd) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Derived public key has invalid parity for signing.');
     }
 
@@ -274,13 +274,13 @@ class Ecc {
         "BIP0340/nonce", Uint8List.fromList([...t, ...P_x, ...message]));
     BigInt k0 = fromBuffer(k0Bytes) % n;
     if (k0 == BigInt.zero) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Nonce generation produced zero.');
     }
 
     ECPoint? R = G * k0;
     if (R == null || R.isInfinity) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Failed to generate the signature nonce point.');
     }
     if (R.y!.toBigInteger()!.isOdd) {
@@ -303,14 +303,14 @@ class Ecc {
       paddedS.setAll(32 - sBytes.length, sBytes);
       sBytes = paddedS;
     } else if (sBytes.length > 32) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Generated signature scalar is too large.');
     }
 
     Uint8List signature = Uint8List.fromList([...R_x, ...sBytes]);
 
     if (!verifySchnorr(message, getEncoded(P, true), signature)) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Generated Schnorr signature failed verification.');
     }
 
@@ -455,7 +455,7 @@ class Ecc {
     Uint8List publicKey = pointFromScalar(privateKey, true)!;
 
     if (publicKey[0] != 0x02 && publicKey[0] != 0x03) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Private key produced an invalid compressed public key.');
     }
 
@@ -526,7 +526,7 @@ class Ecc {
       paddedS.setAll(32 - sBytes.length, sBytes);
       sBytes = paddedS;
     } else if (sBytes.length > 32) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Generated signature scalar is too large.');
     }
 
@@ -538,7 +538,7 @@ class Ecc {
 
     if (!verifyMuSig2PartialSignature(
         fullSignature, publicNonce, publicKey, sessionContext)) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Generated MuSig2 partial signature failed verification.');
     }
 
@@ -667,7 +667,7 @@ class Ecc {
         Ecc.getEncoded(sessionContext.aggregateQ, true).sublist(1);
 
     if (!Ecc.verifySchnorr(sessionContext.message, publicKey, signature)) {
-      throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
           'Generated MuSig2 aggregate signature failed verification.');
     }
     return signature;

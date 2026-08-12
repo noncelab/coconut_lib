@@ -130,8 +130,8 @@ class Transaction {
     int changeAmount = totalInputAmount - totalOutputAmount - fee;
     if (changeAmount < 0) {
       // tx.outputs.remove(changeOutput);
-      throw TransactionException(
-          CoconutErrorCode.insufficientFunds, 'Not enough amount for sending.',
+      throw TransactionException(TransactionErrorCode.insufficientFunds,
+          'Not enough amount for sending.',
           context: {'fee': fee});
     } else {
       changeOutput.setAmount(changeAmount);
@@ -181,11 +181,11 @@ class Transaction {
 
     if (inputAmount == 0) {
       throw TransactionException(
-          CoconutErrorCode.insufficientFunds, 'No balance to send.');
+          TransactionErrorCode.insufficientFunds, 'No balance to send.');
     }
 
     if (inputAmount < _getDustThreshold(wallet.addressType)) {
-      throw TransactionException(CoconutErrorCode.dustOutput,
+      throw TransactionException(TransactionErrorCode.dustOutput,
           'Sending amount is under dust threshold.');
     }
 
@@ -209,8 +209,8 @@ class Transaction {
     int fee = (vByte * feeRate).ceil();
 
     if (inputAmount < fee) {
-      throw TransactionException(
-          CoconutErrorCode.insufficientFunds, 'Not enough amount for sending.',
+      throw TransactionException(TransactionErrorCode.insufficientFunds,
+          'Not enough amount for sending.',
           context: {'fee': fee});
     }
 
@@ -272,8 +272,8 @@ class Transaction {
     int changeAmount = totalInputAmount - totalOutputAmount - fee;
     if (changeAmount < 0) {
       // tx.outputs.remove(changeOutput);
-      throw TransactionException(
-          CoconutErrorCode.insufficientFunds, 'Not enough amount for sending.',
+      throw TransactionException(TransactionErrorCode.insufficientFunds,
+          'Not enough amount for sending.',
           context: {'fee': fee});
     } else {
       changeOutput.setAmount(changeAmount);
@@ -938,7 +938,7 @@ class Transaction {
         } else if (input.witnessList.length == 3) {
           isKeyPathSpending = false;
         } else {
-          throw TransactionException(CoconutErrorCode.invalidTransaction,
+          throw TransactionException(TransactionErrorCode.invalidTransaction,
               'Invalid Taproot transaction.');
         }
         if (isKeyPathSpending) {
@@ -1140,7 +1140,7 @@ class Transaction {
     for (TransactionInput input in inputs) {
       if (input.transactionHash == newUtxo.transactionHash &&
           input.index == newUtxo.index) {
-        throw TransactionException(CoconutErrorCode.duplicateUtxo,
+        throw TransactionException(TransactionErrorCode.duplicateUtxo,
             'UTXO already exists in transaction.', context: {
           'transactionHash': newUtxo.transactionHash,
           'index': newUtxo.index
@@ -1149,12 +1149,11 @@ class Transaction {
     }
 
     if (_utxoList.contains(newUtxo)) {
-      throw TransactionException(
-          CoconutErrorCode.duplicateUtxo, 'UTXO already exists in UTXO list.',
-          context: {
-            'transactionHash': newUtxo.transactionHash,
-            'index': newUtxo.index
-          });
+      throw TransactionException(TransactionErrorCode.duplicateUtxo,
+          'UTXO already exists in UTXO list.', context: {
+        'transactionHash': newUtxo.transactionHash,
+        'index': newUtxo.index
+      });
     }
 
     TransactionInput input =
@@ -1205,7 +1204,7 @@ class Transaction {
     _validateFeeRate(feeRate);
     if (!_utxoList.contains(utxoToRemove)) {
       throw TransactionException(
-          CoconutErrorCode.utxoNotFound, 'UTXO not found in the UTXO list.',
+          TransactionErrorCode.utxoNotFound, 'UTXO not found in the UTXO list.',
           context: {
             'transactionHash': utxoToRemove.transactionHash,
             'index': utxoToRemove.index
@@ -1222,7 +1221,7 @@ class Transaction {
     }
     if (removeTarget == null) {
       throw TransactionException(
-          CoconutErrorCode.utxoNotFound, 'UTXO not found in transaction.',
+          TransactionErrorCode.utxoNotFound, 'UTXO not found in transaction.',
           context: {
             'transactionHash': utxoToRemove.transactionHash,
             'index': utxoToRemove.index
@@ -1278,12 +1277,12 @@ class Transaction {
 
     if (_isSweep && outputs.length == 1) {
       if (outputs[0].amount <= fee) {
-        throw TransactionException(CoconutErrorCode.insufficientFunds,
+        throw TransactionException(TransactionErrorCode.insufficientFunds,
             'Not enough amount for sending.');
       }
       outputs[0].setAmount(totalInputAmount - fee);
       if (outputs[0].isDustOutput(wallet.addressType.isSegwit)) {
-        throw TransactionException(CoconutErrorCode.dustOutput,
+        throw TransactionException(TransactionErrorCode.dustOutput,
             'Sending amount is under dust threshold.');
       }
     } else {

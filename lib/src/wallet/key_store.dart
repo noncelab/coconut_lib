@@ -171,7 +171,7 @@ class KeyStore {
       Uint8List? merkleRoot,
       Uint8List? aggregatedPublicKey}) {
     if (!hasSeed) {
-      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+      throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'No private key in this key store.');
     }
     HDWallet child = getChildHdWallet(isChange).derive(index);
@@ -213,8 +213,7 @@ class KeyStore {
   bool hasPublicKeyInPsbt(String psbt) {
     Psbt psbtObj = Psbt.parse(psbt);
     if (psbtObj.inputs.isEmpty) {
-      throw PsbtException(
-          CoconutErrorCode.missingMetadata, 'PSBT has no inputs.');
+      throw PsbtException(PsbtErrorCode.missingMetadata, 'PSBT has no inputs.');
     }
 
     if (psbtObj.inputs[0].bip32Derivation != null) {
@@ -261,14 +260,14 @@ class KeyStore {
       }
       return false;
     } else {
-      throw PsbtException(CoconutErrorCode.missingMetadata,
+      throw PsbtException(PsbtErrorCode.missingMetadata,
           'Derivation path is not included in the PSBT.');
     }
   }
 
   String addPublicNonceToPsbt(String psbt) {
     if (!hasSeed) {
-      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+      throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
     }
     Psbt psbtObject = Psbt.parse(psbt);
@@ -277,12 +276,12 @@ class KeyStore {
     }
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+      throw PsbtException(PsbtErrorCode.transactionInputMismatch,
           'PSBT input count does not match the unsigned transaction.');
     }
     List<TransactionOutput> utxoList = [];
     if (hasPublicKeyInPsbt(psbtObject.serialize()) == false) {
-      throw SigningException(CoconutErrorCode.signerMismatch,
+      throw SigningException(SigningErrorCode.signerMismatch,
           'This key store cannot sign the PSBT.');
     }
     for (int j = 0; j < psbtObject.unsignedTransaction!.inputs.length; j++) {
@@ -308,7 +307,7 @@ class KeyStore {
       PsbtInput psbtInput, String derivationPath, String sigHash,
       {String extraInput = ''}) {
     if (!hasSeed) {
-      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+      throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
     }
 
@@ -326,17 +325,17 @@ class KeyStore {
 
   String addSignatureToPsbt(String psbt, AddressType addressType) {
     if (!hasSeed) {
-      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+      throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
     }
     Psbt psbtObject = Psbt.parse(psbt);
     if (hasPublicKeyInPsbt(psbtObject.serialize()) == false) {
-      throw SigningException(CoconutErrorCode.signerMismatch,
+      throw SigningException(SigningErrorCode.signerMismatch,
           'This key store cannot sign the PSBT.');
     }
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw PsbtException(CoconutErrorCode.transactionInputMismatch,
+      throw PsbtException(PsbtErrorCode.transactionInputMismatch,
           'PSBT input count does not match the unsigned transaction.');
     }
 
@@ -388,7 +387,7 @@ class KeyStore {
           break;
         }
         if (i == psbtInput.derivationPathList.length - 1) {
-          throw PsbtException(CoconutErrorCode.missingMetadata,
+          throw PsbtException(PsbtErrorCode.missingMetadata,
               'A matching derivation path was not found in the PSBT.',
               inputIndex: inputIndex);
         }
@@ -423,7 +422,7 @@ class KeyStore {
       String derivationPath, String sigHash,
       {String? aggregatedPublicKey, SessionContext? sessionContext}) {
     if (!hasSeed) {
-      throw SigningException(CoconutErrorCode.privateKeyUnavailable,
+      throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
     }
     int accountIndex =
@@ -467,7 +466,7 @@ class KeyStore {
             getPublicKey(accountIndex, isChange: isChange, isXOnly: false);
         if (psbtInput.tapBip32Derivation!.length !=
             psbtInput.muSig2PubNonces!.length) {
-          throw SigningException(CoconutErrorCode.nonceUnavailable,
+          throw SigningException(SigningErrorCode.nonceUnavailable,
               'Not enough public nonces are present.');
         }
         final String nonceKey = _createMuSig2NonceKey(
@@ -487,8 +486,7 @@ class KeyStore {
           secretNonce.fillRange(0, secretNonce.length, 0);
         }
       } else {
-        throw PsbtException(
-            CoconutErrorCode.invalidPsbt, 'Invalid PSBT input.');
+        throw PsbtException(PsbtErrorCode.invalidPsbt, 'Invalid PSBT input.');
       }
     }
 
@@ -501,7 +499,7 @@ class KeyStore {
       // ECDSA
       if (!Ecc.verifyEcdsa(Codec.decodeHex(sigHash), publicKeyByte,
           Converter.derToRawSignature(signatureByte))) {
-        throw SigningException(CoconutErrorCode.invalidSignature,
+        throw SigningException(SigningErrorCode.invalidSignature,
             'Generated signature is invalid.');
       }
     } else {
@@ -509,13 +507,13 @@ class KeyStore {
       if (psbtInput.tapLeafScript != null) {
         if (!Ecc.verifySchnorr(
             Codec.decodeHex(sigHash), publicKeyByte, signatureByte)) {
-          throw SigningException(CoconutErrorCode.invalidSignature,
+          throw SigningException(SigningErrorCode.invalidSignature,
               'Generated signature is invalid.');
         }
       } else if (psbtInput.tapLeafScript == null && sessionContext == null) {
         if (!Ecc.verifySchnorr(
             Codec.decodeHex(sigHash), publicKeyByte, signatureByte)) {
-          throw SigningException(CoconutErrorCode.invalidSignature,
+          throw SigningException(SigningErrorCode.invalidSignature,
               'Generated signature is invalid.');
         }
       } else if (psbtInput.tapLeafScript == null && sessionContext != null) {
@@ -523,12 +521,11 @@ class KeyStore {
             "${Codec.encodeHex(publicKeyByte)}$aggregatedPublicKey$sigHash"]!);
         if (!Ecc.verifyMuSig2PartialSignature(
             signatureByte, publicNonce, publicKeyByte, sessionContext)) {
-          throw SigningException(CoconutErrorCode.invalidSignature,
+          throw SigningException(SigningErrorCode.invalidSignature,
               'Generated signature is invalid.');
         }
       } else {
-        throw PsbtException(
-            CoconutErrorCode.invalidPsbt, 'Invalid PSBT input.');
+        throw PsbtException(PsbtErrorCode.invalidPsbt, 'Invalid PSBT input.');
       }
     }
 
@@ -757,7 +754,7 @@ class KeyStore {
   final tG = (Ecc.G * t)!;
   final qP = (qWork + tG)!;
   if (qP.isInfinity) {
-    throw SigningException(CoconutErrorCode.signatureGenerationFailed,
+    throw SigningException(SigningErrorCode.signatureGenerationFailed,
         'MuSig2 tweak produced an invalid aggregate point.');
   }
   final gaccP = (gPoint * gacc) % Ecc.n;
