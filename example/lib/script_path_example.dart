@@ -1,9 +1,8 @@
 import 'package:coconut_lib/coconut_lib.dart';
 
-import '../../test/mock_factory.dart';
-
 void main() async {
   NetworkType.setNetworkType(NetworkType.regtest);
+  const receiveAddress = 'bcrt1qxdyjf6h5d6qxap4n2dap97q4j5ps6ua8jkxz0z';
 
   // Child vault 는 싱글시그 p2tr만 지원합니다.
   TaprootVault childVault =
@@ -35,8 +34,8 @@ void main() async {
       1,
       21000,
       "m/86'/1'/0'/0/0");
-  Transaction tx1 = Transaction.forSinglePayment([utxo],
-      MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, parentWallet);
+  Transaction tx1 = Transaction.forSinglePayment(
+      [utxo], receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, parentWallet);
   Psbt unsignedPsbt1 = Psbt.fromTransaction(tx1, parentVault);
   String noncePsbt1 = parentVault.addPublicNonce(unsignedPsbt1.serialize());
   Psbt signedPsbt1 = Psbt.parse(parentVault.addSignatureToPsbt(noncePsbt1));
@@ -46,12 +45,7 @@ void main() async {
 
   // 상속자가 spending 하는 경우
   Transaction tx2 = Transaction.forSinglePayment(
-      [utxo],
-      MockFactory.reveiveAddress,
-      "m/86'/1'/0'/1/0",
-      20000,
-      1,
-      beneficiaryWallet);
+      [utxo], receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, beneficiaryWallet);
   Psbt unsignedPsbt2 = Psbt.fromTransaction(tx2, beneficiaryVault);
   Psbt signedPsbt2 = Psbt.parse(
       beneficiaryVault.addSignatureToPsbt(unsignedPsbt2.serialize()));
