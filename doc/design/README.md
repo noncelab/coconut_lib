@@ -7,7 +7,10 @@ of `coconut_lib`. PlantUML (`.puml`) files are the source of truth. Files under
 ## Diagrams
 
 - [Wallet–Vault security boundary](generated/wallet_vault_boundary.png)
-- [Wallet class model](generated/wallet_class_diagram.png)
+- [Wallet architecture overview](generated/wallet_overview.png) — compact class
+  hierarchy used in the repository README
+- [Wallet class model](generated/wallet_class_diagram.png) — detailed class,
+  key-store, descriptor, and policy relationships
 - [Exception model](generated/exception_model.png)
 - [Transaction and PSBT model](generated/transaction_model.png)
 - [PSBT signing flow](generated/signing_flow.png)

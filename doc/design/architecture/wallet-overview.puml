@@ -1,0 +1,55 @@
+@startuml wallet_overview
+!theme plain
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+skinparam backgroundColor White
+skinparam classAttributeIconSize 0
+skinparam nodesep 35
+skinparam ranksep 45
+skinparam class {
+  BackgroundColor White
+  BorderColor #334155
+  ArrowColor #64748B
+  FontColor #0F172A
+}
+top to bottom direction
+
+together {
+  abstract class Policy
+  class Descriptor
+  class KeyStore
+  class Seed
+}
+
+abstract class WalletBase
+
+together {
+  abstract class "Single Signature" as SingleSignatureWalletBase
+  abstract class "Multisignature" as MultisignatureWalletBase
+  abstract class "Taproot" as TaprootWalletBase
+}
+
+class "Wallet\n<<watch-only>>" as SingleSignatureWallet
+class "Vault\n<<signer>>" as SingleSignatureVault
+class "Wallet\n<<watch-only>>" as MultisignatureWallet
+class "Vault\n<<signer>>" as MultisignatureVault
+class "Wallet\n<<watch-only>>" as TaprootWallet
+class "Vault\n<<signer>>" as TaprootVault
+
+WalletBase <|-- SingleSignatureWalletBase
+WalletBase <|-- MultisignatureWalletBase
+WalletBase <|-- TaprootWalletBase
+
+SingleSignatureWalletBase <|-- SingleSignatureWallet
+SingleSignatureWalletBase <|-- SingleSignatureVault
+MultisignatureWalletBase <|-- MultisignatureWallet
+MultisignatureWalletBase <|-- MultisignatureVault
+TaprootWalletBase <|-- TaprootWallet
+TaprootWalletBase <|-- TaprootVault
+
+WalletBase *-up- Descriptor : describes
+WalletBase o-up- "1..*" KeyStore : public keys
+TaprootWalletBase o-up- "0..*" Policy
+KeyStore o-right- "0..1" Seed : signer only
+@enduml
