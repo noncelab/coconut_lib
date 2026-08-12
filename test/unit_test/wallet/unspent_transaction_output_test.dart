@@ -2,14 +2,14 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('Utxo', () {
     late Utxo utxo;
 
     setUpAll(() async {
-      utxo = MockFactory.createUtxo(entropy: 'ABC');
+      utxo = UtxoFixture.create(entropy: 'ABC');
     });
 
     group('constructor', () {

@@ -4,13 +4,13 @@ import 'dart:convert';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('MultisignatureVault', () {
     late MultisignatureVault vault;
     setUpAll(() {
-      vault = MockFactory.createP2wshVault();
+      vault = WalletFixture.p2wshVault();
     });
     group('MultisignatureVault.fromKeyStoreList', () {
       test('Generate multisignature vault from key store list', () {
@@ -107,7 +107,7 @@ void main() {
         final targetVault = MultisignatureVault.fromCoordinatorBsms(
             vault.getCoordinatorBsms(),
             addressType: AddressType.p2wsh);
-        final otherSeed = MockFactory.getCommonSeed(passphrase: 'different');
+        final otherSeed = SeedFixture.common(passphrase: 'different');
 
         expect(
             () => targetVault.bindSeedToKeyStore(otherSeed), throwsStateError);

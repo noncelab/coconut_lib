@@ -2,7 +2,7 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('BSMS', () {
@@ -22,7 +22,7 @@ void main() {
 
     group('BSMS.fromCoordinator', () {
       test('Generate coordinator', () {
-        MultisignatureVault mockWallet = MockFactory.createP2wshVault();
+        MultisignatureVault mockWallet = WalletFixture.p2wshVault();
         Bsms bsms = Bsms.fromCoordinator(
             mockWallet.getAddress(0), mockWallet.descriptor);
         expect(bsms.coordinator, isA<Coordinator>());
@@ -30,10 +30,10 @@ void main() {
 
       test('Reject mismatched first address', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        final wallet = MockFactory.createP2wshVault();
+        final wallet = WalletFixture.p2wshVault();
         final otherWallet = MultisignatureVault.fromSeedList([
-          MockFactory.getCommonSeed(passphrase: 'D'),
-          MockFactory.getCommonSeed(passphrase: 'E'),
+          SeedFixture.common(passphrase: 'D'),
+          SeedFixture.common(passphrase: 'E'),
         ], 1);
 
         expect(
@@ -45,9 +45,9 @@ void main() {
 
       test('Reject mismatched Taproot first address', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        final wallet = MockFactory.createP2trVaultWithPolicies();
+        final wallet = WalletFixture.p2trPolicyVault();
         final otherWallet =
-            MockFactory.createP2trKeyPathSpendingVault(passphrase: 'different');
+            WalletFixture.p2trKeyPathVault(passphrase: 'different');
 
         expect(
             () => Bsms.fromCoordinator(
@@ -118,10 +118,10 @@ void main() {
 
       test('First address mismatch exception', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        final wallet = MockFactory.createP2wshVault();
+        final wallet = WalletFixture.p2wshVault();
         final otherWallet = MultisignatureVault.fromSeedList([
-          MockFactory.getCommonSeed(passphrase: 'D'),
-          MockFactory.getCommonSeed(passphrase: 'E'),
+          SeedFixture.common(passphrase: 'D'),
+          SeedFixture.common(passphrase: 'E'),
         ], 1);
         final coordinator = wallet
             .getCoordinatorBsms()
@@ -133,7 +133,7 @@ void main() {
 
       test('Network mismatch exception', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        final coordinator = MockFactory.createP2wshVault().getCoordinatorBsms();
+        final coordinator = WalletFixture.p2wshVault().getCoordinatorBsms();
         NetworkType.setNetworkType(NetworkType.mainnet);
 
         expect(() => Bsms.parseCoordinator(coordinator), throwsFormatException);

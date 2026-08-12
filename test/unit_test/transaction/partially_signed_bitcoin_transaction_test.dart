@@ -5,15 +5,15 @@ import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('Psbt', () {
     late Psbt unsignedPsbt;
     late Psbt signedPsbt;
     setUp(() {
-      unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
-      signedPsbt = MockFactory.createP2wpkhSignedPsbt();
+      unsignedPsbt = PsbtFixture.p2wpkhUnsigned();
+      signedPsbt = PsbtFixture.p2wpkhSigned();
     });
     group('fee', () {
       test('Get final fee', () {
@@ -22,8 +22,7 @@ void main() {
     });
     group('sendingAmount', () {
       test('Get sending amount except fee and change', () {
-        expect(
-            signedPsbt.sendingAmount(MockFactory.createP2wpkhVault()), 15000);
+        expect(signedPsbt.sendingAmount(WalletFixture.p2wpkhVault()), 15000);
       });
     });
     group('addressType', () {
@@ -34,7 +33,7 @@ void main() {
 
     group('wallet', () {
       test('identifies owned outputs after parsing', () {
-        final wallet = MockFactory.createP2wpkhVault();
+        final wallet = WalletFixture.p2wpkhVault();
 
         final parsed = Psbt.parse(unsignedPsbt.serialize());
 
@@ -44,7 +43,7 @@ void main() {
 
       test('does not identify outputs owned by another wallet', () {
         final otherWallet =
-            MockFactory.createP2wpkhVault(passphrase: 'another wallet');
+            WalletFixture.p2wpkhVault(passphrase: 'another wallet');
 
         final parsed = Psbt.parse(unsignedPsbt.serialize());
 
@@ -53,11 +52,11 @@ void main() {
       });
 
       test('identifies multisig and taproot owned outputs', () {
-        final multisigPsbt = MockFactory.createP2wshUnsignedPsbt();
-        final taprootPsbt = MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final multisigPsbt = PsbtFixture.p2wshUnsigned();
+        final taprootPsbt = PsbtFixture.p2trKeyPathUnsigned();
 
-        final multisigWallet = MockFactory.createP2wshVault();
-        final taprootWallet = MockFactory.createP2trKeyPathSpendingVault();
+        final multisigWallet = WalletFixture.p2wshVault();
+        final taprootWallet = WalletFixture.p2trKeyPathVault();
 
         expect(multisigPsbt.outputs[0].isOwnedBy(multisigWallet), false);
         expect(multisigPsbt.outputs[1].isOwnedBy(multisigWallet), true);
@@ -66,8 +65,8 @@ void main() {
       });
 
       test('uses BIP-371 output derivations for taproot change', () {
-        final taprootWallet = MockFactory.createP2trKeyPathSpendingVault();
-        final taprootPsbt = MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final taprootWallet = WalletFixture.p2trKeyPathVault();
+        final taprootPsbt = PsbtFixture.p2trKeyPathUnsigned();
         final Map<String, dynamic> outputMap =
             taprootPsbt.toKeyMap()['outputs'][1];
 
@@ -85,9 +84,9 @@ void main() {
       });
 
       test('preserves taproot output leaf hashes for script policies', () {
-        final taprootWallet = MockFactory.createP2trVaultWithPolicies();
+        final taprootWallet = WalletFixture.p2trPolicyVault();
         final transaction = Transaction.forSinglePayment(
-            MockFactory.createTaprootUtxoList(count: 1),
+            UtxoFixture.taprootList(count: 1),
             taprootWallet.getAddress(1),
             '${taprootWallet.derivationPath}/1/1',
             15000,
@@ -109,7 +108,7 @@ void main() {
 
       test('requires a wallet when checking ownership and change', () {
         final parsed = Psbt.parse(unsignedPsbt.serialize());
-        final wallet = MockFactory.createP2wpkhVault();
+        final wallet = WalletFixture.p2wpkhVault();
 
         expect(parsed.outputs[1].isOwnedBy(wallet), true);
         expect(parsed.outputs[1].isChange(wallet), true);
@@ -118,19 +117,19 @@ void main() {
 
     group('matchesVault', () {
       test('Check if psbt is for single signature vault', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         expect(unsignedPsbt.matchesVault(vault), true);
         expect(
             unsignedPsbt
-                .matchesVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
+                .matchesVault(WalletFixture.p2wpkhVault(passphrase: 'Z')),
             false);
       });
       test('Check if psbt is for multisignature vault', () {
-        MultisignatureVault vault = MockFactory.createP2wshVault();
-        expect(MockFactory.createP2wshUnsignedPsbt().matchesVault(vault), true);
-        final vault1 = MockFactory.createP2wpkhVault(passphrase: 'A');
-        final vault2 = MockFactory.createP2wpkhVault(passphrase: 'B');
-        final vault3 = MockFactory.createP2wpkhVault(passphrase: 'C');
+        MultisignatureVault vault = WalletFixture.p2wshVault();
+        expect(PsbtFixture.p2wshUnsigned().matchesVault(vault), true);
+        final vault1 = WalletFixture.p2wpkhVault(passphrase: 'A');
+        final vault2 = WalletFixture.p2wpkhVault(passphrase: 'B');
+        final vault3 = WalletFixture.p2wpkhVault(passphrase: 'C');
 
         KeyStore keyStore1 =
             KeyStore.fromSeed(vault1.keyStore.seed, AddressType.p2wsh);
@@ -144,10 +143,8 @@ void main() {
         MultisignatureVault targetVault2 =
             MultisignatureVault.fromKeyStoreList([keyStore1, keyStore2], 2);
 
-        expect(MockFactory.createP2wshUnsignedPsbt().matchesVault(targetVault1),
-            false);
-        expect(MockFactory.createP2wshUnsignedPsbt().matchesVault(targetVault2),
-            false);
+        expect(PsbtFixture.p2wshUnsigned().matchesVault(targetVault1), false);
+        expect(PsbtFixture.p2wshUnsigned().matchesVault(targetVault2), false);
       });
       test('Check if psbt is for taproot vault', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
@@ -163,14 +160,14 @@ void main() {
                 passphrase: utf8.encode('B')),
             AddressType.p2tr);
         TaprootVault childSingleVault =
-            MockFactory.createBeneficiaryVault(passphrase: 'C');
+            WalletFixture.beneficiaryVault(passphrase: 'C');
         Policy policy1 = InheritancePolicy.fromDescriptorAndLocktime(
             childSingleVault.descriptor, 1767225600);
         Policy policy2 = InheritancePolicy.fromDescriptorAndLocktime(
-            MockFactory.createBeneficiaryVault(passphrase: 'P2').descriptor,
+            WalletFixture.beneficiaryVault(passphrase: 'P2').descriptor,
             1767225600);
         Policy policy3 = InheritancePolicy.fromDescriptorAndLocktime(
-            MockFactory.createBeneficiaryVault(passphrase: 'P3').descriptor,
+            WalletFixture.beneficiaryVault(passphrase: 'P3').descriptor,
             1767225600);
         TaprootVault vault = TaprootVault.fromKeyStoreList(
             [keyStore1, keyStore2], [policy1, policy2, policy3]);
@@ -182,7 +179,7 @@ void main() {
             "m/86'/1'/0'/0/$addressIndex");
 
         Transaction tx = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
         TaprootVault childVault =
             TaprootVault.fromCoordinatorBsms(vault.getCoordinatorBsms());
         childVault.bindSeedToBeneficiaryKeyStore(
@@ -197,12 +194,12 @@ void main() {
       });
 
       test('matches only the single signature vault that owns the key', () {
-        final SingleSignatureVault vaultA = MockFactory.createP2wpkhVault();
+        final SingleSignatureVault vaultA = WalletFixture.p2wpkhVault();
         final SingleSignatureVault vaultB =
-            MockFactory.createP2wpkhVault(passphrase: 'vaultB');
+            WalletFixture.p2wpkhVault(passphrase: 'vaultB');
 
         final Transaction txForA = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            UtxoFixture.list(count: 1),
             vaultA.getAddress(1),
             '${vaultA.derivationPath}/1/1',
             15000,
@@ -218,11 +215,11 @@ void main() {
           'distinguishes multisig vaults with same keys but different required signers',
           () {
         final SingleSignatureVault signerA =
-            MockFactory.createP2wpkhVault(passphrase: 'A');
+            WalletFixture.p2wpkhVault(passphrase: 'A');
         final SingleSignatureVault signerB =
-            MockFactory.createP2wpkhVault(passphrase: 'B');
+            WalletFixture.p2wpkhVault(passphrase: 'B');
         final SingleSignatureVault signerC =
-            MockFactory.createP2wpkhVault(passphrase: 'C');
+            WalletFixture.p2wpkhVault(passphrase: 'C');
 
         final KeyStore keyStoreA =
             KeyStore.fromSeed(signerA.keyStore.seed, AddressType.p2wsh);
@@ -238,7 +235,7 @@ void main() {
             MultisignatureVault.fromKeyStoreList(keyStores, 3);
 
         final Transaction txFor2Of3 = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(
+            UtxoFixture.list(
                 count: 1, derivationPath: "${vault2Of3.derivationPath}/0/0"),
             vault2Of3.getAddress(1),
             '${vault2Of3.derivationPath}/1/1',
@@ -248,7 +245,7 @@ void main() {
         final Psbt psbtFor2Of3 = Psbt.fromTransaction(txFor2Of3, vault2Of3);
 
         final Transaction txFor3Of3 = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(
+            UtxoFixture.list(
                 count: 1, derivationPath: "${vault3Of3.derivationPath}/0/0"),
             vault3Of3.getAddress(1),
             '${vault3Of3.derivationPath}/1/1',
@@ -277,7 +274,7 @@ void main() {
                 passphrase: utf8.encode('parentA2')),
             AddressType.p2tr);
         final TaprootVault childA =
-            MockFactory.createBeneficiaryVault(passphrase: 'childA');
+            WalletFixture.beneficiaryVault(passphrase: 'childA');
         final Policy childPolicyA = InheritancePolicy.fromDescriptorAndLocktime(
             childA.descriptor, 1767225600);
         final TaprootVault vaultA =
@@ -292,10 +289,10 @@ void main() {
             21000,
             "m/86'/1'/0'/0/$addressIndex");
         final Transaction txForA = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
         final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
         final Transaction txForB = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
         final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
 
         expect(psbtForVaultA.matchesVault(vaultA), isTrue);
@@ -318,7 +315,7 @@ void main() {
                 passphrase: utf8.encode('parentA2')),
             AddressType.p2tr);
         final TaprootVault childA =
-            MockFactory.createBeneficiaryVault(passphrase: 'childA');
+            WalletFixture.beneficiaryVault(passphrase: 'childA');
         final Policy childPolicyA = InheritancePolicy.fromDescriptorAndLocktime(
             childA.descriptor, 1767225600);
         final Policy childPolicyB = InheritancePolicy.fromDescriptorAndLocktime(
@@ -335,9 +332,9 @@ void main() {
             21000,
             "m/86'/1'/0'/0/$addressIndex");
         final Transaction txForA = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
         final Transaction txForB = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
 
         final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
         final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
@@ -367,9 +364,9 @@ void main() {
 
     group('Psbt.fromTransaction', () {
       test('Generate psbt from transaction object (single sig)', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            UtxoFixture.list(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -380,9 +377,9 @@ void main() {
       });
 
       test('Generate psbt from transaction object (multisig)', () {
-        MultisignatureVault vault = MockFactory.createP2wshVault();
+        MultisignatureVault vault = WalletFixture.p2wshVault();
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(
+            UtxoFixture.list(
                 count: 1, derivationPath: '${vault.derivationPath}/0/0'),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
@@ -395,9 +392,9 @@ void main() {
       });
 
       test('rejects a transaction input and UTXO count mismatch', () {
-        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         final Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            UtxoFixture.list(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -412,9 +409,9 @@ void main() {
       });
 
       test('rejects a UTXO with a different output index', () {
-        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         final Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            UtxoFixture.list(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -433,8 +430,8 @@ void main() {
       });
 
       test('rejects duplicate input outpoints', () {
-        final SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        final Utxo utxo = MockFactory.createUtxoList(count: 1).single;
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final Utxo utxo = UtxoFixture.list(count: 1).single;
         final Transaction tx = Transaction.forSinglePayment(
             [utxo, utxo],
             vault.getAddress(1),
@@ -538,7 +535,7 @@ void main() {
             '0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824');
 
         expect(signedPsbt.serialize(), unsignedPsbt.serialize());
-        unsignedPsbt = MockFactory.createP2wshUnsignedPsbt();
+        unsignedPsbt = PsbtFixture.p2wshUnsigned();
       });
     });
     group('getKeyType', () {
@@ -554,11 +551,11 @@ void main() {
     });
     group('getAggregatedPublicNonce', () {
       test('Get aggregated public nonce from input index', () {
-        TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
+        TaprootVault vault = WalletFixture.p2trMultikeyVault();
         KeyStore keyStore = vault.keyStoreList[0];
         Psbt psbt = Psbt.fromTransaction(
             Transaction.forSinglePayment(
-                [MockFactory.getCommonUtxo(AddressType.p2tr)],
+                [UtxoFixture.common(AddressType.p2tr)],
                 vault.getAddress(1),
                 '${vault.derivationPath}/1/1',
                 15000,
@@ -580,7 +577,7 @@ void main() {
 
       test('Taproot defaults to SIGHASH_DEFAULT without a PSBT sighash field',
           () {
-        final Psbt psbt = MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final Psbt psbt = PsbtFixture.p2trKeyPathUnsigned();
         final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
 
         expect(inputMap.containsKey('03'), isFalse);
@@ -589,9 +586,8 @@ void main() {
 
       test('Taproot SIGHASH_ALL is parsed, signed and finalized consistently',
           () {
-        final TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
-        final Psbt unsigned =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final TaprootVault vault = WalletFixture.p2trKeyPathVault();
+        final Psbt unsigned = PsbtFixture.p2trKeyPathUnsigned();
         unsigned.toKeyMap()['inputs'][0]['03'] = '01000000';
         final Psbt withSighashAll = Psbt.fromMap(unsigned.toKeyMap());
 
@@ -607,9 +603,8 @@ void main() {
       });
 
       test('rejects unsupported Taproot sighash types before signing', () {
-        final TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
-        final Psbt unsigned =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
+        final TaprootVault vault = WalletFixture.p2trKeyPathVault();
+        final Psbt unsigned = PsbtFixture.p2trKeyPathUnsigned();
         unsigned.toKeyMap()['inputs'][0]['03'] = '02000000';
         final Psbt unsupported = Psbt.fromMap(unsigned.toKeyMap());
 
@@ -628,8 +623,7 @@ void main() {
             true);
       });
       test('Validate signature for psbt (taproot)', () {
-        final Psbt signedPsbt =
-            MockFactory.createP2trKeyPathSpendingSignedPsbt();
+        final Psbt signedPsbt = PsbtFixture.p2trKeyPathSigned();
         final PsbtInput input = signedPsbt.inputs[0];
         expect(input.tapKeySig, isNotNull);
 
@@ -644,18 +638,17 @@ void main() {
     group('isSigned', () {
       group('Check if psbt is signed', () {
         test('Check if psbt is signed (segwit)', () {
-          SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-          Psbt unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
-          Psbt signedPsbt = MockFactory.createP2wpkhSignedPsbt();
+          SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+          Psbt unsignedPsbt = PsbtFixture.p2wpkhUnsigned();
+          Psbt signedPsbt = PsbtFixture.p2wpkhSigned();
 
           expect(unsignedPsbt.isSigned(vault.keyStore), false);
           expect(signedPsbt.isSigned(vault.keyStore), true);
         });
         test('Check if psbt is signed (taproot)', () {
-          TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
-          Psbt unsignedPsbt =
-              MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
-          Psbt signedPsbt = MockFactory.createP2trKeyPathSpendingSignedPsbt();
+          TaprootVault vault = WalletFixture.p2trKeyPathVault();
+          Psbt unsignedPsbt = PsbtFixture.p2trKeyPathUnsigned();
+          Psbt signedPsbt = PsbtFixture.p2trKeyPathSigned();
 
           expect(
               unsignedPsbt.isSigned(vault.keyStoreList[0],
@@ -674,8 +667,8 @@ void main() {
     late PsbtInput multisigInput;
 
     setUpAll(() {
-      input = MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
-      multisigInput = MockFactory.createP2wshUnsignedPsbt().inputs[0];
+      input = PsbtFixture.p2wpkhUnsigned().inputs[0];
+      multisigInput = PsbtFixture.p2wshUnsigned().inputs[0];
     });
 
     group('witnessUtxo', () {
@@ -712,8 +705,7 @@ void main() {
 
     group('signatureList', () {
       test('reflects added signatures', () {
-        final PsbtInput mutableInput =
-            MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
+        final PsbtInput mutableInput = PsbtFixture.p2wpkhUnsigned().inputs[0];
         expect(mutableInput.signatureList, isEmpty);
         mutableInput.addPartialSig(
             '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
@@ -724,8 +716,7 @@ void main() {
 
     group('signedCount', () {
       test('reflects added signatures', () {
-        final PsbtInput mutableInput =
-            MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
+        final PsbtInput mutableInput = PsbtFixture.p2wpkhUnsigned().inputs[0];
         expect(mutableInput.signedCount, 0);
         mutableInput.addPartialSig(
             '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
@@ -736,8 +727,7 @@ void main() {
 
     group('addTapKeySig', () {
       test('updates tapKeySig', () {
-        final PsbtInput tapInput =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
         tapInput.addTapKeySig('aa' * 64);
         expect(tapInput.tapKeySig, isNotNull);
       });
@@ -745,8 +735,7 @@ void main() {
 
     group('addTapScriptSig', () {
       test('updates tapScriptSig', () {
-        final PsbtInput tapInput =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
         tapInput.addTapScriptSig('bb' * 64, '02${'11' * 32}');
         expect(tapInput.tapScriptSig, isNotNull);
       });
@@ -754,8 +743,7 @@ void main() {
 
     group('addMuSig2PubNonce', () {
       test('updates muSig2PubNonces', () {
-        final PsbtInput tapInput =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
         tapInput.addMuSig2PubNonce(
             '02${'22' * 32}', '03${'33' * 32}', '44' * 32, '55' * 66);
         expect(tapInput.muSig2PubNonces, isNotNull);
@@ -764,8 +752,7 @@ void main() {
 
     group('addMuSig2PartialSig', () {
       test('updates muSig2PartialSigs', () {
-        final PsbtInput tapInput =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
         tapInput.addMuSig2PartialSig(
             '66' * 64, '02${'22' * 32}', '03${'33' * 32}', '44' * 32);
         expect(tapInput.muSig2PartialSigs, isNotNull);
@@ -811,10 +798,10 @@ void main() {
     late MultisignatureVault multisigWallet;
 
     setUpAll(() {
-      wallet = MockFactory.createP2wpkhVault();
-      multisigWallet = MockFactory.createP2wshVault();
-      output = MockFactory.createP2wpkhUnsignedPsbt().outputs[0];
-      final Psbt multisigPsbt = MockFactory.createP2wshUnsignedPsbt();
+      wallet = WalletFixture.p2wpkhVault();
+      multisigWallet = WalletFixture.p2wshVault();
+      output = PsbtFixture.p2wpkhUnsigned().outputs[0];
+      final Psbt multisigPsbt = PsbtFixture.p2wshUnsigned();
       multisigOutput = multisigPsbt.outputs[0];
       multisigChangeOutput = multisigPsbt.outputs[1];
       String psbtString =

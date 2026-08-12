@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('KeyStore', () {
@@ -72,8 +72,7 @@ void main() {
 
       test('rejects another account key with the same fingerprint', () {
         final other = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'different'),
-            AddressType.p2wpkh);
+            SeedFixture.common(passphrase: 'different'), AddressType.p2wpkh);
         final fingerprintCollision = KeyStore(keyStore.masterFingerprint,
             other.hdWallet, other.extendedPublicKey);
 
@@ -183,14 +182,14 @@ void main() {
 
     group('hasPublicKeyInPsbt', () {
       test('Check sign possibility with wrong key store', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
         expect(keyStore.hasPublicKeyInPsbt(psbt.serialize()), false);
       });
       test('Check sign possibility with right key store', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
 
         expect(
-            MockFactory.createP2wpkhVault()
+            WalletFixture.p2wpkhVault()
                 .keyStore
                 .hasPublicKeyInPsbt(psbt.serialize()),
             true);
@@ -199,8 +198,8 @@ void main() {
     group('addSignatureToPsbt', () {
       test('Sign to PSBT (single signature)', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        Psbt unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        Psbt unsignedPsbt = PsbtFixture.p2wpkhUnsigned();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
 
         String signedPsbtText = vault.keyStore
             .addSignatureToPsbt(unsignedPsbt.serialize(), vault.addressType);
@@ -208,8 +207,8 @@ void main() {
       });
       test('Sign to PSBT (multisignature)', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        Psbt unsignedPsbt = MockFactory.createP2wshUnsignedPsbt();
-        MultisignatureVault vault = MockFactory.createP2wshVault();
+        Psbt unsignedPsbt = PsbtFixture.p2wshUnsigned();
+        MultisignatureVault vault = WalletFixture.p2wshVault();
         String partialSignedPsbtText = vault.keyStoreList[0]
             .addSignatureToPsbt(unsignedPsbt.serialize(), vault.addressType);
         String signedPsbtText = vault.keyStoreList[1]
@@ -219,13 +218,13 @@ void main() {
       });
       test('Sign to PSBT (MuSig2)', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
         KeyStore keyStore2 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
         TaprootVault vault =
             TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createTaprootUtxoList(count: 1),
+            UtxoFixture.taprootList(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -241,13 +240,13 @@ void main() {
 
       test('MuSig2 secret nonce cannot be consumed twice', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
         KeyStore keyStore2 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
         TaprootVault vault =
             TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createTaprootUtxoList(count: 1),
+            UtxoFixture.taprootList(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -266,13 +265,13 @@ void main() {
 
       test('MuSig2 signing rejects a nonce after KeyStore restoration', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
         KeyStore keyStore2 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
         TaprootVault vault =
             TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createTaprootUtxoList(count: 1),
+            UtxoFixture.taprootList(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -281,7 +280,7 @@ void main() {
         Psbt noncePsbt = Psbt.parse(
             vault.addPublicNonce(Psbt.fromTransaction(tx, vault).serialize()));
         KeyStore restoredKeyStore = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
 
         expect(
             () => restoredKeyStore.addSignatureToPsbt(
@@ -292,13 +291,13 @@ void main() {
 
       test('MuSig2 nonce can be safely replaced before signing', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
         KeyStore keyStore2 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
         TaprootVault vault =
             TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createTaprootUtxoList(count: 1),
+            UtxoFixture.taprootList(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -539,7 +538,7 @@ void main() {
 
     group('operator ==', () {
       test('Check equal', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         SingleSignatureWallet wallet =
             SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
@@ -549,7 +548,7 @@ void main() {
       });
 
       test('Check unequal', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         expect(keyStore == vault.keyStore, false);
       });
     });
@@ -595,7 +594,7 @@ void main() {
 
       test('excludes private key material from a signing key store', () {
         final signing =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         final jsonText = signing.toJson();
         final map = jsonDecode(jsonText) as Map<String, dynamic>;
         final hdWalletMap =
@@ -616,7 +615,7 @@ void main() {
     group('wipeSeed', () {
       test('clears private wallets and preserves public derivation', () {
         final KeyStore mutable =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         final HDWallet accountWallet = mutable.hdWallet;
         final HDWallet receiveWallet = mutable.getChildHdWallet(false);
         final HDWallet changeWallet = mutable.getChildHdWallet(true);
@@ -652,11 +651,11 @@ void main() {
 
     group('addPublicNonceToPsbt', () {
       test('Add public nonce to PSBT', () {
-        TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
+        TaprootVault vault = WalletFixture.p2trMultikeyVault();
         KeyStore keyStore = vault.keyStoreList[0];
         Psbt psbt = Psbt.fromTransaction(
             Transaction.forSinglePayment(
-                [MockFactory.getCommonUtxo(AddressType.p2tr)],
+                [UtxoFixture.common(AddressType.p2tr)],
                 vault.getAddress(1),
                 '${vault.derivationPath}/1/1',
                 15000,

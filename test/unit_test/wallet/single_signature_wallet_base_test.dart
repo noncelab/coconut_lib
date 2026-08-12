@@ -2,14 +2,14 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('SingleSignatureWalletBase', () {
     late SingleSignatureVault vault;
     late SingleSignatureWallet wallet;
     setUp(() {
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
     group('isVault', () {
@@ -55,7 +55,7 @@ void main() {
     });
     group('hasPublicKeyInPsbt', () {
       test('Can right vault can sign', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
         expect(vault.hasPublicKeyInPsbt(psbt.serialize()), true);
 
         SingleSignatureVault targetVault = SingleSignatureVault.random();
@@ -64,13 +64,13 @@ void main() {
     });
     group('addSignatureToPsbt', () {
       test('Sign to psbt', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
         String signedPsbt = vault.addSignatureToPsbt(psbt.serialize());
         expect(signedPsbt.hashCode, 695547130);
       });
 
       test('throws when psbt address type mismatches', () {
-        Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wshUnsigned();
         expect(
             () => vault.addSignatureToPsbt(psbt.serialize()), throwsException);
       });

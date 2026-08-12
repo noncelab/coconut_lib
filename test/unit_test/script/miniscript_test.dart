@@ -2,7 +2,7 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('Miniscript', () {
@@ -10,7 +10,7 @@ void main() {
 
     setUp(() {
       NetworkType.setNetworkType(NetworkType.regtest);
-      beneficiaryVault = MockFactory.createBeneficiaryVault(passphrase: 'C');
+      beneficiaryVault = WalletFixture.beneficiaryVault(passphrase: 'C');
     });
 
     group('pk', () {

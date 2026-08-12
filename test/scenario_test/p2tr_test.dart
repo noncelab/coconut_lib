@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../mock_factory.dart';
+import '../fixtures/test_fixtures.dart';
 
 void main() {
   group('P2TR Test', () {
@@ -178,10 +178,8 @@ void main() {
 
       NetworkType.setNetworkType(NetworkType.regtest);
 
-      SingleSignatureVault vault1 =
-          MockFactory.createP2wpkhVault(passphrase: 'A');
-      SingleSignatureVault vault2 =
-          MockFactory.createP2wpkhVault(passphrase: 'B');
+      SingleSignatureVault vault1 = WalletFixture.p2wpkhVault(passphrase: 'A');
+      SingleSignatureVault vault2 = WalletFixture.p2wpkhVault(passphrase: 'B');
 
       keyStore1 = KeyStore.fromSeed(vault1.keyStore.seed, AddressType.p2tr);
       keyStore2 = KeyStore.fromSeed(vault2.keyStore.seed, AddressType.p2tr);
@@ -196,7 +194,7 @@ void main() {
           21000,
           "m/86'/1'/0'/0/$addressIndex");
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 1000, 3, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 1000, 3, vault);
       String unsignedPsbt = Psbt.fromTransaction(tx, vault).serialize();
       String noncePsbt = vault.addPublicNonce(unsignedPsbt);
       String signedPsbt = vault.addSignatureToPsbt(noncePsbt);
@@ -215,10 +213,8 @@ void main() {
 
       NetworkType.setNetworkType(NetworkType.regtest);
 
-      SingleSignatureVault vault1 =
-          MockFactory.createP2wpkhVault(passphrase: 'A');
-      SingleSignatureVault vault2 =
-          MockFactory.createP2wpkhVault(passphrase: 'B');
+      SingleSignatureVault vault1 = WalletFixture.p2wpkhVault(passphrase: 'A');
+      SingleSignatureVault vault2 = WalletFixture.p2wpkhVault(passphrase: 'B');
 
       keyStore1 = KeyStore.fromSeed(vault1.keyStore.seed, AddressType.p2tr);
       keyStore2 = KeyStore.fromSeed(vault2.keyStore.seed, AddressType.p2tr);
@@ -233,7 +229,7 @@ void main() {
           21000,
           "m/86'/1'/0'/0/$addressIndex");
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 1000, 3, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 1000, 3, vault);
       String unsignedPsbt = Psbt.fromTransaction(tx, vault).serialize();
       String noncePsbt = vault.addPublicNonce(unsignedPsbt);
       String signedPsbt = vault.addSignatureToPsbt(noncePsbt);
@@ -250,7 +246,7 @@ void main() {
       WalletUtility.getAccountIndexFromDerivationPath("m/86'/1'/0'/0/0");
       NetworkType.setNetworkType(NetworkType.regtest);
 
-      TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
+      TaprootVault vault = WalletFixture.p2trKeyPathVault();
       int addressIndex = 3;
 
       expect(vault.descriptor.hashCode, 917163750);
@@ -263,7 +259,7 @@ void main() {
           "m/86'/1'/0'/0/$addressIndex");
 
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
       expect(unsignedPsbt.addressType, AddressType.p2tr);
       //String noncePsbt = vault.addPublicNonce(unsignedPsbt.serialize());
@@ -279,7 +275,7 @@ void main() {
       WalletUtility.getAccountIndexFromDerivationPath("m/86'/1'/0'/0/0");
       NetworkType.setNetworkType(NetworkType.regtest);
 
-      TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
+      TaprootVault vault = WalletFixture.p2trKeyPathVault();
       int addressIndex = 4;
 
       expect(vault.getAddress(addressIndex),
@@ -291,7 +287,7 @@ void main() {
           "m/86'/1'/0'/0/$addressIndex");
 
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
       expect(unsignedPsbt.addressType, AddressType.p2tr);
       String noncePsbt = vault.addPublicNonce(unsignedPsbt.serialize(),
@@ -306,7 +302,7 @@ void main() {
     });
 
     test('P2TR key-path wallet with one key signs transaction', () {
-      TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
+      TaprootVault vault = WalletFixture.p2trKeyPathVault();
       int addressIndex = 0;
 
       expect(vault.keyStoreList.length, 1);
@@ -325,7 +321,7 @@ void main() {
           Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/$addressIndex");
 
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
 
       expect(unsignedPsbt.matchesVault(vault), isTrue);
@@ -351,7 +347,7 @@ void main() {
               passphrase: utf8.encode('parent')),
           AddressType.p2tr);
       TaprootVault beneficiaryVault =
-          MockFactory.createBeneficiaryVault(passphrase: 'child');
+          WalletFixture.beneficiaryVault(passphrase: 'child');
       Policy inheritancePolicy = InheritancePolicy.fromDescriptorAndLocktime(
           beneficiaryVault.descriptor, 1767225600);
 
@@ -373,7 +369,7 @@ void main() {
           Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/$addressIndex");
 
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
 
       expect(unsignedPsbt.addressType, AddressType.p2tr);
@@ -400,7 +396,7 @@ void main() {
               passphrase: utf8.encode('parent')),
           AddressType.p2tr);
       TaprootVault childSingleVault =
-          MockFactory.createBeneficiaryVault(passphrase: 'child');
+          WalletFixture.beneficiaryVault(passphrase: 'child');
       Policy inheritancePolicy = InheritancePolicy.fromDescriptorAndLocktime(
           childSingleVault.descriptor, 1767225600);
 
@@ -428,7 +424,7 @@ void main() {
       Utxo utxo =
           Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/$addressIndex");
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, childVault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, childVault);
 
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, childVault);
 
@@ -447,7 +443,7 @@ void main() {
               passphrase: utf8.encode('parent')),
           AddressType.p2tr);
       TaprootVault childSingleVault =
-          MockFactory.createBeneficiaryVault(passphrase: 'child');
+          WalletFixture.beneficiaryVault(passphrase: 'child');
       Policy inheritancePolicy = InheritancePolicy.fromDescriptorAndLocktime(
           childSingleVault.descriptor, 1767225600);
 
@@ -481,7 +477,7 @@ void main() {
       Utxo utxo =
           Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/$addressIndex");
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, childVault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, childVault);
       tx.setPolicy(walletPolicy);
 
       Psbt unsignedPsbt = Psbt.fromTransaction(tx, childVault);
@@ -505,13 +501,13 @@ void main() {
               passphrase: utf8.encode('B')),
           AddressType.p2tr);
       Policy policy1 = InheritancePolicy.fromDescriptorAndLocktime(
-          MockFactory.createBeneficiaryVault(passphrase: 'A').descriptor,
+          WalletFixture.beneficiaryVault(passphrase: 'A').descriptor,
           1767225600);
       Policy policy2 = InheritancePolicy.fromDescriptorAndLocktime(
-          MockFactory.createBeneficiaryVault(passphrase: 'B').descriptor,
+          WalletFixture.beneficiaryVault(passphrase: 'B').descriptor,
           1767225600);
       Policy policy3 = InheritancePolicy.fromDescriptorAndLocktime(
-          MockFactory.createBeneficiaryVault(passphrase: 'C').descriptor,
+          WalletFixture.beneficiaryVault(passphrase: 'C').descriptor,
           1767225600);
       TaprootVault dadSingleVault =
           TaprootVault.fromKeyStoreList([keyStore1], []);
@@ -545,7 +541,7 @@ void main() {
           "m/86'/1'/0'/0/$addressIndex");
 
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
       // tx.addPolicy(vault.policyList[0].toScript(addressIndex).serialize(),
       //     vault.getControlBlock(0, addressIndex, isChange: false));
 
@@ -584,20 +580,20 @@ void main() {
               passphrase: utf8.encode('B')),
           AddressType.p2tr);
       Policy policy1 = InheritancePolicy.fromDescriptorAndLocktime(
-          MockFactory.createBeneficiaryVault(passphrase: 'P1').descriptor,
+          WalletFixture.beneficiaryVault(passphrase: 'P1').descriptor,
           1767225600);
       Policy policy2 = InheritancePolicy.fromDescriptorAndLocktime(
-          MockFactory.createBeneficiaryVault(passphrase: 'P2').descriptor,
+          WalletFixture.beneficiaryVault(passphrase: 'P2').descriptor,
           1767225600);
       Policy policy3 = InheritancePolicy.fromDescriptorAndLocktime(
-          MockFactory.createBeneficiaryVault(passphrase: 'P3').descriptor,
+          WalletFixture.beneficiaryVault(passphrase: 'P3').descriptor,
           1767225600);
       TaprootVault dadSingleVault =
           TaprootVault.fromKeyStoreList([keyStore1], []);
       TaprootVault momSingleVault =
           TaprootVault.fromKeyStoreList([keyStore2], []);
       TaprootVault childSingleVault =
-          MockFactory.createBeneficiaryVault(passphrase: 'P1');
+          WalletFixture.beneficiaryVault(passphrase: 'P1');
       TaprootVault vault = TaprootVault.fromKeyStoreList([
         KeyStore.fromSignerBsms(dadSingleVault.getSignerBsms("dad")),
         KeyStore.fromSignerBsms(momSingleVault.getSignerBsms("mom"))
@@ -632,7 +628,7 @@ void main() {
           "m/86'/1'/0'/0/$addressIndex");
 
       Transaction tx = Transaction.forSinglePayment([utxo],
-          MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, childVault);
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, childVault);
 
       TaprootWallet wallet = TaprootWallet.fromDescriptor(vault.descriptor);
 

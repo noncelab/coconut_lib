@@ -2,22 +2,21 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../mock_factory.dart';
+import '../fixtures/test_fixtures.dart';
 
 void main() {
   test('Add signature to psbt scenario', () {
-    SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+    SingleSignatureVault vault = WalletFixture.p2wpkhVault();
 
     expect(vault.descriptor.hashCode, 186870090);
 
     SingleSignatureWallet wallet =
         SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
-    Psbt unsignedTx = MockFactory.createP2wpkhUnsignedPsbt();
+    Psbt unsignedTx = PsbtFixture.p2wpkhUnsigned();
 
     expect(unsignedTx.matchesVault(vault), true);
-    expect(
-        unsignedTx.matchesVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
+    expect(unsignedTx.matchesVault(WalletFixture.p2wpkhVault(passphrase: 'Z')),
         false);
 
     expect(unsignedTx.addressType, AddressType.p2wpkh);
@@ -29,7 +28,7 @@ void main() {
 
     expect(
         signedTransaction.serialize(),
-        MockFactory.createP2wpkhSignedPsbt()
+        PsbtFixture.p2wpkhSigned()
             .getSignedTransaction(wallet.addressType)
             .serialize());
   });
@@ -37,7 +36,7 @@ void main() {
   test('Batch transaction scenario', () {
     NetworkType.setNetworkType(NetworkType.regtest);
 
-    SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+    SingleSignatureVault vault = WalletFixture.p2wpkhVault();
 
     String receiver1 =
         vault.getAddress(11); //bcrt1q7af8g5eruxaaqrnyfc3cvx65rmv62mcdhvu6av

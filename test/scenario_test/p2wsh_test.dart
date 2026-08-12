@@ -2,17 +2,14 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../mock_factory.dart';
+import '../fixtures/test_fixtures.dart';
 
 void main() {
   test('Add signature to psbt scenario', () {
     NetworkType.setNetworkType(NetworkType.mainnet);
-    SingleSignatureVault vault1 =
-        MockFactory.createP2wpkhVault(passphrase: 'A');
-    SingleSignatureVault vault2 =
-        MockFactory.createP2wpkhVault(passphrase: 'B');
-    SingleSignatureVault vault3 =
-        MockFactory.createP2wpkhVault(passphrase: 'C');
+    SingleSignatureVault vault1 = WalletFixture.p2wpkhVault(passphrase: 'A');
+    SingleSignatureVault vault2 = WalletFixture.p2wpkhVault(passphrase: 'B');
+    SingleSignatureVault vault3 = WalletFixture.p2wpkhVault(passphrase: 'C');
 
     KeyStore keyStore1 =
         KeyStore.fromSeed(vault1.keyStore.seed, AddressType.p2wsh);
@@ -42,7 +39,7 @@ void main() {
         MultisignatureWallet.fromDescriptor(multiSigVault1.descriptor);
 
     Transaction tx = Transaction.forSinglePayment(
-        MockFactory.createUtxoList(
+        UtxoFixture.list(
             count: 2, derivationPath: '${multiSigVault1.derivationPath}/0/0'),
         multiSigVault1.getAddress(1),
         '${multiSigVault1.derivationPath}/1/1',

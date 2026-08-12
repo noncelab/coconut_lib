@@ -4,14 +4,14 @@ import 'dart:convert';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() async {
   group('MultisignatureWallet', () {
     late MultisignatureVault vault;
     setUpAll(() async {
       NetworkType.setNetworkType(NetworkType.regtest);
-      vault = MockFactory.createP2wshVault();
+      vault = WalletFixture.p2wshVault();
     });
     group('MultisignatureWallet.fromDescriptor', () {
       test('stores independent public-only key stores', () {
@@ -67,8 +67,7 @@ void main() async {
       });
 
       test('Single signature address type exception', () {
-        SingleSignatureVault singleSignatureVault =
-            MockFactory.createP2wpkhVault();
+        SingleSignatureVault singleSignatureVault = WalletFixture.p2wpkhVault();
         expect(
             () => MultisignatureWallet.fromDescriptor(
                 singleSignatureVault.descriptor),

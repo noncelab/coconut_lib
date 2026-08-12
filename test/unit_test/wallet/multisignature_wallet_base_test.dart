@@ -2,13 +2,13 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('MultisignatureWalletBase', () {
     late MultisignatureVault vault;
     setUpAll(() {
-      vault = MockFactory.createP2wshVault();
+      vault = WalletFixture.p2wshVault();
     });
     group('totalSigner', () {
       test('Get total signer of vault', () {
@@ -88,15 +88,15 @@ void main() {
     group('hasPublicKeyInPsbt', () {
       test('Check the vault can sign', () {
         MultisignatureVault otherVault =
-            MockFactory.createP2wshVault(testWalletType: TestWalletType.random);
-        Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+            WalletFixture.p2wshVault(kind: TestWalletKind.random);
+        Psbt psbt = PsbtFixture.p2wshUnsigned();
         expect(otherVault.hasPublicKeyInPsbt(psbt.serialize()), false);
         expect(vault.hasPublicKeyInPsbt(psbt.serialize()), true);
       });
     });
     group('addSignatureToPsbt', () {
       test('Sign to PSBT', () {
-        Psbt unsignedPsbt = MockFactory.createP2wshUnsignedPsbt();
+        Psbt unsignedPsbt = PsbtFixture.p2wshUnsigned();
         String signedPsbtText =
             vault.addSignatureToPsbt(unsignedPsbt.serialize());
         expect(signedPsbtText.hashCode, 141350171);
@@ -109,13 +109,13 @@ void main() {
       });
 
       test('throws when psbt address type mismatches', () {
-        final psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        final psbt = PsbtFixture.p2wpkhUnsigned();
         expect(
             () => vault.addSignatureToPsbt(psbt.serialize()), throwsException);
       });
 
       test('rejects a weaker multisig policy before signing', () {
-        final Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wshUnsigned();
         final MultisignatureScript weakerScript = MultisignatureScript.forP2wsh(
             1,
             vault.totalSigner,
@@ -132,7 +132,7 @@ void main() {
 
       test('rejects derivation metadata that does not match its public key',
           () {
-        final Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wshUnsigned();
         final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
         final String derivationKey =
             inputMap.keys.firstWhere((key) => key.startsWith('06'));

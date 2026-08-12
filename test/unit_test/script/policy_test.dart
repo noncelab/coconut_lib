@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 class _FakePolicy extends Policy {
   final int scriptLen;
@@ -31,7 +31,7 @@ void main() {
 
     setUp(() {
       NetworkType.setNetworkType(NetworkType.regtest);
-      beneficiaryVault = MockFactory.createBeneficiaryVault(passphrase: 'A');
+      beneficiaryVault = WalletFixture.beneficiaryVault(passphrase: 'A');
       inheritancePolicy = InheritancePolicy.fromDescriptorAndLocktime(
           beneficiaryVault.descriptor, 1798761600);
     });

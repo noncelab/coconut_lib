@@ -5,13 +5,13 @@ import 'dart:convert';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('SingleSignatureVault', () {
     late SingleSignatureVault vault;
     setUpAll(() {
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
     });
     group('SingleSignatureVault.fromKeyStore', () {
       test('Generate single signature vault from key store', () {
@@ -39,7 +39,7 @@ void main() {
       test('throws on key network mismatch', () {
         NetworkType.setNetworkType(NetworkType.mainnet);
         final mainnetKeyStore =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         NetworkType.setNetworkType(NetworkType.testnet);
         expect(() => SingleSignatureVault.fromKeyStore(mainnetKeyStore),
             throwsException);

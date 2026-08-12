@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('TransactionInput', () {
@@ -231,7 +231,7 @@ void main() {
 
     group('verifySpend', () {
       test('returns true on valid p2wpkh spend', () {
-        final Psbt psbt = MockFactory.createP2wpkhSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wpkhSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final String sigHash =
             psbt.unsignedTransaction!.getSigHash(0, utxo, AddressType.p2wpkh);
@@ -242,7 +242,7 @@ void main() {
       });
 
       test('returns true on valid p2wsh spend', () {
-        final Psbt psbt = MockFactory.createP2wshSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wshSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final String witnessScript =
             psbt.inputs[0].witnessScript!.rawSerialize();
@@ -256,7 +256,7 @@ void main() {
       });
 
       test('returns false on malformed p2wsh DER signatures', () {
-        final Psbt psbt = MockFactory.createP2wshSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wshSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final String witnessScript =
             psbt.inputs[0].witnessScript!.rawSerialize();
@@ -284,7 +284,7 @@ void main() {
       });
 
       test('returns true on valid taproot key-path spend', () {
-        final Psbt psbt = MockFactory.createP2trKeyPathSpendingSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2trKeyPathSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final List<TransactionOutput> utxos = [utxo];
         final String sigHash =

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('InheritancePolicy', () {
@@ -12,7 +12,7 @@ void main() {
 
     setUp(() {
       NetworkType.setNetworkType(NetworkType.regtest);
-      beneficiaryVault = MockFactory.createBeneficiaryVault(passphrase: 'B');
+      beneficiaryVault = WalletFixture.beneficiaryVault(passphrase: 'B');
     });
 
     group('constructor', () {
@@ -46,7 +46,7 @@ void main() {
       });
 
       test('throws when descriptor is not taproot', () {
-        final SingleSignatureVault p2wpkh = MockFactory.createP2wpkhVault();
+        final SingleSignatureVault p2wpkh = WalletFixture.p2wpkhVault();
         expect(
             () => InheritancePolicy.fromDescriptorAndLocktime(
                 p2wpkh.descriptor, 1),
@@ -54,8 +54,7 @@ void main() {
       });
 
       test('throws when descriptor embeds tap scripts', () {
-        final TaprootVault vaultWithScripts =
-            MockFactory.createP2trVaultWithPolicies();
+        final TaprootVault vaultWithScripts = WalletFixture.p2trPolicyVault();
         expect(
             () => InheritancePolicy.fromDescriptorAndLocktime(
                 vaultWithScripts.descriptor, 1),

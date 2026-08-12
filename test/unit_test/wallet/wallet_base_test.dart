@@ -3,7 +3,7 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('WalletBase', () {
@@ -12,7 +12,7 @@ void main() {
 
     setUpAll(() async {
       NetworkType.setNetworkType(NetworkType.regtest);
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
     group('addressType', () {

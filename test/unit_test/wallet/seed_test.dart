@@ -5,13 +5,13 @@ import 'dart:convert';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('Seed', () {
     late Seed seed;
     setUpAll(() {
-      seed = MockFactory.createP2wpkhVault().keyStore.seed;
+      seed = WalletFixture.p2wpkhVault().keyStore.seed;
     });
     group('mnemonic', () {
       test('Get mnemonic from seed', () {

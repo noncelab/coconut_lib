@@ -2,7 +2,7 @@
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('TaprootWallet', () {
@@ -14,14 +14,14 @@ void main() {
       test('rejects seed-bearing key stores', () {
         expect(
             () => TaprootWallet.fromSeedList(
-                [MockFactory.getCommonSeed(passphrase: 'A')], []),
+                [SeedFixture.common(passphrase: 'A')], []),
             throwsArgumentError);
       });
     });
 
     group('fromKeyStoreList', () {
       test('copies key stores and policies and exposes immutable lists', () {
-        final TaprootVault vault = MockFactory.createP2trVaultWithPolicies();
+        final TaprootVault vault = WalletFixture.p2trPolicyVault();
         final KeyStore parent = KeyStore.fromExtendedPublicKey(
             vault.keyStoreList.first.extendedPublicKey.serialize(),
             vault.keyStoreList.first.masterFingerprint);
@@ -45,16 +45,16 @@ void main() {
 
       test('rejects a seed-bearing key store', () {
         final KeyStore keyStore = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
 
         expect(() => TaprootWallet.fromKeyStoreList([keyStore], []),
             throwsArgumentError);
       });
 
       test('rejects a policy with a seed-bearing beneficiary key store', () {
-        final TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
+        final TaprootVault vault = WalletFixture.p2trMultikeyVault();
         final KeyStore beneficiaryKeyStore = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
         final InheritancePolicy policy =
             InheritancePolicy(beneficiaryKeyStore, 1000);
 
@@ -72,7 +72,7 @@ void main() {
 
     group('fromDescriptor', () {
       test('parses taproot descriptor with miniscripts', () {
-        final TaprootVault vault = MockFactory.createP2trVaultWithPolicies();
+        final TaprootVault vault = WalletFixture.p2trPolicyVault();
         expect(vault.descriptor, contains('after('));
         final TaprootWallet wallet =
             TaprootWallet.fromDescriptor(vault.descriptor);
@@ -81,7 +81,7 @@ void main() {
       });
 
       test('rejects descriptor using relative older as inheritance policy', () {
-        final TaprootVault vault = MockFactory.createP2trVaultWithPolicies();
+        final TaprootVault vault = WalletFixture.p2trPolicyVault();
         final String canonicalBody = vault.descriptor.split('#').first;
         final String legacyBody = canonicalBody.replaceAll('after(', 'older(');
         final String legacyDescriptor =
@@ -92,7 +92,7 @@ void main() {
       });
 
       test('throws on non-taproot descriptor', () {
-        final p2wpkh = MockFactory.createP2wpkhVault();
+        final p2wpkh = WalletFixture.p2wpkhVault();
         expect(() => TaprootWallet.fromDescriptor(p2wpkh.descriptor),
             throwsException);
       });
@@ -100,7 +100,7 @@ void main() {
 
     group('fromKeyOriginExpression', () {
       test('creates singlesig wallet', () {
-        final wallet = MockFactory.createP2trKeyPathSpendingVault();
+        final wallet = WalletFixture.p2trKeyPathVault();
         final expr = wallet.getKeyOriginExpression().split(',').first;
         final parsed = TaprootWallet.fromKeyOriginExpression(expr);
         expect(parsed.keyStoreList.length, 1);
@@ -111,7 +111,7 @@ void main() {
     group('toJson', () {
       test('serializes wallet', () {
         final wallet = TaprootWallet.fromDescriptor(
-          MockFactory.createP2trVaultWithPolicies().descriptor,
+          WalletFixture.p2trPolicyVault().descriptor,
         );
         expect(wallet.toJson(), isNotEmpty);
       });
@@ -120,7 +120,7 @@ void main() {
     group('TaprootWallet.fromJson', () {
       test('restores policies from serialized wallet', () {
         final TaprootWallet original = TaprootWallet.fromDescriptor(
-          MockFactory.createP2trVaultWithPolicies().descriptor,
+          WalletFixture.p2trPolicyVault().descriptor,
         );
         final restored = TaprootWallet.fromJson(original.toJson());
         expect(restored.keyStoreList.length, original.keyStoreList.length);
@@ -129,7 +129,7 @@ void main() {
       });
 
       test('throws when json is vault payload', () {
-        final vault = MockFactory.createP2trVaultWithPolicies();
+        final vault = WalletFixture.p2trPolicyVault();
         expect(() => TaprootWallet.fromJson(vault.toJson()), throwsException);
       });
     });

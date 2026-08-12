@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() async {
   group('SingleSignatureWallet', () {
@@ -13,13 +13,13 @@ void main() async {
 
     setUpAll(() async {
       NetworkType.setNetworkType(NetworkType.regtest);
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
     group('SingleSignatureWallet', () {
       test('stores only a neutered copy of a private HD wallet', () {
         final keyStore =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         final target = SingleSignatureWallet(
             keyStore.masterFingerprint,
             keyStore.hdWallet,
@@ -36,7 +36,7 @@ void main() async {
       test('rejects a key from another network', () {
         NetworkType.setNetworkType(NetworkType.testnet);
         final keyStore =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         NetworkType.setNetworkType(NetworkType.mainnet);
         try {
           expect(
@@ -55,7 +55,7 @@ void main() async {
       test('rejects malformed derivation paths', () {
         NetworkType.setNetworkType(NetworkType.mainnet);
         final keyStore =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         try {
           expect(
               () => SingleSignatureWallet(
@@ -73,7 +73,7 @@ void main() async {
       test('rejects a derivation path for another network', () {
         NetworkType.setNetworkType(NetworkType.mainnet);
         final keyStore =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
         try {
           expect(
               () => SingleSignatureWallet(
@@ -101,7 +101,7 @@ void main() async {
           () {
         expect(
             () => SingleSignatureWallet.fromDescriptor(
-                MockFactory.createP2wshVault().descriptor),
+                WalletFixture.p2wshVault().descriptor),
             throwsException);
       });
 
