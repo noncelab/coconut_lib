@@ -44,7 +44,7 @@ class NetworkType {
   }
 
   /// Set network type
-  static setNetworkType(NetworkType networkType) {
+  static void setNetworkType(NetworkType networkType) {
     _currentNetworkType = networkType;
   }
 

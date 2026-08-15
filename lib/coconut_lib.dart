@@ -15,7 +15,7 @@
 ///
 /// See the [example overview](https://github.com/noncelab/coconut_lib/blob/main/doc/example/README.md)
 /// for complete single-signature, multisignature, and Taproot workflows.
-library coconut_lib;
+library;
 
 import 'dart:convert';
 import 'dart:math';

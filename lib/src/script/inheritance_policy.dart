@@ -27,7 +27,7 @@ class InheritancePolicy extends Policy {
       throw Exception('Only Taproot address type is supported.');
     } else if (beneficiaryDescriptor._keyOriginExpressionList.length > 1) {
       throw Exception('Only single signature address type is supported.');
-    } else if (beneficiaryDescriptor.miniscriptList.length > 0) {
+    } else if (beneficiaryDescriptor.miniscriptList.isNotEmpty) {
       throw Exception('Taproot script is not supported.');
     } else {
       TaprootWallet beneficiaryWallet =

@@ -183,7 +183,7 @@ class TaprootVault extends TaprootWalletBase {
     // Parse policies from miniscript list if available
     List<Policy> policies = [];
     if (descriptorObject.miniscriptList.isNotEmpty &&
-        descriptorObject.miniscriptList.length > 0) {
+        descriptorObject.miniscriptList.isNotEmpty) {
       for (String miniscript in descriptorObject.miniscriptList) {
         policies.add(Policy.fromMiniscript(miniscript));
       }

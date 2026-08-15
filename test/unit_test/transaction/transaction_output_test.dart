@@ -1,4 +1,5 @@
 @Tags(['unit'])
+library;
 
 import 'dart:typed_data';
 

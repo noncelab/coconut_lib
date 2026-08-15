@@ -303,7 +303,7 @@ class HDWallet {
     return tweakedPrivateKey;
   }
 
-  Uint8List getPrivateKey(applyTweak, isXOnly,
+  Uint8List getPrivateKey(bool applyTweak, bool isXOnly,
       {Uint8List? merkleRoot, Uint8List? aggregatedPublicKey}) {
     if (privateKey == null) {
       throw StateError('HDWallet: Private key is not available.');
@@ -329,7 +329,7 @@ class HDWallet {
     }
   }
 
-  Uint8List getPublicKey(applyTweak, isXOnly,
+  Uint8List getPublicKey(bool applyTweak, bool isXOnly,
       {Uint8List? merkleRoot, Uint8List? aggregatedPublicKey}) {
     Uint8List pubKey;
     if (applyTweak) {
@@ -379,11 +379,11 @@ class HDWallet {
     return tweakedPubKey;
   }
 
-  verifyEcdsa(Uint8List message, Uint8List signature) {
+  bool verifyEcdsa(Uint8List message, Uint8List signature) {
     return Ecc.verifyEcdsa(message, publicKey, signature);
   }
 
-  verifySchnorr(Uint8List message, Uint8List signature, bool applyTweak,
+  bool verifySchnorr(Uint8List message, Uint8List signature, bool applyTweak,
       {Uint8List? merkleRoot}) {
     if (applyTweak) {
       return Ecc.verifySchnorr(

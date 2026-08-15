@@ -49,7 +49,7 @@ class Descriptor {
 
   int get totalSigner => _keyOriginExpressionList.length;
 
-  get miniscriptList => _miniscriptList;
+  List<String> get miniscriptList => _miniscriptList;
 
   /// Create a descriptor for a single signature.
   factory Descriptor.forSingleSignature(

@@ -71,7 +71,7 @@ class Ecc {
     return x.length == 32;
   }
 
-  static bool isOrderScalar(x) {
+  static bool isOrderScalar(Uint8List x) {
     if (!isScalar(x)) return false;
     return _compare(x, EC_GROUP_ORDER as Uint8List) < 0; // < G
   }

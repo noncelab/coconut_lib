@@ -1869,7 +1869,7 @@ class PsbtInput {
     return 0;
   }
 
-  addPartialSig(String signature, String publicKey) {
+  void addPartialSig(String signature, String publicKey) {
     // check if the public key is in the bip32 derivation list
     if (bip32Derivation != null) {
       if (!bip32Derivation!.any((element) => element.publicKey == publicKey)) {
@@ -1880,22 +1880,22 @@ class PsbtInput {
     partialSig!.add(Signature(signature, publicKey));
   }
 
-  addTapKeySig(String signature) {
+  void addTapKeySig(String signature) {
     tapKeySig = signature;
   }
 
-  addTapScriptSig(String signature, String publicKey) {
+  void addTapScriptSig(String signature, String publicKey) {
     tapScriptSig ??= [];
     tapScriptSig!.add(Signature(signature, publicKey));
   }
 
-  addMuSig2PubNonce(String publicKey, String aggregatedPublicKey,
+  void addMuSig2PubNonce(String publicKey, String aggregatedPublicKey,
       String sigHash, String publicNonce) {
     muSig2PubNonces ??= {};
     muSig2PubNonces!["$publicKey$aggregatedPublicKey$sigHash"] = publicNonce;
   }
 
-  addMuSig2PartialSig(
+  void addMuSig2PartialSig(
     String signature,
     String publicKey,
     String aggregatedPublicKey,

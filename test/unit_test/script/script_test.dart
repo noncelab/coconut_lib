@@ -1,4 +1,6 @@
 @Tags(['unit'])
+library;
+
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
