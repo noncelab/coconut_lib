@@ -7,18 +7,18 @@ class Seed {
   Uint8List _mnemonic = Uint8List.fromList([]); // 12 or 24 words
   Uint8List _passphrase = utf8.encode('');
 
-  /// The mnemonic words of the seed.
-  Uint8List get mnemonic => _mnemonic;
+  /// A defensive copy of the mnemonic words of the seed.
+  Uint8List get mnemonic => Uint8List.fromList(_mnemonic);
 
-  /// The passphrase of the seed.
-  Uint8List get passphrase => _passphrase;
+  /// A defensive copy of the passphrase of the seed.
+  Uint8List get passphrase => Uint8List.fromList(_passphrase);
 
   /// The root seed of the seed.
   Uint8List get rootSeed => _getRootSeed();
 
   Seed._(Uint8List mnemonic, Uint8List passphrase) {
-    _mnemonic = mnemonic;
-    _passphrase = passphrase;
+    _mnemonic = Uint8List.fromList(mnemonic);
+    _passphrase = Uint8List.fromList(passphrase);
   }
 
   /// Create a seed from random entropy.

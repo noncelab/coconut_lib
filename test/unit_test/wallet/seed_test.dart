@@ -97,6 +97,36 @@ void main() {
                 'machine crack daughter fish credit glare raven fever tunnel delay fish abandon')),
             throwsException);
       });
+
+      test('copies mnemonic and passphrase inputs', () {
+        final mnemonic = utf8.encode(
+            'machine crack daughter fish credit glare raven fever tunnel delay fish record');
+        final passphrase = utf8.encode('secret-passphrase');
+        final targetSeed = Seed.fromMnemonic(mnemonic, passphrase: passphrase);
+
+        mnemonic.fillRange(0, mnemonic.length, 0);
+        passphrase.fillRange(0, passphrase.length, 0);
+
+        expect(utf8.decode(targetSeed.mnemonic),
+            'machine crack daughter fish credit glare raven fever tunnel delay fish record');
+        expect(utf8.decode(targetSeed.passphrase), 'secret-passphrase');
+      });
+
+      test('returns defensive copies of mnemonic and passphrase', () {
+        final targetSeed = Seed.fromMnemonic(
+            utf8.encode(
+                'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+            passphrase: utf8.encode('secret-passphrase'));
+        final mnemonic = targetSeed.mnemonic;
+        final passphrase = targetSeed.passphrase;
+
+        mnemonic.fillRange(0, mnemonic.length, 0);
+        passphrase.fillRange(0, passphrase.length, 0);
+
+        expect(utf8.decode(targetSeed.mnemonic),
+            'machine crack daughter fish credit glare raven fever tunnel delay fish record');
+        expect(utf8.decode(targetSeed.passphrase), 'secret-passphrase');
+      });
     });
     group('operator ==', () {
       test('Check equal', () {

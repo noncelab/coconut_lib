@@ -624,15 +624,21 @@ void main() {
         final Uint8List accountPrivateKey = accountWallet.privateKey!;
         final Uint8List receivePrivateKey = receiveWallet.privateKey!;
         final Uint8List changePrivateKey = changeWallet.privateKey!;
+        final Uint8List expectedAccountPrivateKey =
+            Uint8List.fromList(accountPrivateKey);
+        final Uint8List expectedReceivePrivateKey =
+            Uint8List.fromList(receivePrivateKey);
+        final Uint8List expectedChangePrivateKey =
+            Uint8List.fromList(changePrivateKey);
         final String receivePublicKey = mutable.getPublicKey(0);
 
         expect(mutable.hasSeed, true);
         mutable.wipeSeed();
 
         expect(mutable.hasSeed, false);
-        expect(accountPrivateKey, everyElement(0));
-        expect(receivePrivateKey, everyElement(0));
-        expect(changePrivateKey, everyElement(0));
+        expect(accountPrivateKey, expectedAccountPrivateKey);
+        expect(receivePrivateKey, expectedReceivePrivateKey);
+        expect(changePrivateKey, expectedChangePrivateKey);
         expect(accountWallet.isNeutered(), isTrue);
         expect(receiveWallet.isNeutered(), isTrue);
         expect(changeWallet.isNeutered(), isTrue);

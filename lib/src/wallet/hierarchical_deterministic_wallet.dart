@@ -19,7 +19,10 @@ class HDWallet {
   Uint8List _parentFingerprint = Uint8List.fromList([0, 0, 0, 0, 0]);
 
   /// @nodoc
-  HDWallet(this._d, this._Q, this._chainCode);
+  HDWallet(Uint8List? privateKey, Uint8List? publicKey, Uint8List chainCode)
+      : _d = privateKey == null ? null : Uint8List.fromList(privateKey),
+        _Q = publicKey == null ? null : Uint8List.fromList(publicKey),
+        _chainCode = Uint8List.fromList(chainCode);
 
   /// @nodoc
   factory HDWallet.fromPublicKey(Uint8List publicKey, Uint8List chainCode) {
@@ -100,24 +103,24 @@ class HDWallet {
   /// @nodoc
   Uint8List get publicKey {
     _Q ??= Ecc.pointFromScalar(_d!, true)!;
-    return _Q!;
+    return Uint8List.fromList(_Q!);
   }
 
   /// @nodoc
-  Uint8List? get privateKey => _d;
+  Uint8List? get privateKey => _d == null ? null : Uint8List.fromList(_d!);
 
   /// @nodoc
   Uint8List get fingerprint =>
       Hash.sha160fromHex(HEX.encode(publicKey)).sublist(0, 4);
 
   /// @nodoc
-  Uint8List get chainCode => _chainCode;
+  Uint8List get chainCode => Uint8List.fromList(_chainCode);
 
   /// @nodoc
   int get index => _index;
 
   /// @nodoc
-  Uint8List get parentFingerprint => _parentFingerprint;
+  Uint8List get parentFingerprint => Uint8List.fromList(_parentFingerprint);
 
   /// @nodoc
   bool isNeutered() {

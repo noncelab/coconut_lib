@@ -27,6 +27,27 @@ void main() {
         expect(hdWallet.privateKey, hasLength(32));
         expect(hdWallet.neutered().privateKey, isNull);
       });
+
+      test('constructor and getters do not expose mutable key buffers', () {
+        final privateKey = Codec.decodeHex(
+            '6a8c473974ffabbf2bac36adadd328baabf8b6d7a269b69bb808d80d64f17f41');
+        final chainCode = Codec.decodeHex(
+            '4cfac59caf9be1428410291697177b2efc8373a29f7ad4a34694163686a4d20b');
+        final wallet = HDWallet.fromPrivateKey(privateKey, chainCode);
+        final expectedPrivateKey = Uint8List.fromList(privateKey);
+        final expectedChainCode = Uint8List.fromList(chainCode);
+        final expectedPublicKey = wallet.publicKey;
+
+        privateKey.fillRange(0, privateKey.length, 0);
+        chainCode.fillRange(0, chainCode.length, 0);
+        wallet.privateKey!.fillRange(0, 32, 0);
+        wallet.chainCode.fillRange(0, 32, 0);
+        wallet.publicKey.fillRange(0, 33, 0);
+
+        expect(wallet.privateKey, expectedPrivateKey);
+        expect(wallet.chainCode, expectedChainCode);
+        expect(wallet.publicKey, expectedPublicKey);
+      });
     });
     group('fingerprint', () {
       test('returns a four-byte key fingerprint', () {
@@ -432,9 +453,10 @@ void main() {
       });
     });
     group('wipePrivateKey', () {
-      test('zeroes private bytes and leaves a neutered wallet', () {
+      test('does not mutate caller input and leaves a neutered wallet', () {
         final privateKey = Codec.decodeHex(
             '6a8c473974ffabbf2bac36adadd328baabf8b6d7a269b69bb808d80d64f17f41');
+        final originalPrivateKey = Uint8List.fromList(privateKey);
         final wallet = HDWallet.fromPrivateKey(
             privateKey,
             Codec.decodeHex(
@@ -443,7 +465,7 @@ void main() {
 
         wallet.wipePrivateKey();
 
-        expect(privateKey, everyElement(0));
+        expect(privateKey, originalPrivateKey);
         expect(wallet.privateKey, isNull);
         expect(wallet.isNeutered(), isTrue);
         expect(Codec.encodeHex(wallet.publicKey), publicKey);
