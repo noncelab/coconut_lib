@@ -180,14 +180,14 @@ class Ecc {
   static Uint8List? pointNegate(Uint8List p) {
     if (!isPoint(p)) throw ArgumentError(THROW_BAD_POINT);
 
-    BigInt order = fromBuffer(EC_GROUP_ORDER as Uint8List);
+    BigInt fieldPrime = fromBuffer(EC_P as Uint8List);
 
     ECPoint? P = decodeFrom(p);
     if (P == null || P.isInfinity) return null;
 
     BigInt? x = P.x!.toBigInteger();
     BigInt? y = P.y!.toBigInteger();
-    BigInt negY = (order - y!) % order;
+    BigInt negY = (fieldPrime - y!) % fieldPrime;
 
     ECPoint negP = secp256k1.curve.createPoint(x!, negY);
 

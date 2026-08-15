@@ -342,6 +342,25 @@ void main() {
       });
     });
 
+    group('pointNegate', () {
+      test('Negates an uncompressed point over the secp256k1 field', () {
+        final generator = Codec.decodeHex(
+            '0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+            '483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8');
+        final expectedNegatedGenerator = Codec.decodeHex(
+            '0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+            'b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777');
+
+        final negatedGenerator = Ecc.pointNegate(generator);
+
+        expect(negatedGenerator, expectedNegatedGenerator,
+            reason: 'Point negation must compute -y modulo the field prime p.');
+        expect(Ecc.isPoint(negatedGenerator!), isTrue);
+        expect(Ecc.pointNegate(negatedGenerator), generator,
+            reason: 'Negating a point twice must return the original point.');
+      });
+    });
+
     group('assumeCompression', () {
       test('assumeCompression infers compression from pubkey', () {
         final compressed = Uint8List.fromList([0x02] + List.filled(32, 0x01));
