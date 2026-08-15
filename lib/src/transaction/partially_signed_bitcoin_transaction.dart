@@ -167,7 +167,12 @@ class Psbt {
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
-      return true;
+      try {
+        validateSingleSignaturePolicy(wallet);
+        return true;
+      } on PsbtException {
+        return false;
+      }
     } else if (wallet is MultisignatureVault) {
       if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
         return false;
@@ -234,6 +239,54 @@ class Psbt {
       }
     } else {
       return false;
+    }
+  }
+
+  /// Validates every P2WPKH input against [wallet]'s derived key and script.
+  ///
+  /// Throws when derivation metadata is forged or a witness UTXO does not
+  /// belong to the single-signature vault.
+  void validateSingleSignaturePolicy(SingleSignatureVault wallet) {
+    if (addressType != AddressType.p2wpkh || inputs.isEmpty) {
+      throw PsbtException(PsbtErrorCode.policyMismatch,
+          'PSBT is not a P2WPKH single-signature transaction.');
+    }
+
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      final List<DerivationPath>? derivations = input.bip32Derivation;
+      if (witnessUtxo == null ||
+          derivations == null ||
+          derivations.length != 1) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input is missing single-signature policy metadata.',
+            inputIndex: inputIndex);
+      }
+
+      final DerivationPath derivation = derivations.single;
+      final List<int> childPath = _validateWalletChildPath(
+          derivation.path, wallet.derivationPath, inputIndex);
+      final bool isChange = childPath[0] == 1;
+      final int addressIndex = childPath[1];
+      final String expectedPublicKey = wallet.keyStore
+          .getPublicKey(addressIndex, isChange: isChange, isXOnly: false);
+
+      if (derivation.masterFingerprint.toUpperCase() !=
+              wallet.keyStore.masterFingerprint.toUpperCase() ||
+          derivation.publicKey != expectedPublicKey) {
+        throw PsbtException(PsbtErrorCode.signerMismatch,
+            'Input derivation does not match the vault signer.',
+            inputIndex: inputIndex);
+      }
+
+      final String expectedScriptPubKey =
+          '0014${Codec.encodeHex(Hash.sha160fromHex(expectedPublicKey))}';
+      if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Input witness UTXO does not belong to the vault.',
+            inputIndex: inputIndex);
+      }
     }
   }
 

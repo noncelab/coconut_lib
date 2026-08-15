@@ -74,6 +74,23 @@ void main() {
         expect(
             () => vault.addSignatureToPsbt(psbt.serialize()), throwsException);
       });
+
+      test('rejects a witness UTXO that does not belong to the vault', () {
+        final Psbt psbt = PsbtFixture.p2wpkhUnsigned();
+        final SingleSignatureVault foreignVault =
+            WalletFixture.p2wpkhVault(passphrase: 'foreign');
+        final int amount = psbt.inputs.single.witnessUtxo!.amount;
+        final TransactionOutput foreignUtxo =
+            TransactionOutput.forPayment(amount, foreignVault.getAddress(0));
+        psbt.psbtMap['inputs'][0]['01'] = foreignUtxo.serialize();
+        final String forgedPsbt = psbt.serialize();
+
+        expect(Psbt.parse(forgedPsbt).matchesVault(vault), isFalse);
+        expect(
+            () => vault.addSignatureToPsbt(forgedPsbt),
+            throwsA(isA<PsbtException>().having(
+                (error) => error.code, 'code', PsbtErrorCode.utxoMismatch)));
+      });
     });
   });
 }

@@ -95,6 +95,11 @@ abstract class SingleSignatureWalletBase extends WalletBase {
           'PSBT input count does not match the unsigned transaction.');
     }
 
+    if (this is! SingleSignatureVault) {
+      throw StateError('Single-signature policy validation requires a vault.');
+    }
+    psbtObject.validateSingleSignaturePolicy(this as SingleSignatureVault);
+
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {
