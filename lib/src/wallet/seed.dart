@@ -55,12 +55,6 @@ class Seed {
     return Seed._(mnemonic, passphrase ?? utf8.encode(''));
   }
 
-  // ///@deprecated
-  // factory Seed.fromJson(String json) {
-  //   Map<String, dynamic> map = jsonDecode(json);
-  //   return Seed._(map['mnemonic'], map['passphrase']);
-  // }
-
   static Uint8List _generateMnemonicFromEntropy(Uint8List entropy) {
     int checksumLength = (entropy.length * 4 ~/ 16).toInt();
 
@@ -117,11 +111,6 @@ class Seed {
     passphraseString = '';
     return Hash.pbkdf2(mnemonic, salt);
   }
-
-  // ///@deprecated
-  // String toJson() {
-  //   return jsonEncode({'mnemonic': _mnemonic, 'passphrase': _passphrase});
-  // }
 
   @override
   bool operator ==(Object other) {

@@ -165,7 +165,6 @@ class KeyStore {
     final ExtendedPublicKey extendedPublicKey = ExtendedPublicKey.parse(
         Codec._readJsonField<String>(map, 'extendedPublicKey',
             name: 'KeyStore JSON'));
-    // Seed? seed = map['seed'] != null ? Seed.fromJson(map['seed']) : null;
     return KeyStore(fingerprint, hdWallet, extendedPublicKey);
   }
 
@@ -691,7 +690,6 @@ class KeyStore {
       // 'hdWallet': _hdWallet.toJson(),
       'hdWallet': _hdWallet.neutered().toJson(),
       'extendedPublicKey': _extendedPublicKey.serialize(),
-      // if (_seed != null) 'seed': _seed!.toJson()
     });
   }
 
