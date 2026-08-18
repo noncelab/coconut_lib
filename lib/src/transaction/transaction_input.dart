@@ -198,57 +198,53 @@ class TransactionInput {
 
       return Ecc.verifyEcdsa(sigHash, pub, rawSignature);
     } else if (utxo.scriptPubKey.isP2wsh()) {
-      String script = witnessList.last;
-
-      String size =
-          Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
-      MultisignatureScript witnessScript =
-          MultisignatureScript.parse(size + script);
-
-      Uint8List scriptPubKeyHash = utxo.scriptPubKey.commands[1] as Uint8List;
-      Uint8List scriptHash = Hash.sha256fromByte(Codec.decodeHex(script));
-
-      if (scriptHash.length != scriptPubKeyHash.length) {
+      if (witnessList.length < 3 || witnessList.first.toUpperCase() != '00') {
         return false;
       }
-      for (int i = 0; i < scriptHash.length; i++) {
-        if (scriptHash[i] != scriptPubKeyHash[i]) {
-          return false;
-        }
+
+      final String script = witnessList.last;
+      final String size =
+          Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
+      final MultisignatureScript witnessScript =
+          MultisignatureScript.parse(size + script);
+
+      final Uint8List scriptPubKeyHash = utxo.scriptPubKey.commands[1] as Uint8List;
+      final Uint8List scriptHash = Hash.sha256fromByte(Codec.decodeHex(script));
+      if (Codec.encodeHex(scriptHash) != Codec.encodeHex(scriptPubKeyHash)) {
+        return false;
       }
 
-      List<Uint8List> signatures = [];
-
-      for (int i = 1; i < witnessList.length - 1; i++) {
-        signatures.add(Codec.decodeHex(witnessList[i]));
-      }
-
-      List<Uint8List> pubKeys = witnessScript.getPublicKeys();
-
-      int requiredSigs = witnessScript.getRequiredSignature();
+      final List<Uint8List> signatures = [
+        for (int i = 1; i < witnessList.length - 1; i++)
+          Codec.decodeHex(witnessList[i]),
+      ];
+      final List<Uint8List> pubKeys = witnessScript.getPublicKeys();
+      final int requiredSigs = witnessScript.getRequiredSignature();
 
       if (signatures.length != requiredSigs) {
         return false;
       }
 
-      int validSigs = 0;
-
-      for (Uint8List sig in signatures) {
+      int nextPubKeyIndex = 0;
+      for (final Uint8List sig in signatures) {
         late final Uint8List rawSignature;
         try {
           rawSignature = Converter.derToRawSignature(sig);
-        } on FormatException {
+        } catch (_) {
           return false;
         }
-        for (Uint8List pub in pubKeys) {
-          if (Ecc.verifyEcdsa(sigHash, pub, rawSignature)) {
-            validSigs += 1;
-            continue;
+
+        bool matched = false;
+        while (nextPubKeyIndex < pubKeys.length) {
+          final Uint8List pubKey = pubKeys[nextPubKeyIndex++];
+          if (Ecc.verifyEcdsa(sigHash, pubKey, rawSignature)) {
+            matched = true;
+            break;
           }
         }
-      }
-      if (validSigs != requiredSigs) {
-        return false;
+        if (!matched) {
+          return false;
+        }
       }
       return true;
     } else if (utxo.scriptPubKey.isP2tr()) {

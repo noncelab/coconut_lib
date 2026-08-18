@@ -255,6 +255,37 @@ void main() {
             true);
       });
 
+      test('returns false when a p2wsh signature is duplicated', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final input = signedTx.inputs[0];
+        input.witnessList[2] = input.witnessList[1];
+
+        expect(input.verifySpend(sigHash, utxo), false);
+      });
+
+      test('returns false when a p2wsh dummy witness item is non-empty', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        signedTx.inputs[0].witnessList[0] = '01';
+
+        expect(signedTx.inputs[0].verifySpend(sigHash, utxo), false);
+      });
+
       test('returns false on malformed p2wsh DER signatures', () {
         final Psbt psbt = PsbtFixture.p2wshSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
