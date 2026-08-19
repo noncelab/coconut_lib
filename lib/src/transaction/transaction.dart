@@ -825,82 +825,32 @@ class Transaction {
       throw Exception('Unsupported Address Type');
     }
 
-    // 1. Generate sigHash
+    final TransactionInput input = inputs[inputIndex];
     String sigHash;
     if (utxoAddressType == AddressType.p2wpkh) {
       sigHash = getSigHash(inputIndex, utxo, utxoAddressType);
     } else if (utxoAddressType == AddressType.p2wsh) {
-      sigHash = getSigHash(inputIndex, utxo, utxoAddressType,
-          witnessScript: witnessScript);
-    } else {
-      throw Exception('Unsupported Address Type');
-    }
-    Uint8List msg = Codec.decodeHex(sigHash);
-
-    // 2.Validate signature
-    if (utxoAddressType == AddressType.p2wsh) {
-      String script = inputs[inputIndex].witnessList.last;
-      String size =
-          Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
-      MultisignatureScript witnessScript =
-          MultisignatureScript.parse(size + script);
-
-      List<Uint8List> signatures = [];
-
-      for (int i = 1; i < inputs[inputIndex].witnessList.length - 1; i++) {
-        signatures.add(Codec.decodeHex(inputs[inputIndex].witnessList[i]));
-      }
-
-      List<Uint8List> pubKeys = witnessScript.getPublicKeys();
-
-      int requiredSigs = witnessScript.getRequiredSignature();
-
-      if (signatures.length < requiredSigs) {
+      try {
+        if (input.witnessList.length < 3) {
+          return false;
+        }
+        final String finalizedWitnessScript = input.witnessList.last;
+        if (witnessScript != null &&
+            witnessScript.toLowerCase() !=
+                finalizedWitnessScript.toLowerCase()) {
+          return false;
+        }
+        sigHash = getSigHash(inputIndex, utxo, utxoAddressType,
+            witnessScript: finalizedWitnessScript);
+      } on FormatException {
+        return false;
+      } on RangeError {
         return false;
       }
-
-      int validSigs = 0;
-
-      for (Uint8List sig in signatures) {
-        for (Uint8List pub in pubKeys) {
-          int rLen = sig[3];
-          Uint8List r = sig.sublist(4, 4 + rLen);
-          if (r[0] == 0) r = r.sublist(1);
-          int sLen = sig[4 + rLen + 1];
-          Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
-          Uint8List rs = Uint8List.fromList([...r, ...s]);
-
-          if (Ecc.verifyEcdsa(msg, pub, rs)) {
-            validSigs += 1;
-            continue;
-          }
-        }
-      }
-      return validSigs >= requiredSigs;
-    } else if (utxoAddressType == AddressType.p2wpkh) {
-      //validate single signature
-      String signature;
-      String publicKey;
-
-      signature = inputs[inputIndex].witnessList[0];
-      publicKey = inputs[inputIndex].witnessList[1];
-
-      Uint8List sig = Codec.decodeHex(signature);
-      Uint8List pub = Codec.decodeHex(publicKey);
-
-      Uint8List rawSignature = Converter.derToRawSignature(sig);
-
-      // int rLen = sig[3];
-      // Uint8List r = sig.sublist(4, 4 + rLen);
-      // if (r[0] == 0) r = r.sublist(1);
-      // int sLen = sig[4 + rLen + 1];
-      // Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
-      // Uint8List rs = Uint8List.fromList([...r, ...s]);
-
-      return Ecc.verifyEcdsa(msg, pub, rawSignature);
     } else {
       throw Exception('Unsupported Address Type');
     }
+    return input.verifySpend(Codec.decodeHex(sigHash), utxo);
   }
 
   /// Validate taproot signature
@@ -937,13 +887,11 @@ class Transaction {
       TransactionInput input = inputs[inputIndex];
       TransactionOutput utxo = utxoList[inputIndex];
       Uint8List sigHash;
-      if (utxo.scriptPubKey.isP2wpkh()) {
-        sigHash =
-            Codec.decodeHex(getSigHash(inputIndex, utxo, AddressType.p2wpkh));
-      } else if (utxo.scriptPubKey.isP2wsh()) {
-        sigHash = Codec.decodeHex(getSigHash(
-            inputIndex, utxo, AddressType.p2wsh,
-            witnessScript: input.witnessList.last));
+      if (utxo.scriptPubKey.isP2wpkh() || utxo.scriptPubKey.isP2wsh()) {
+        if (!validateEcdsa(inputIndex, utxo)) {
+          return false;
+        }
+        continue;
       } else if (utxo.scriptPubKey.isP2tr()) {
         final Uint8List taprootSignature =
             Codec.decodeHex(input.witnessList[0]);

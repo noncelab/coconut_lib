@@ -198,59 +198,7 @@ class TransactionInput {
 
       return Ecc.verifyEcdsa(sigHash, pub, rawSignature);
     } else if (utxo.scriptPubKey.isP2wsh()) {
-      String script = witnessList.last;
-
-      String size =
-          Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
-      MultisignatureScript witnessScript =
-          MultisignatureScript.parse(size + script);
-
-      Uint8List scriptPubKeyHash = utxo.scriptPubKey.commands[1] as Uint8List;
-      Uint8List scriptHash = Hash.sha256fromByte(Codec.decodeHex(script));
-
-      if (scriptHash.length != scriptPubKeyHash.length) {
-        return false;
-      }
-      for (int i = 0; i < scriptHash.length; i++) {
-        if (scriptHash[i] != scriptPubKeyHash[i]) {
-          return false;
-        }
-      }
-
-      List<Uint8List> signatures = [];
-
-      for (int i = 1; i < witnessList.length - 1; i++) {
-        signatures.add(Codec.decodeHex(witnessList[i]));
-      }
-
-      List<Uint8List> pubKeys = witnessScript.getPublicKeys();
-
-      int requiredSigs = witnessScript.getRequiredSignature();
-
-      if (signatures.length != requiredSigs) {
-        return false;
-      }
-
-      int validSigs = 0;
-
-      for (Uint8List sig in signatures) {
-        late final Uint8List rawSignature;
-        try {
-          rawSignature = Converter.derToRawSignature(sig);
-        } on FormatException {
-          return false;
-        }
-        for (Uint8List pub in pubKeys) {
-          if (Ecc.verifyEcdsa(sigHash, pub, rawSignature)) {
-            validSigs += 1;
-            continue;
-          }
-        }
-      }
-      if (validSigs != requiredSigs) {
-        return false;
-      }
-      return true;
+      return _verifyP2wshSpend(sigHash, utxo);
     } else if (utxo.scriptPubKey.isP2tr()) {
       Uint8List outputKey =
           Uint8List.fromList((utxo.scriptPubKey.commands[1] as Uint8List));
@@ -337,6 +285,84 @@ class TransactionInput {
       }
     } else {
       throw Exception('Unsupported Address Type');
+    }
+  }
+
+  bool _verifyP2wshSpend(Uint8List sigHash, TransactionOutput utxo) {
+    try {
+      if (witnessList.length < 3) {
+        return false;
+      }
+
+      final String dummy = witnessList.first;
+      if (dummy.isNotEmpty && dummy.toLowerCase() != '00') {
+        return false;
+      }
+
+      final String script = witnessList.last;
+      final Uint8List scriptBytes = Codec.decodeHex(script);
+      final String size =
+          Codec.encodeHex(Codec.encodeVariableInteger(scriptBytes.length));
+      final MultisignatureScript witnessScript =
+          MultisignatureScript.parse(size + script);
+
+      final Uint8List scriptCommitment =
+          utxo.scriptPubKey.commands[1] as Uint8List;
+      final Uint8List actualScriptHash = Hash.sha256fromByte(scriptBytes);
+      if (actualScriptHash.length != scriptCommitment.length) {
+        return false;
+      }
+      for (int i = 0; i < actualScriptHash.length; i++) {
+        if (actualScriptHash[i] != scriptCommitment[i]) {
+          return false;
+        }
+      }
+
+      final List<Uint8List> signatures = [
+        for (int i = 1; i < witnessList.length - 1; i++)
+          Codec.decodeHex(witnessList[i]),
+      ];
+      final List<Uint8List> publicKeys = witnessScript.getPublicKeys();
+      final int requiredSignatures = witnessScript.getRequiredSignature();
+      if (signatures.length != requiredSignatures) {
+        return false;
+      }
+
+      int nextPublicKeyIndex = 0;
+      for (int signatureIndex = 0;
+          signatureIndex < signatures.length;
+          signatureIndex++) {
+        final Uint8List signature = signatures[signatureIndex];
+        // This validation path currently computes SIGHASH_ALL only.
+        if (signature.isEmpty || signature.last != 0x01) {
+          return false;
+        }
+        final Uint8List rawSignature = Converter.derToRawSignature(signature);
+
+        bool matched = false;
+        while (nextPublicKeyIndex < publicKeys.length) {
+          final int remainingPublicKeys =
+              publicKeys.length - nextPublicKeyIndex;
+          final int remainingSignatures = signatures.length - signatureIndex;
+          if (remainingPublicKeys < remainingSignatures) {
+            return false;
+          }
+
+          final Uint8List publicKey = publicKeys[nextPublicKeyIndex++];
+          if (Ecc.verifyEcdsa(sigHash, publicKey, rawSignature)) {
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          return false;
+        }
+      }
+      return true;
+    } on FormatException {
+      return false;
+    } on RangeError {
+      return false;
     }
   }
 

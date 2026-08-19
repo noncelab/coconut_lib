@@ -577,6 +577,17 @@ void main() {
         expect(Transaction.parse(signedTxHex).serialize(), signedTxHex);
       });
 
+      test('rejects duplicated signatures when finalizing p2wsh', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final Signature firstSignature = psbt.inputs[0].partialSig!.first;
+        final String secondPublicKey = psbt.inputs[0].partialSig![1].publicKey;
+        psbt.inputs[0].partialSig![1] =
+            Signature(firstSignature.signature, secondPublicKey);
+
+        expect(() => psbt.getSignedTransaction(AddressType.p2wsh),
+            throwsA(isA<PsbtException>()));
+      });
+
       test('Taproot defaults to SIGHASH_DEFAULT without a PSBT sighash field',
           () {
         final Psbt psbt = PsbtFixture.p2trKeyPathUnsigned();

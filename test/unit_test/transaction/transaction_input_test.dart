@@ -257,6 +257,104 @@ void main() {
             true);
       });
 
+      test('returns false when a p2wsh signature is duplicated', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        input.witnessList[2] = input.witnessList[1];
+
+        expect(input.verifySpend(sigHash, utxo), false);
+        expect(signedTx.validateEcdsa(0, utxo, witnessScript: witnessScript),
+            false);
+        expect(
+            signedTx.validateSpend(
+                psbt.inputs.map((input) => input.witnessUtxo!).toList()),
+            false);
+      });
+
+      test('returns false when p2wsh signatures are out of script order', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        final String firstSignature = input.witnessList[1];
+        input.witnessList[1] = input.witnessList[2];
+        input.witnessList[2] = firstSignature;
+
+        expect(input.verifySpend(sigHash, utxo), false);
+      });
+
+      test('returns false on a non-empty p2wsh dummy witness item', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        signedTx.inputs[0].witnessList[0] = '01';
+
+        expect(signedTx.inputs[0].verifySpend(sigHash, utxo), false);
+      });
+
+      test('returns false on malformed p2wsh witness structures', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        final List<String> validWitness = List<String>.from(input.witnessList);
+
+        input.witnessList = ['00', witnessScript];
+        expect(input.verifySpend(sigHash, utxo), false);
+
+        input.witnessList = List<String>.from(validWitness)
+          ..insert(validWitness.length - 1, validWitness[1]);
+        expect(input.verifySpend(sigHash, utxo), false);
+
+        input.witnessList = List<String>.from(validWitness);
+        input.witnessList.last = 'zz';
+        expect(input.verifySpend(sigHash, utxo), false);
+        expect(signedTx.validateEcdsa(0, utxo), false);
+      });
+
+      test('returns false on an unsupported p2wsh sighash type', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        input.witnessList[1] =
+            '${input.witnessList[1].substring(0, input.witnessList[1].length - 2)}02';
+
+        expect(input.verifySpend(sigHash, utxo), false);
+      });
+
       test('returns false on malformed p2wsh DER signatures', () {
         final Psbt psbt = PsbtFixture.p2wshSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
