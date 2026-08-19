@@ -170,122 +170,39 @@ class TransactionInput {
 
   bool verifySpend(Uint8List sigHash, TransactionOutput utxo) {
     if (utxo.scriptPubKey.isP2wpkh()) {
-      String signature;
-      String publicKey;
-
-      signature = witnessList[0];
-      publicKey = witnessList[1];
-
-      Uint8List sig = Codec.decodeHex(signature);
-      Uint8List pub = Codec.decodeHex(publicKey);
-
-      // commands[1] is stored as `dynamic` (Script commands are untyped),
-      // so cast it to Uint8List first. Also compare byte content (Uint8List
-      // uses identity for `==` / `!=`).
-      final Uint8List scriptPubKeyHash =
-          utxo.scriptPubKey.commands[1] as Uint8List;
-      final Uint8List expectedPubKeyHash = Hash.sha160fromHex(publicKey);
-      if (scriptPubKeyHash.length != expectedPubKeyHash.length) {
-        return false;
-      }
-      for (int i = 0; i < scriptPubKeyHash.length; i++) {
-        if (scriptPubKeyHash[i] != expectedPubKeyHash[i]) {
-          return false;
-        }
-      }
-
-      Uint8List rawSignature = Converter.derToRawSignature(sig);
-
-      return Ecc.verifyEcdsa(sigHash, pub, rawSignature);
+      return _verifyP2wpkhSpend(sigHash, utxo);
     } else if (utxo.scriptPubKey.isP2wsh()) {
       return _verifyP2wshSpend(sigHash, utxo);
     } else if (utxo.scriptPubKey.isP2tr()) {
-      Uint8List outputKey =
-          Uint8List.fromList((utxo.scriptPubKey.commands[1] as Uint8List));
-      Uint8List signature = Codec.decodeHex(witnessList[0]);
-      if (signature.length == 65) {
-        if (signature.last == 0x00) return false;
-        signature = signature.sublist(0, 64);
-      } else if (signature.length != 64) {
-        return false;
-      }
-      if (witnessList.length == 1) {
-        // Key path spending
-        return Ecc.verifySchnorr(sigHash, outputKey, signature);
-      } else if (witnessList.length == 3) {
-        // Script path spending
-        final String tapscriptHex = witnessList[1];
-        final Uint8List controlBlockBytes = Codec.decodeHex(witnessList[2]);
-
-        if (controlBlockBytes.length < 33 ||
-            (controlBlockBytes.length - 33) % 32 != 0) {
-          return false;
-        }
-        // Control byte contains leaf version (even bits) and parity bit (lsb).
-        final int controlByte = controlBlockBytes[0];
-        final int leafVersion = controlByte & 0xfe;
-
-        // Compute TapLeaf hash from raw tapscript bytes.
-        final Uint8List scriptBytes = Codec.decodeHex(tapscriptHex);
-        final Uint8List scriptLen =
-            Codec.encodeVariableInteger(scriptBytes.length);
-        final Uint8List tapleafHash = Hash.taggedHash('TapLeaf',
-            Uint8List.fromList([leafVersion, ...scriptLen, ...scriptBytes]));
-
-        // Verify control block commits to the spent output key.
-        final Uint8List internalKeyXOnly = controlBlockBytes.sublist(1, 33);
-        Uint8List merkleRoot = tapleafHash;
-        for (int i = 33; i < controlBlockBytes.length; i += 32) {
-          final Uint8List sibling = controlBlockBytes.sublist(i, i + 32);
-          // TapBranch uses lexicographic sorting
-          final int cmp = () {
-            for (int j = 0; j < 32; j++) {
-              if (merkleRoot[j] != sibling[j]) {
-                return merkleRoot[j] < sibling[j] ? -1 : 1;
-              }
-            }
-            return 0;
-          }();
-          final Uint8List first = cmp <= 0 ? merkleRoot : sibling;
-          final Uint8List second = cmp <= 0 ? sibling : merkleRoot;
-          merkleRoot = Hash.taggedHash(
-              'TapBranch', Uint8List.fromList([...first, ...second]));
-        }
-        final Uint8List tweak =
-            Hash.hashTapTweak('TapTweak', internalKeyXOnly, merkleRoot);
-        Uint8List expectedOutputKey =
-            Ecc.pointAddScalar(internalKeyXOnly, tweak, true)!;
-        if (expectedOutputKey[0] == 0x03) {
-          expectedOutputKey = Ecc.pointNegate(expectedOutputKey)!;
-        }
-        if (Codec.encodeHex(expectedOutputKey.sublist(1)) !=
-            Codec.encodeHex(outputKey)) {
-          return false;
-        }
-
-        // Extract x-only pubkey from tapscript and verify signature.
-        final Uint8List scriptWithLen = Uint8List.fromList([
-          ...Codec.encodeVariableInteger(scriptBytes.length),
-          ...scriptBytes
-        ]);
-        final List<dynamic> cmds = Script.parseToCommand(scriptWithLen);
-        // InheritancePolicy script shape: <locktime> CLTV DROP <pubkey> CHECKSIG
-        Uint8List pubkey =
-            cmds.whereType<Uint8List>().last; // last pushed data is pubkey
-        // Tapscript expects 32-byte x-only pubkey. Some older fixtures may use
-        // 33-byte compressed keys; normalize those to x-only.
-        if (pubkey.length == 33 && (pubkey[0] == 0x02 || pubkey[0] == 0x03)) {
-          pubkey = pubkey.sublist(1);
-        }
-        if (pubkey.length != 32) return false;
-
-        return Ecc.verifySchnorr(sigHash, pubkey, signature);
-      } else {
-        throw Exception('Invalid Taproot Transaction');
-      }
+      return _verifyP2trSpend(sigHash, utxo);
     } else {
       throw Exception('Unsupported Address Type');
     }
+  }
+
+  bool _verifyP2wpkhSpend(Uint8List sigHash, TransactionOutput utxo) {
+    final String signature = witnessList[0];
+    final String publicKey = witnessList[1];
+    final Uint8List sig = Codec.decodeHex(signature);
+    final Uint8List pub = Codec.decodeHex(publicKey);
+
+    // commands[1] is stored as `dynamic` (Script commands are untyped),
+    // so cast it to Uint8List first. Also compare byte content (Uint8List
+    // uses identity for `==` / `!=`).
+    final Uint8List scriptPubKeyHash =
+        utxo.scriptPubKey.commands[1] as Uint8List;
+    final Uint8List expectedPubKeyHash = Hash.sha160fromHex(publicKey);
+    if (scriptPubKeyHash.length != expectedPubKeyHash.length) {
+      return false;
+    }
+    for (int i = 0; i < scriptPubKeyHash.length; i++) {
+      if (scriptPubKeyHash[i] != expectedPubKeyHash[i]) {
+        return false;
+      }
+    }
+
+    final Uint8List rawSignature = Converter.derToRawSignature(sig);
+    return Ecc.verifyEcdsa(sigHash, pub, rawSignature);
   }
 
   bool _verifyP2wshSpend(Uint8List sigHash, TransactionOutput utxo) {
@@ -363,6 +280,90 @@ class TransactionInput {
       return false;
     } on RangeError {
       return false;
+    }
+  }
+
+  bool _verifyP2trSpend(Uint8List sigHash, TransactionOutput utxo) {
+    final Uint8List outputKey =
+        Uint8List.fromList((utxo.scriptPubKey.commands[1] as Uint8List));
+    Uint8List signature = Codec.decodeHex(witnessList[0]);
+    if (signature.length == 65) {
+      if (signature.last == 0x00) return false;
+      signature = signature.sublist(0, 64);
+    } else if (signature.length != 64) {
+      return false;
+    }
+    if (witnessList.length == 1) {
+      // Key path spending
+      return Ecc.verifySchnorr(sigHash, outputKey, signature);
+    } else if (witnessList.length == 3) {
+      // Script path spending
+      final String tapscriptHex = witnessList[1];
+      final Uint8List controlBlockBytes = Codec.decodeHex(witnessList[2]);
+
+      if (controlBlockBytes.length < 33 ||
+          (controlBlockBytes.length - 33) % 32 != 0) {
+        return false;
+      }
+      // Control byte contains leaf version (even bits) and parity bit (lsb).
+      final int controlByte = controlBlockBytes[0];
+      final int leafVersion = controlByte & 0xfe;
+
+      // Compute TapLeaf hash from raw tapscript bytes.
+      final Uint8List scriptBytes = Codec.decodeHex(tapscriptHex);
+      final Uint8List scriptLen =
+          Codec.encodeVariableInteger(scriptBytes.length);
+      final Uint8List tapleafHash = Hash.taggedHash('TapLeaf',
+          Uint8List.fromList([leafVersion, ...scriptLen, ...scriptBytes]));
+
+      // Verify control block commits to the spent output key.
+      final Uint8List internalKeyXOnly = controlBlockBytes.sublist(1, 33);
+      Uint8List merkleRoot = tapleafHash;
+      for (int i = 33; i < controlBlockBytes.length; i += 32) {
+        final Uint8List sibling = controlBlockBytes.sublist(i, i + 32);
+        // TapBranch uses lexicographic sorting
+        final int cmp = () {
+          for (int j = 0; j < 32; j++) {
+            if (merkleRoot[j] != sibling[j]) {
+              return merkleRoot[j] < sibling[j] ? -1 : 1;
+            }
+          }
+          return 0;
+        }();
+        final Uint8List first = cmp <= 0 ? merkleRoot : sibling;
+        final Uint8List second = cmp <= 0 ? sibling : merkleRoot;
+        merkleRoot = Hash.taggedHash(
+            'TapBranch', Uint8List.fromList([...first, ...second]));
+      }
+      final Uint8List tweak =
+          Hash.hashTapTweak('TapTweak', internalKeyXOnly, merkleRoot);
+      Uint8List expectedOutputKey =
+          Ecc.pointAddScalar(internalKeyXOnly, tweak, true)!;
+      if (expectedOutputKey[0] == 0x03) {
+        expectedOutputKey = Ecc.pointNegate(expectedOutputKey)!;
+      }
+      if (Codec.encodeHex(expectedOutputKey.sublist(1)) !=
+          Codec.encodeHex(outputKey)) {
+        return false;
+      }
+
+      // Extract x-only pubkey from tapscript and verify signature.
+      final Uint8List scriptWithLen = Uint8List.fromList(
+          [...Codec.encodeVariableInteger(scriptBytes.length), ...scriptBytes]);
+      final List<dynamic> cmds = Script.parseToCommand(scriptWithLen);
+      // InheritancePolicy script shape: <locktime> CLTV DROP <pubkey> CHECKSIG
+      Uint8List pubkey =
+          cmds.whereType<Uint8List>().last; // last pushed data is pubkey
+      // Tapscript expects 32-byte x-only pubkey. Some older fixtures may use
+      // 33-byte compressed keys; normalize those to x-only.
+      if (pubkey.length == 33 && (pubkey[0] == 0x02 || pubkey[0] == 0x03)) {
+        pubkey = pubkey.sublist(1);
+      }
+      if (pubkey.length != 32) return false;
+
+      return Ecc.verifySchnorr(sigHash, pubkey, signature);
+    } else {
+      throw Exception('Invalid Taproot Transaction');
     }
   }
 
