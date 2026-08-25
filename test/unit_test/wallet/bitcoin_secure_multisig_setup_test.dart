@@ -1,8 +1,10 @@
 @Tags(['unit'])
+library;
+
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('BSMS', () {
@@ -22,10 +24,38 @@ void main() {
 
     group('BSMS.fromCoordinator', () {
       test('Generate coordinator', () {
-        MultisignatureVault mockWallet = MockFactory.createP2wshVault();
+        MultisignatureVault mockWallet = WalletFixture.p2wshVault();
         Bsms bsms = Bsms.fromCoordinator(
             mockWallet.getAddress(0), mockWallet.descriptor);
         expect(bsms.coordinator, isA<Coordinator>());
+      });
+
+      test('Reject mismatched first address', () {
+        NetworkType.setNetworkType(NetworkType.regtest);
+        final wallet = WalletFixture.p2wshVault();
+        final otherWallet = MultisignatureVault.fromSeedList([
+          SeedFixture.common(passphrase: 'D'),
+          SeedFixture.common(passphrase: 'E'),
+        ], 1);
+
+        expect(
+            () => Bsms.fromCoordinator(
+                otherWallet.getAddress(0), wallet.descriptor),
+            throwsFormatException);
+        NetworkType.setNetworkType(NetworkType.mainnet);
+      });
+
+      test('Reject mismatched Taproot first address', () {
+        NetworkType.setNetworkType(NetworkType.regtest);
+        final wallet = WalletFixture.p2trPolicyVault();
+        final otherWallet =
+            WalletFixture.p2trKeyPathVault(passphrase: 'different');
+
+        expect(
+            () => Bsms.fromCoordinator(
+                otherWallet.getAddress(0), wallet.descriptor),
+            throwsFormatException);
+        NetworkType.setNetworkType(NetworkType.mainnet);
       });
     });
 
@@ -86,6 +116,29 @@ void main() {
         String coordinator =
             "BSMS 1.0\nwsh(sortedmulti(2,[AEF5B293/48'/0'/0'/2']Zpub75AQJSQLp25LUmJX2fUUMJjP4fcQhwaqH32iSNckTrZrjy3omBpb1ghSNtSZpCzvzhLha7r3JA7uG4wQyDkn87qHgpPZfTHBdvghvVhL2t1/<0;1>/*,[BAD41B33/48'/0'/0'/2']Zpub74NK7csp5wpD3dmr6bwweenNKDSERwQfisZCL8JpZ2TQ64E4oHm8pesNzTytfhfpfp6XzwumdxSKgLSjogTG6r6zVd1mSgGz67zK3Me9qrQ/<0;1>/*,[62A936C3/48'/0'/0'/2']Zpub75QytCyD9mNTr1wyi59JAhU2uiPedspk18djeteoeC6tJ7MdpuKbBRUA33CW49y5FDkpPqLDjujDVaNAGB9XVw44q8X2Hzif5DSTQyhgTES/<0;1>/*))#3zwl8rzh\n/0/*,/1/*\nbcrt1qp2fgzezkfvnvngv0nfe5pyf2vrsrvcpa3kcac5";
         expect(() => Bsms.parseCoordinator(coordinator), throwsException);
+      });
+
+      test('First address mismatch exception', () {
+        NetworkType.setNetworkType(NetworkType.regtest);
+        final wallet = WalletFixture.p2wshVault();
+        final otherWallet = MultisignatureVault.fromSeedList([
+          SeedFixture.common(passphrase: 'D'),
+          SeedFixture.common(passphrase: 'E'),
+        ], 1);
+        final coordinator = wallet
+            .getCoordinatorBsms()
+            .replaceFirst(wallet.getAddress(0), otherWallet.getAddress(0));
+
+        expect(() => Bsms.parseCoordinator(coordinator), throwsFormatException);
+        NetworkType.setNetworkType(NetworkType.mainnet);
+      });
+
+      test('Network mismatch exception', () {
+        NetworkType.setNetworkType(NetworkType.regtest);
+        final coordinator = WalletFixture.p2wshVault().getCoordinatorBsms();
+        NetworkType.setNetworkType(NetworkType.mainnet);
+
+        expect(() => Bsms.parseCoordinator(coordinator), throwsFormatException);
       });
 
       test('Unsupported version exception', () {

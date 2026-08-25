@@ -1,22 +1,24 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a seed.
+///
+/// {@category Wallets and Keys}
 class Seed {
   Uint8List _mnemonic = Uint8List.fromList([]); // 12 or 24 words
   Uint8List _passphrase = utf8.encode('');
 
-  /// The mnemonic words of the seed.
-  Uint8List get mnemonic => _mnemonic;
+  /// A defensive copy of the mnemonic words of the seed.
+  Uint8List get mnemonic => Uint8List.fromList(_mnemonic);
 
-  /// The passphrase of the seed.
-  Uint8List get passphrase => _passphrase;
+  /// A defensive copy of the passphrase of the seed.
+  Uint8List get passphrase => Uint8List.fromList(_passphrase);
 
   /// The root seed of the seed.
   Uint8List get rootSeed => _getRootSeed();
 
   Seed._(Uint8List mnemonic, Uint8List passphrase) {
-    _mnemonic = mnemonic;
-    _passphrase = passphrase;
+    _mnemonic = Uint8List.fromList(mnemonic);
+    _passphrase = Uint8List.fromList(passphrase);
   }
 
   /// Create a seed from random entropy.
@@ -51,12 +53,6 @@ class Seed {
     }
 
     return Seed._(mnemonic, passphrase ?? utf8.encode(''));
-  }
-
-  ///@deprecated
-  factory Seed.fromJson(String json) {
-    Map<String, dynamic> map = jsonDecode(json);
-    return Seed._(map['mnemonic'], map['passphrase']);
   }
 
   static Uint8List _generateMnemonicFromEntropy(Uint8List entropy) {
@@ -114,11 +110,6 @@ class Seed {
         Uint8List.fromList(utf8.encode('mnemonic$passphraseString'));
     passphraseString = '';
     return Hash.pbkdf2(mnemonic, salt);
-  }
-
-  ///@deprecated
-  String toJson() {
-    return jsonEncode({'mnemonic': _mnemonic, 'passphrase': _passphrase});
   }
 
   @override

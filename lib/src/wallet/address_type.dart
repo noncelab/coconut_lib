@@ -236,8 +236,9 @@ class AddressType {
   /// @nodoc
   static String getP2shAddress(
       List<String> publicKeys, int requiredSignatures) {
+    _validateMultisignaturePublicKeys(publicKeys, requiredSignatures);
     bool isTestnet = NetworkType.currentNetworkType.isTestnet;
-    publicKeys.sort();
+    publicKeys = List<String>.of(publicKeys)..sort();
     List<Uint8List> pubKeysBytes =
         publicKeys.map((key) => Codec.decodeHex(key)).toList();
     var redeemScript = <int>[];
@@ -261,7 +262,8 @@ class AddressType {
   /// @nodoc
   static String getP2wshAddress(
       List<String> publicKeys, int requiredSignatures) {
-    publicKeys.sort();
+    _validateMultisignaturePublicKeys(publicKeys, requiredSignatures);
+    publicKeys = List<String>.of(publicKeys)..sort();
 
     List<Uint8List> pubKeys =
         publicKeys.map((hex) => Codec.decodeHex(hex)).toList();
@@ -292,6 +294,7 @@ class AddressType {
 
   static String getP2trScriptPathSpendingAddress(
       List<String> publicKeys, int requiredSignature) {
+    _validateMultisignaturePublicKeys(publicKeys, requiredSignature);
     if (requiredSignature > 3) {
       throw Exception("requiredSignature cannot be greater than 3");
     }
@@ -299,7 +302,7 @@ class AddressType {
       throw Exception(
           "requiredSignature cannot be greater than the number of pubkeys");
     }
-    publicKeys.sort();
+    publicKeys = List<String>.of(publicKeys)..sort();
     for (var publicKey in publicKeys) {
       if (Codec.decodeHex(publicKey).length != 32) {
         throw Exception("Public Key must be a 32-byte x-only public key.");
@@ -334,6 +337,20 @@ class AddressType {
     // Uint8List merkleRoot = _getTapleafHash(0xc0, Codec.encodeHex(tapscript));
 
     return getTaprootAddressFromTweakedPublicKey(internalKey);
+  }
+
+  static void _validateMultisignaturePublicKeys(
+      List<String> publicKeys, int requiredSignatures) {
+    final distinctPublicKeys =
+        publicKeys.map((key) => key.toLowerCase()).toSet();
+    if (distinctPublicKeys.length != publicKeys.length) {
+      throw Exception('Duplicate public key.');
+    }
+    if (requiredSignatures < 1 ||
+        requiredSignatures > distinctPublicKeys.length) {
+      throw Exception(
+          'Required signatures must be between 1 and the distinct signer count.');
+    }
   }
 
   static String getTaprootAddressFromTweakedPublicKey(String tweakedPubKey) {

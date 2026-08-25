@@ -1,9 +1,35 @@
 part of '../../coconut_lib.dart';
 
+/// Encodes and decodes Bitcoin wire-format and key representations.
+///
+/// {@category Cryptography and Encoding}
 class Codec {
   Codec._();
 
+  static Map<String, dynamic> _decodeJsonObject(String source,
+      {String name = 'JSON'}) {
+    final dynamic decoded = jsonDecode(source);
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException('$name must be a JSON object.');
+    }
+    return decoded;
+  }
+
+  static T _readJsonField<T>(Map<String, dynamic> object, String field,
+      {String name = 'JSON'}) {
+    final dynamic value = object[field];
+    if (value is! T) {
+      throw FormatException('$name field "$field" must be a $T.');
+    }
+    return value;
+  }
+
+  /// Decodes an even-length hexadecimal string into bytes.
   static Uint8List decodeHex(String hexString) {
+    if (hexString.length.isOdd) {
+      throw const FormatException(
+          'Hex string must contain an even number of characters.');
+    }
     List<int> bytes = [];
     for (int i = 0; i < hexString.length; i += 2) {
       String byte = hexString.substring(i, i + 2);
@@ -14,6 +40,7 @@ class Codec {
     return Uint8List.fromList(bytes);
   }
 
+  /// Encodes [byteList] as lowercase hexadecimal.
   static String encodeHex(List<int> byteList) {
     StringBuffer buffer = StringBuffer();
     for (int byte in byteList) {
@@ -22,8 +49,22 @@ class Codec {
     return buffer.toString();
   }
 
+  /// Decodes a Bitcoin CompactSize integer at [offset].
   static int decodeVariableInteger(Uint8List s, int offset) {
+    if (offset < 0 || offset >= s.length) {
+      throw const FormatException('CompactSize prefix is missing.');
+    }
     final firstByte = s[offset];
+    final int encodedLength = firstByte < 0xfd
+        ? 1
+        : firstByte == 0xfd
+            ? 3
+            : firstByte == 0xfe
+                ? 5
+                : 9;
+    if (offset + encodedLength > s.length) {
+      throw const FormatException('Truncated CompactSize value.');
+    }
     if (firstByte < 0xfd) {
       return firstByte;
     } else if (firstByte == 0xfd) {
@@ -38,6 +79,19 @@ class Codec {
     }
   }
 
+  /// Returns the encoded CompactSize length indicated at [offset].
+  static int getVariableIntegerLength(Uint8List bytes, int offset) {
+    if (offset < 0 || offset >= bytes.length) {
+      throw const FormatException('CompactSize prefix is missing.');
+    }
+    final int prefix = bytes[offset];
+    if (prefix < 0xfd) return 1;
+    if (prefix == 0xfd) return 3;
+    if (prefix == 0xfe) return 5;
+    return 9;
+  }
+
+  /// Encodes [i] using Bitcoin CompactSize format.
   static Uint8List encodeVariableInteger(int i) {
     if (i < 0xfd) {
       return Uint8List.fromList([i.toInt()]);
@@ -52,6 +106,7 @@ class Codec {
     }
   }
 
+  /// Encodes raw [bytes] using the Bitcoin Base58 alphabet.
   static String encodeBase58(Uint8List bytes) {
     String alphabet =
         '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -77,6 +132,7 @@ class Codec {
     return base58;
   }
 
+  /// Encodes [bytes] using Base58Check with a four-byte checksum.
   static String encodeBase58Checksum(Uint8List bytes) {
     var doubleHash =
         Hash.sha256fromByte(Hash.sha256fromByte(Uint8List.fromList(bytes)));
@@ -85,15 +141,20 @@ class Codec {
     return encodeBase58(payload);
   }
 
+  /// Decodes and verifies a Base58Check string.
   static Uint8List decodeBase58(String base58Text) {
     String alphabet =
         '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     if (base58Text.isEmpty) {
-      throw Exception('Base58 : Not Base58 string');
+      throw const FormatException('Base58 value is empty.');
     }
     List<int> bytes = [0];
     for (int i = 0; i < base58Text.length; i++) {
       int value = alphabet.indexOf(base58Text[i]);
+      if (value < 0) {
+        throw FormatException(
+            'Invalid Base58 character at position $i: ${base58Text[i]}');
+      }
 
       var carry = value;
       for (var j = 0; j < bytes.length; ++j) {
@@ -115,6 +176,9 @@ class Codec {
   }
 
   static Uint8List _decodeBase58Raw(Uint8List buffer) {
+    if (buffer.length < 4) {
+      throw const FormatException('Base58Check value is too short.');
+    }
     Uint8List payload = buffer.sublist(0, buffer.length - 4);
     Uint8List checksum = buffer.sublist(buffer.length - 4);
     Uint8List target =
@@ -123,7 +187,7 @@ class Codec {
         checksum[1] != target[1] ||
         checksum[2] != target[2] ||
         checksum[3] != target[3]) {
-      throw Exception("Invalid checksum");
+      throw const FormatException('Invalid Base58 checksum.');
     }
     return payload;
   }
@@ -169,16 +233,27 @@ class Codec {
   //   return _decodeWifRaw(Codec.decodeBase58(string), version);
   // }
 
+  /// Encodes private-key metadata as Wallet Import Format.
   static String encodeWif(WIF wif) {
     return Codec.encodeBase58(
         _encodeWifRaw(wif.version, wif.privateKey, wif.compressed));
   }
 }
 
+/// Wallet Import Format payload before Base58Check encoding.
+///
+/// {@category Cryptography and Encoding}
 class WIF {
+  /// Network version byte.
   int version;
+
+  /// The 32-byte private key.
   Uint8List privateKey;
+
+  /// Whether the corresponding public key uses compressed encoding.
   bool compressed;
+
+  /// Creates Wallet Import Format metadata.
   WIF(
       {required this.version,
       required this.privateKey,

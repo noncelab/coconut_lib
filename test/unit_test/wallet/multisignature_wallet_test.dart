@@ -1,17 +1,39 @@
 @Tags(['unit'])
+library;
+
+import 'dart:convert';
+
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() async {
   group('MultisignatureWallet', () {
     late MultisignatureVault vault;
     setUpAll(() async {
       NetworkType.setNetworkType(NetworkType.regtest);
-      vault = MockFactory.createP2wshVault();
+      vault = WalletFixture.p2wshVault();
     });
     group('MultisignatureWallet.fromDescriptor', () {
+      test('stores independent public-only key stores', () {
+        final publicKeyStores = vault.keyStoreList
+            .map((keyStore) => KeyStore.fromExtendedPublicKey(
+                keyStore.extendedPublicKey.serialize(),
+                keyStore.masterFingerprint))
+            .toList();
+        final wallet = MultisignatureWallet(vault.requiredSignature,
+            vault.addressType, vault.derivationPath, publicKeyStores);
+
+        expect(wallet.keyStoreList, isNot(same(publicKeyStores)));
+        for (int i = 0; i < publicKeyStores.length; i++) {
+          expect(wallet.keyStoreList[i], isNot(same(publicKeyStores[i])));
+          expect(wallet.keyStoreList[i].hdWallet.isNeutered(), isTrue);
+          expect(wallet.keyStoreList[i].hasSeed, isFalse);
+        }
+        expect(() => wallet.keyStoreList.clear(), throwsUnsupportedError);
+      });
+
       test('Generate multisignature wallet from descriptor', () {
         String descriptor = vault.descriptor;
         MultisignatureWallet wallet =
@@ -26,9 +48,28 @@ void main() async {
         }
       });
 
+      test('Reject duplicate account xpub and invalid threshold', () {
+        final expressions = vault.keyStoreList
+            .map((keyStore) => Descriptor.getKeyOriginExpression(
+                keyStore, vault.derivationPath))
+            .toList();
+        final duplicateBody =
+            'wsh(sortedmulti(1,${expressions.first},${expressions.first}))';
+        final zeroThresholdBody =
+            'wsh(sortedmulti(0,${expressions.join(',')}))';
+
+        expect(
+            () => MultisignatureWallet.fromDescriptor(duplicateBody,
+                ignoreChecksum: true),
+            throwsArgumentError);
+        expect(
+            () => MultisignatureWallet.fromDescriptor(zeroThresholdBody,
+                ignoreChecksum: true),
+            throwsArgumentError);
+      });
+
       test('Single signature address type exception', () {
-        SingleSignatureVault singleSignatureVault =
-            MockFactory.createP2wpkhVault();
+        SingleSignatureVault singleSignatureVault = WalletFixture.p2wpkhVault();
         expect(
             () => MultisignatureWallet.fromDescriptor(
                 singleSignatureVault.descriptor),
@@ -96,6 +137,17 @@ void main() async {
           expect(targetWallet.keyStoreList[i].extendedPublicKey.serialize(),
               wallet.keyStoreList[i].extendedPublicKey.serialize());
         }
+      });
+
+      test('Reject duplicate account xpub in json', () {
+        final expression = Descriptor.getKeyOriginExpression(
+            vault.keyStoreList.first, vault.derivationPath);
+        final descriptor = 'wsh(sortedmulti(1,$expression,$expression))';
+
+        expect(
+            () => MultisignatureWallet.fromJson(
+                jsonEncode({'descriptor': descriptor})),
+            throwsException);
       });
     });
   });

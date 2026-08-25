@@ -281,5 +281,19 @@ void main() {
             '8a38cdedb7e8e90315ef4d169732c89e7dbfe24e28a7467d43841c5e74c04aec');
       });
     });
+    group('hashTapTweak', () {
+      test('hashes the public key when merkle root is absent', () {
+        final publicKey = Uint8List.fromList(List<int>.generate(32, (i) => i));
+        expect(Hash.hashTapTweak('TapTweak', publicKey, null),
+            Hash.taggedHash('TapTweak', publicKey));
+      });
+
+      test('includes the merkle root when present', () {
+        final publicKey = Uint8List.fromList(List<int>.filled(32, 1));
+        final merkleRoot = Uint8List.fromList(List<int>.filled(32, 2));
+        expect(Hash.hashTapTweak('TapTweak', publicKey, merkleRoot),
+            Hash.taggedHash('TapTweak', publicKey + merkleRoot));
+      });
+    });
   });
 }

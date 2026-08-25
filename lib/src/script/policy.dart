@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Base class for script policies.
+///
+/// {@category Scripts and Policies}
 abstract class Policy {
   /// Convert the policy to a script.
   Script toScript(int addressIndex, {bool isChange = false});
@@ -38,7 +40,7 @@ abstract class Policy {
   }
 
   static Policy fromMiniscript(String miniscript) {
-    if (miniscript.startsWith('and_v(v:pk(') && miniscript.contains('older(')) {
+    if (RegExp(r'^and_v\(v:pk\(.+\),after\(\d+\)\)$').hasMatch(miniscript)) {
       return InheritancePolicy.fromMiniscript(miniscript);
     } else {
       throw Exception('Unsupported miniscript type.');
@@ -51,7 +53,8 @@ abstract class Policy {
   /// - `{ "type": "inheritance", ... }`
   /// - `{ "miniscript": "..." }` (legacy / compact form)
   static Policy fromJson(String jsonStr) {
-    final Map<String, dynamic> map = jsonDecode(jsonStr);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(jsonStr, name: 'Policy JSON');
 
     final String? type = map['type'];
     if (type != null) {
@@ -59,7 +62,7 @@ abstract class Policy {
         case 'inheritance':
           return InheritancePolicy.fromJson(jsonStr);
         default:
-          throw Exception('Unsupported policy type: $type');
+          throw FormatException('Unsupported policy type: $type');
       }
     }
 
@@ -68,6 +71,7 @@ abstract class Policy {
       return Policy.fromMiniscript(miniscript);
     }
 
-    throw Exception('Invalid policy json: missing "type" or "miniscript".');
+    throw const FormatException(
+        'Invalid policy JSON: missing "type" or "miniscript".');
   }
 }

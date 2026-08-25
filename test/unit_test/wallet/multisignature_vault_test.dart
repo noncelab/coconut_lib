@@ -1,14 +1,18 @@
 @Tags(['unit'])
+library;
+
+import 'dart:convert';
+
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('MultisignatureVault', () {
     late MultisignatureVault vault;
     setUpAll(() {
-      vault = MockFactory.createP2wshVault();
+      vault = WalletFixture.p2wshVault();
     });
     group('MultisignatureVault.fromKeyStoreList', () {
       test('Generate multisignature vault from key store list', () {
@@ -19,7 +23,29 @@ void main() {
         expect(targetVault, isA<MultisignatureVault>());
         expect(vault.descriptor, targetVault.descriptor);
         expect(() => MultisignatureVault.fromKeyStoreList(keyStoreList, 4),
-            throwsException);
+            throwsArgumentError);
+      });
+
+      test('Reject invalid threshold and duplicate account xpub', () {
+        expect(
+            () => MultisignatureVault.fromKeyStoreList(vault.keyStoreList, 0),
+            throwsArgumentError);
+        expect(
+            () => MultisignatureVault.fromKeyStoreList(
+                [vault.keyStoreList.first, vault.keyStoreList.first], 1),
+            throwsArgumentError);
+      });
+
+      test('Reject duplicate derived public key', () {
+        final first = vault.keyStoreList[0];
+        final second = vault.keyStoreList[1];
+        final keyStoreWithCollidingDerivation = KeyStore(
+            second.masterFingerprint, first.hdWallet, second.extendedPublicKey);
+
+        expect(
+            () => MultisignatureVault.fromKeyStoreList(
+                [first, keyStoreWithCollidingDerivation], 1),
+            throwsArgumentError);
       });
     });
 
@@ -35,6 +61,12 @@ void main() {
         expect(targetVault, isA<MultisignatureVault>());
         expect(vault.descriptor, targetVault.descriptor);
       });
+
+      test('Reject duplicate seed', () {
+        final seed = vault.keyStoreList.first.seed;
+        expect(() => MultisignatureVault.fromSeedList([seed, seed], 1),
+            throwsArgumentError);
+      });
     });
     group('MultisignatureVault.fromCoordinatorBsms', () {
       test('Generate multisignature vault from BSMS coordinator', () {
@@ -44,6 +76,18 @@ void main() {
 
         expect(targetVault, isA<MultisignatureVault>());
         expect(vault.descriptor, targetVault.descriptor);
+      });
+
+      test('Reject duplicate account xpub in BSMS coordinator', () {
+        final expression = Descriptor.getKeyOriginExpression(
+            vault.keyStoreList.first, vault.derivationPath);
+        final body = 'wsh(sortedmulti(1,$expression,$expression))';
+        final descriptor = '$body#${Checksum.getChecksum(body)}';
+        final coordinator =
+            'BSMS 1.0\n$descriptor\n/0/*,/1/*\n${vault.getAddress(0)}';
+
+        expect(() => MultisignatureVault.fromCoordinatorBsms(coordinator),
+            throwsArgumentError);
       });
     });
     group('bindSeedToKeyStore', () {
@@ -60,10 +104,26 @@ void main() {
           expect(vault.keyStoreList[i].seed, targetVault.keyStoreList[i].seed);
         }
       });
+
+      test('rejects a seed that does not match an account key', () {
+        final targetVault = MultisignatureVault.fromCoordinatorBsms(
+            vault.getCoordinatorBsms(),
+            addressType: AddressType.p2wsh);
+        final otherSeed = SeedFixture.common(passphrase: 'different');
+
+        expect(
+            () => targetVault.bindSeedToKeyStore(otherSeed), throwsStateError);
+      });
     });
 
-    group('json', () {
-      test('toJson/fromJson roundtrip', () {
+    group('toJson', () {
+      test('serializes vault', () {
+        expect(vault.toJson(), isNotEmpty);
+      });
+    });
+
+    group('MultisignatureVault.fromJson', () {
+      test('restores serialized vault', () {
         final seedlessKeyStores = vault.keyStoreList
             .map((e) => KeyStore.fromExtendedPublicKey(
                   e.extendedPublicKey.serialize(),
@@ -78,6 +138,23 @@ void main() {
         expect(restored.requiredSignature, seedlessVault.requiredSignature);
         expect(restored.addressType, seedlessVault.addressType);
         expect(restored.keyStoreList.length, seedlessVault.keyStoreList.length);
+      });
+
+      test('Reject duplicate account xpub in json', () {
+        final seedlessKeyStores = vault.keyStoreList
+            .map((keyStore) => KeyStore.fromExtendedPublicKey(
+                keyStore.extendedPublicKey.serialize(),
+                keyStore.masterFingerprint))
+            .toList();
+        final seedlessVault = MultisignatureVault.fromKeyStoreList(
+            seedlessKeyStores, vault.requiredSignature,
+            addressType: vault.addressType);
+        final json = jsonDecode(seedlessVault.toJson()) as Map<String, dynamic>;
+        json['requiredSignature'] = 1;
+        json['keyStores'] = [json['keyStores'][0], json['keyStores'][0]];
+
+        expect(() => MultisignatureVault.fromJson(jsonEncode(json)),
+            throwsArgumentError);
       });
     });
   });

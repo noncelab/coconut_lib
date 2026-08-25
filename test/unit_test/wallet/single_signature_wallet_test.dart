@@ -1,10 +1,12 @@
 @Tags(['unit'])
+library;
+
 import 'dart:convert';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() async {
   group('SingleSignatureWallet', () {
@@ -13,8 +15,80 @@ void main() async {
 
     setUpAll(() async {
       NetworkType.setNetworkType(NetworkType.regtest);
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
+    });
+    group('SingleSignatureWallet', () {
+      test('stores only a neutered copy of a private HD wallet', () {
+        final keyStore =
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        final target = SingleSignatureWallet(
+            keyStore.masterFingerprint,
+            keyStore.hdWallet,
+            AddressType.p2wpkh,
+            WalletUtility.getDerivationPath(AddressType.p2wpkh, 0),
+            keyStore.extendedPublicKey);
+
+        expect(keyStore.hdWallet.isNeutered(), isFalse);
+        expect(target.keyStore.hdWallet.isNeutered(), isTrue);
+        expect(target.keyStore.hasSeed, isFalse);
+        expect(target.keyStore.hdWallet.privateKey, isNull);
+      });
+
+      test('rejects a key from another network', () {
+        NetworkType.setNetworkType(NetworkType.testnet);
+        final keyStore =
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        try {
+          expect(
+              () => SingleSignatureWallet(
+                  keyStore.masterFingerprint,
+                  keyStore.hdWallet,
+                  AddressType.p2wpkh,
+                  "m/84'/0'/0'",
+                  keyStore.extendedPublicKey),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.regtest);
+        }
+      });
+
+      test('rejects malformed derivation paths', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        final keyStore =
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        try {
+          expect(
+              () => SingleSignatureWallet(
+                  keyStore.masterFingerprint,
+                  keyStore.hdWallet,
+                  AddressType.p2wpkh,
+                  'invalid',
+                  keyStore.extendedPublicKey),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.regtest);
+        }
+      });
+
+      test('rejects a derivation path for another network', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        final keyStore =
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        try {
+          expect(
+              () => SingleSignatureWallet(
+                  keyStore.masterFingerprint,
+                  keyStore.hdWallet,
+                  AddressType.p2wpkh,
+                  "m/84'/1'/0'",
+                  keyStore.extendedPublicKey),
+              throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.regtest);
+        }
+      });
     });
     group('SingleSignatureWallet.fromDescriptor', () {
       test('Generate single signature wallet from descriptor', () {
@@ -29,7 +103,7 @@ void main() async {
           () {
         expect(
             () => SingleSignatureWallet.fromDescriptor(
-                MockFactory.createP2wshVault().descriptor),
+                WalletFixture.p2wshVault().descriptor),
             throwsException);
       });
 

@@ -13,14 +13,19 @@ abstract class SingleSignatureWalletBase extends WalletBase {
   SingleSignatureWalletBase(this._keyStore, AddressType _addressType,
       String _derivationPath, this._isVault)
       : super(_addressType, _derivationPath) {
+    if (!_isVault) {
+      KeyStore._ensureWatchOnly([_keyStore]);
+    }
     if (NetworkType.currentNetworkType.isTestnet !=
         AddressType.isTestnetVersion(_keyStore._extendedPublicKey.version)) {
-      throw Exception('Network type mismatch.');
+      throw WalletException(
+          WalletErrorCode.networkMismatch, 'Network type mismatch.');
     }
     // check derivation path
     final segments = derivationPath.split('/');
     if (segments.length < 3 || segments[0] != 'm') {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Invalid wallet derivation path.');
     }
     final coinTypeSegment = segments[2];
 
@@ -28,9 +33,11 @@ abstract class SingleSignatureWalletBase extends WalletBase {
         int.tryParse(coinTypeSegment.replaceAll(RegExp(r"[h']"), ""));
 
     if (coinType == 1 && !NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     } else if (coinType == 0 && NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     }
 
     _descriptor = Descriptor.forSingleSignature(
@@ -47,12 +54,15 @@ abstract class SingleSignatureWalletBase extends WalletBase {
 
   @override
   String getAddressWithDerivationPath(String derivationPath) {
-    if (!WalletUtility.validateDerivationPath(_derivationPath)) {
-      throw Exception("Invalid derivation path (e.g., m/44'/0'/0'/0/0)");
+    if (!WalletUtility.validateDerivationPath(derivationPath)) {
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          "Invalid derivation path (e.g., m/44'/0'/0'/0/0).");
     }
 
-    if (!derivationPath.startsWith(derivationPath)) {
-      throw Exception("Derivation path does not match");
+    if (!derivationPath.startsWith('$_derivationPath/')) {
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Derivation path does not belong to this wallet.',
+          context: {'path': derivationPath, 'walletPath': _derivationPath});
     }
 
     String pubkey = _keyStore.getPublicKey(
@@ -75,13 +85,20 @@ abstract class SingleSignatureWalletBase extends WalletBase {
   String addSignatureToPsbt(String psbt) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
-      throw Exception('Address Type is not matched.');
+      throw PsbtException(
+          PsbtErrorCode.policyMismatch, 'PSBT address type does not match.');
     }
 
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(PsbtErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
+
+    if (this is! SingleSignatureVault) {
+      throw StateError('Single-signature policy validation requires a vault.');
+    }
+    psbtObject.validateSingleSignaturePolicy(this as SingleSignatureVault);
 
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
@@ -103,8 +120,9 @@ abstract class SingleSignatureWalletBase extends WalletBase {
             j++) {
           utxoList.add(psbtObject.inputs[j].witnessUtxo!);
         }
-        sigHash = psbtObject.unsignedTransaction!
-            .getTaprootSigHash(inputIndex, utxoList);
+        sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+            inputIndex, utxoList,
+            hashType: input.taprootSighashType);
       }
 
       for (DerivationPath derivationPath in derivationPathList!) {

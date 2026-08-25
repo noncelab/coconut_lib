@@ -1,11 +1,13 @@
 @Tags(['unit'])
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 class _FakePolicy extends Policy {
   final int scriptLen;
@@ -31,7 +33,7 @@ void main() {
 
     setUp(() {
       NetworkType.setNetworkType(NetworkType.regtest);
-      beneficiaryVault = MockFactory.createBeneficiaryVault(passphrase: 'A');
+      beneficiaryVault = WalletFixture.beneficiaryVault(passphrase: 'A');
       inheritancePolicy = InheritancePolicy.fromDescriptorAndLocktime(
           beneficiaryVault.descriptor, 1798761600);
     });
@@ -42,6 +44,12 @@ void main() {
             Policy.fromMiniscript(inheritancePolicy.toMiniscript());
         expect(p, isA<InheritancePolicy>());
         expect((p as InheritancePolicy).locktime, inheritancePolicy.locktime);
+      });
+
+      test('rejects relative older inheritance miniscript', () {
+        final String relative =
+            inheritancePolicy.toMiniscript().replaceFirst('after(', 'older(');
+        expect(() => Policy.fromMiniscript(relative), throwsException);
       });
 
       test('throws for unsupported miniscript', () {
@@ -72,11 +80,15 @@ void main() {
           'type': 'unknown_type',
           'dummy': 'x',
         });
-        expect(() => Policy.fromJson(json), throwsException);
+        expect(() => Policy.fromJson(json), throwsFormatException);
       });
 
       test('throws when neither type nor miniscript present', () {
-        expect(() => Policy.fromJson('{}'), throwsException);
+        expect(() => Policy.fromJson('{}'), throwsFormatException);
+      });
+
+      test('throws when JSON is not an object', () {
+        expect(() => Policy.fromJson('[]'), throwsFormatException);
       });
     });
 

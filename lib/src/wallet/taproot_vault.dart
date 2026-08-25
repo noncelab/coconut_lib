@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a Taproot vault with script path spending support.
+///
+/// {@category Wallets and Keys}
 class TaprootVault extends TaprootWalletBase {
   TaprootVault._(List<KeyStore> keyStoreList, List<Policy> policyList,
       String derivationPath)
@@ -75,6 +77,7 @@ class TaprootVault extends TaprootWalletBase {
         psbtObject.unsignedTransaction!.inputs.length) {
       throw Exception('Not enought psbt inputs or transaction inputs');
     }
+    psbtObject.validateTaprootPolicy(this);
 
     List<TransactionOutput> utxoList = [];
     for (int j = 0; j < psbtObject.unsignedTransaction!.inputs.length; j++) {
@@ -84,8 +87,9 @@ class TaprootVault extends TaprootWalletBase {
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {
-      String sigHash = psbtObject.unsignedTransaction!
-          .getTaprootSigHash(inputIndex, utxoList);
+      String sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
+          inputIndex, utxoList,
+          hashType: psbtObject.inputs[inputIndex].taprootSighashType);
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
       for (DerivationPath derivationPath in psbtInput.tapBip32Derivation!) {
         for (KeyStore keyStore in keyStoreList) {
@@ -115,21 +119,37 @@ class TaprootVault extends TaprootWalletBase {
 
   /// Create a Taproot vault from a json string.
   factory TaprootVault.fromJson(String jsonStr) {
-    final Map<String, dynamic> json = jsonDecode(jsonStr);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'TaprootVault JSON');
     if (json['isVault'] == false) {
-      throw Exception('JSON is for TaprootWallet; use TaprootWallet.fromJson');
+      throw const FormatException(
+          'JSON is for TaprootWallet; use TaprootWallet.fromJson.');
     }
-    final String path = json['derivationPath'] as String;
+    final String path = Codec._readJsonField<String>(json, 'derivationPath',
+        name: 'TaprootVault JSON');
     final List<KeyStore> keyStores = [];
-    for (final dynamic keyStoreJson in json['keyStores'] as List<dynamic>) {
-      keyStores.add(KeyStore.fromJson(keyStoreJson as String));
+    for (final dynamic keyStoreJson in Codec._readJsonField<List<dynamic>>(
+        json, 'keyStores',
+        name: 'TaprootVault JSON')) {
+      if (keyStoreJson is! String) {
+        throw const FormatException(
+            'TaprootVault keyStores must contain JSON strings.');
+      }
+      keyStores.add(KeyStore.fromJson(keyStoreJson));
     }
 
     final List<Policy> policies = [];
     final dynamic policiesJson = json['policies'];
     if (policiesJson != null) {
-      for (final dynamic policyJson in policiesJson as List<dynamic>) {
-        policies.add(Policy.fromJson(policyJson as String));
+      if (policiesJson is! List<dynamic>) {
+        throw const FormatException('TaprootVault policies must be a list.');
+      }
+      for (final dynamic policyJson in policiesJson) {
+        if (policyJson is! String) {
+          throw const FormatException(
+              'TaprootVault policies must contain JSON strings.');
+        }
+        policies.add(Policy.fromJson(policyJson));
       }
     }
 
@@ -163,7 +183,7 @@ class TaprootVault extends TaprootWalletBase {
     // Parse policies from miniscript list if available
     List<Policy> policies = [];
     if (descriptorObject.miniscriptList.isNotEmpty &&
-        descriptorObject.miniscriptList.length > 0) {
+        descriptorObject.miniscriptList.isNotEmpty) {
       for (String miniscript in descriptorObject.miniscriptList) {
         policies.add(Policy.fromMiniscript(miniscript));
       }
@@ -176,12 +196,12 @@ class TaprootVault extends TaprootWalletBase {
     KeyStore keyStoreFromSeed =
         KeyStore.fromSeed(seed, addressType, accountIndex: accountIndex);
 
-    for (KeyStore keyStore in keyStoreList) {
-      if (keyStore.masterFingerprint == keyStoreFromSeed.masterFingerprint) {
-        keyStoreList[keyStoreList.indexOf(keyStore)] = keyStoreFromSeed;
-        return;
-      }
+    final int index = _keyStoreList.indexWhere(
+        (keyStore) => keyStore.hasSamePublicIdentity(keyStoreFromSeed));
+    if (index < 0) {
+      throw StateError('Seed does not match any key store.');
     }
+    _keyStoreList[index] = keyStoreFromSeed;
   }
 
   void bindSeedToBeneficiaryKeyStore(Seed seed, {int accountIndex = 0}) {
@@ -189,13 +209,14 @@ class TaprootVault extends TaprootWalletBase {
         KeyStore.fromSeed(seed, AddressType.p2tr, accountIndex: accountIndex);
     for (Policy policy in policyList) {
       if (policy is InheritancePolicy) {
-        if (policy.beneficiaryKeyStore.masterFingerprint ==
-            keyStoreFromSeed.masterFingerprint) {
+        if (policy.beneficiaryKeyStore
+            .hasSamePublicIdentity(keyStoreFromSeed)) {
           policy.beneficiaryKeyStore = keyStoreFromSeed;
           return;
         }
       }
     }
+    throw StateError('Seed does not match any beneficiary key store.');
   }
 
   Policy getSpendablePolicy() {

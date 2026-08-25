@@ -1,0 +1,31 @@
+dartdoc:
+  categories:
+    "Wallets and Keys":
+      markdown: doc/api_topics/wallets_and_keys.md
+      name: Wallets and Keys
+    "Transactions":
+      markdown: doc/api_topics/transactions.md
+      name: Transactions
+    "PSBT":
+      markdown: doc/api_topics/psbt.md
+      name: PSBT
+    "Scripts and Policies":
+      markdown: doc/api_topics/scripts_and_policies.md
+      name: Scripts and Policies
+    "Cryptography and Encoding":
+      markdown: doc/api_topics/cryptography_and_encoding.md
+      name: Cryptography and Encoding
+    "Errors":
+      markdown: doc/api_topics/errors.md
+      name: Errors
+  categoryOrder:
+    - "Wallets and Keys"
+    - "Transactions"
+    - "PSBT"
+    - "Scripts and Policies"
+    - "Cryptography and Encoding"
+    - "Errors"
+  showUndocumentedCategories: true
+  errors:
+    - broken-link
+    - unresolved-doc-reference

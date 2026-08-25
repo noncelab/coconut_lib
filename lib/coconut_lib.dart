@@ -1,4 +1,21 @@
-library coconut_lib;
+/// Bitcoin wallet core primitives for watch-only wallets and air-gapped
+/// signing vaults.
+///
+/// The API is organized into these topics:
+///
+/// - **Wallets and Keys** create wallets, vaults, descriptors, and UTXOs.
+/// - **Transactions** construct and validate unsigned or signed transactions.
+/// - **PSBT** exchanges signing requests across trust boundaries.
+/// - **Scripts and Policies** model Bitcoin Script and Taproot conditions.
+/// - **Cryptography and Encoding** contains low-level binary primitives.
+///
+/// A common offline-signing flow constructs a [Transaction] with a watch-only
+/// [WalletBase], creates a [Psbt], signs it with the matching vault, and then
+/// finalizes and validates the transaction.
+///
+/// See the [example overview](https://github.com/noncelab/coconut_lib/blob/main/doc/example/README.md)
+/// for complete single-signature, multisignature, and Taproot workflows.
+library;
 
 import 'dart:convert';
 import 'dart:math';
@@ -14,6 +31,11 @@ import 'src/cryptography/mnemonic_wordlist/english.dart' as english_words;
 
 export 'src/cryptography/mnemonic_wordlist/english.dart';
 
+part 'src/exception/coconut_exception.dart';
+part 'src/exception/transaction_exception.dart';
+part 'src/exception/psbt_exception.dart';
+part 'src/exception/wallet_exception.dart';
+part 'src/exception/signing_exception.dart';
 part 'src/transaction/partially_signed_bitcoin_transaction.dart';
 part 'src/script/script.dart';
 part 'src/script/script_operation_code.dart';

@@ -15,6 +15,9 @@ void main() {
         String hexString = 'ad';
         expect(Codec.decodeHex(hexString), [173]);
       });
+      test('Reject odd-length hexadecimal', () {
+        expect(() => Codec.decodeHex('abc'), throwsFormatException);
+      });
     });
     group('decodeVariableInteger', () {
       test('1-byte integer (0x00 ~ 0xfc)', () {
@@ -54,17 +57,37 @@ void main() {
 
       test('Invalid input: too short for 2-byte integer', () {
         Uint8List input = Uint8List.fromList([0xfd]);
-        expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
+        expect(
+            () => Codec.decodeVariableInteger(input, 0), throwsFormatException);
       });
 
       test('Invalid input: too short for 4-byte integer', () {
         Uint8List input = Uint8List.fromList([0xfe, 0x12, 0x34]);
-        expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
+        expect(
+            () => Codec.decodeVariableInteger(input, 0), throwsFormatException);
       });
 
       test('Invalid input: too short for 8-byte integer', () {
         Uint8List input = Uint8List.fromList([0xff, 0x12, 0x34, 0x56]);
-        expect(() => Codec.decodeVariableInteger(input, 0), throwsRangeError);
+        expect(
+            () => Codec.decodeVariableInteger(input, 0), throwsFormatException);
+      });
+    });
+    group('getVariableIntegerLength', () {
+      test('returns the encoded length from the prefix at an offset', () {
+        final input =
+            Uint8List.fromList([0x00, 0xfc, 0xfd, 0x00, 0x00, 0xfe, 0xff]);
+
+        expect(Codec.getVariableIntegerLength(input, 0), 1);
+        expect(Codec.getVariableIntegerLength(input, 1), 1);
+        expect(Codec.getVariableIntegerLength(input, 2), 3);
+        expect(Codec.getVariableIntegerLength(input, 5), 5);
+        expect(Codec.getVariableIntegerLength(input, 6), 9);
+      });
+
+      test('throws when the offset is outside the input', () {
+        expect(() => Codec.getVariableIntegerLength(Uint8List(0), 0),
+            throwsFormatException);
       });
     });
     group('encodeVariableInteger', () {
@@ -303,12 +326,12 @@ void main() {
       });
 
       test('Empty input should throw an exception', () {
-        expect(() => Codec.decodeBase58(""), throwsException);
+        expect(() => Codec.decodeBase58(""), throwsFormatException);
       });
 
       test('Invalid Base58 characters should throw an exception', () {
         expect(() => Codec.decodeBase58("O0I!"),
-            throwsException); // 'O', '0', 'I' are invalid in Base58
+            throwsFormatException); // 'O', '0', 'I' are invalid in Base58
       });
     });
 

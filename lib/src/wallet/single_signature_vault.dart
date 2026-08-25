@@ -1,6 +1,12 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a single signature vault.
+/// Seed-bearing single-signature vault for offline signing.
+///
+/// Keep instances inside the trusted signing environment. Export a
+/// [SingleSignatureWallet] or descriptor when an online component needs to
+/// derive addresses and construct transactions without private keys.
+///
+/// {@category Wallets and Keys}
 class SingleSignatureVault extends SingleSignatureWalletBase {
   SingleSignatureVault._(
       KeyStore keyStore, AddressType addressType, String derivationPath)
@@ -71,11 +77,15 @@ class SingleSignatureVault extends SingleSignatureWalletBase {
 
   /// Create a single signature vault from a json string.
   factory SingleSignatureVault.fromJson(String json) {
-    Map<String, dynamic> map = jsonDecode(json);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(json, name: 'SingleSignatureVault JSON');
     return SingleSignatureVault._(
-        KeyStore.fromJson(map['keyStore']),
-        AddressType.getAddressTypeFromName(map['addressTypeName']),
-        map['derivationPath']);
+        KeyStore.fromJson(Codec._readJsonField<String>(map, 'keyStore',
+            name: 'SingleSignatureVault JSON')),
+        AddressType.getAddressTypeFromName(Codec._readJsonField<String>(
+            map, 'addressTypeName', name: 'SingleSignatureVault JSON')),
+        Codec._readJsonField<String>(map, 'derivationPath',
+            name: 'SingleSignatureVault JSON'));
   }
 
   /// Display BSMS for multisig setup.

@@ -1,16 +1,60 @@
 part of '../../coconut_lib.dart';
 
 // ignore_for_file: constant_identifier_names
-enum MiniscriptOperation { pk, v, and_v, after, older }
+/// Miniscript fragments supported by this library.
+///
+/// {@category Scripts and Policies}
+enum MiniscriptOperation {
+  /// Public-key signature check.
+  pk,
 
-enum MiniscriptType { boolean, verify, key, wrapped }
+  /// VERIFY wrapper.
+  v,
 
+  /// Sequential logical conjunction.
+  and_v,
+
+  /// Absolute-locktime constraint.
+  after,
+
+  /// Relative-locktime constraint.
+  older,
+}
+
+/// Expression types used to validate supported Miniscript compositions.
+///
+/// {@category Scripts and Policies}
+enum MiniscriptType {
+  /// Expression leaves a boolean value.
+  boolean,
+
+  /// Expression aborts on failure and leaves no value.
+  verify,
+
+  /// Expression represents a public key.
+  key,
+
+  /// Expression is wrapped by another fragment.
+  wrapped,
+}
+
+/// Immutable node in the supported Miniscript expression subset.
+///
+/// {@category Scripts and Policies}
 class Miniscript {
+  /// Operation represented by this node.
   final MiniscriptOperation op;
+
+  /// Type produced by this node.
   final MiniscriptType type;
+
+  /// Child expressions evaluated by this node.
   final List<Miniscript> children;
 
+  /// Public key for a [MiniscriptOperation.pk] node.
   final String? pubkeyHex;
+
+  /// Locktime or sequence value for time-constrained nodes.
   final int? value;
 
   Miniscript._(
@@ -20,6 +64,7 @@ class Miniscript {
       this.pubkeyHex,
       this.value});
 
+  /// Creates a public-key signature-check fragment.
   factory Miniscript.pk(String pubkeyHex) {
     if (pubkeyHex.isEmpty) {
       throw FormatException('pk requires pubkey');
@@ -32,6 +77,7 @@ class Miniscript {
     );
   }
 
+  /// Creates an absolute-locktime `after()` fragment.
   factory Miniscript.after(int value) {
     if (value <= 0) {
       throw FormatException('after requires a positive integer');
@@ -44,6 +90,7 @@ class Miniscript {
     );
   }
 
+  /// Creates a relative-locktime `older()` fragment.
   factory Miniscript.older(int value) {
     if (value <= 0) {
       throw FormatException('older requires a positive integer');
@@ -56,6 +103,7 @@ class Miniscript {
     );
   }
 
+  /// Wraps [child] in a VERIFY expression.
   factory Miniscript.v(Miniscript child) {
     validate(MiniscriptOperation.v, [child]);
     return Miniscript._(
@@ -65,6 +113,7 @@ class Miniscript {
     );
   }
 
+  /// Creates an `and_v` expression from [left] and [right].
   factory Miniscript.andV(Miniscript left, Miniscript right) {
     validate(MiniscriptOperation.and_v, [left, right]);
     return Miniscript._(
@@ -74,15 +123,18 @@ class Miniscript {
     );
   }
 
+  /// Creates a signature-and-absolute-locktime inheritance expression.
   factory Miniscript.forInheritance(int locktime, String pubkeyHex) {
     return Miniscript.andV(
-        Miniscript.v(Miniscript.pk(pubkeyHex)), Miniscript.older(locktime));
+        Miniscript.v(Miniscript.pk(pubkeyHex)), Miniscript.after(locktime));
   }
 
+  /// Creates a key-only backup expression.
   factory Miniscript.forBackup(String pubkeyHex) {
     return Miniscript.pk(pubkeyHex);
   }
 
+  /// Serializes this expression using descriptor Miniscript syntax.
   String serializeForDescriptor() {
     switch (op) {
       case MiniscriptOperation.pk:
@@ -120,6 +172,7 @@ class Miniscript {
     }
   }
 
+  /// Compiles this expression to serialized Bitcoin Script hexadecimal.
   String serializeForScript() {
     final cmds = _compileToCommands();
     if (cmds.isEmpty) {
@@ -161,7 +214,7 @@ class Miniscript {
         ];
 
       case MiniscriptOperation.after:
-        // 디스크립터(Relative)에서 after(sequence) → CSV 경로 (InheritanceScript.withCheckSequenceVerify와 동일)
+        // Absolute locktime (CLTV).
         final n = value;
         if (n == null) {
           throw StateError('after node missing value');
@@ -169,12 +222,12 @@ class Miniscript {
         final nBytes = Converter.intToLittleEndianBytes(n, 4);
         return <dynamic>[
           nBytes,
-          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
         ];
 
       case MiniscriptOperation.older:
-        // 디스크립터(Absolute)에서 older(locktime) → CLTV 경로 (InheritanceScript.withCheckLockTimeVerify와 동일)
+        // Relative locktime (CSV).
         final n = value;
         if (n == null) {
           throw StateError('older node missing value');
@@ -182,7 +235,7 @@ class Miniscript {
         final nBytes = Converter.intToLittleEndianBytes(n, 4);
         return <dynamic>[
           nBytes,
-          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
+          ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
           ScriptOperationCode.getHex('OP_DROP'),
         ];
 
@@ -193,12 +246,11 @@ class Miniscript {
         final left = children[0];
         final right = children[1];
 
-        // inheritance 패턴: and_v(v:pk, older|after) → timelock + DROP + pubkey + CHECKSIG
+        // inheritance 패턴: and_v(v:pk, after) → timelock + DROP + pubkey + CHECKSIG
         if (left.op == MiniscriptOperation.v &&
             left.children.length == 1 &&
             left.children[0].op == MiniscriptOperation.pk &&
-            (right.op == MiniscriptOperation.older ||
-                right.op == MiniscriptOperation.after)) {
+            right.op == MiniscriptOperation.after) {
           final pkHex = left.children[0].pubkeyHex;
           if (pkHex == null || pkHex.isEmpty) {
             throw StateError('and_v left v:pk missing pubkeyHex');
@@ -213,24 +265,13 @@ class Miniscript {
             throw StateError('and_v timelock node missing value');
           }
           final nBytes = Converter.intToLittleEndianBytes(timelock, 4);
-          if (right.op == MiniscriptOperation.older) {
-            return <dynamic>[
-              nBytes,
-              ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-              ScriptOperationCode.getHex('OP_DROP'),
-              pkBytes,
-              ScriptOperationCode.getHex('OP_CHECKSIG'),
-            ];
-          } else {
-            // after → CSV
-            return <dynamic>[
-              nBytes,
-              ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
-              ScriptOperationCode.getHex('OP_DROP'),
-              pkBytes,
-              ScriptOperationCode.getHex('OP_CHECKSIG'),
-            ];
-          }
+          return <dynamic>[
+            nBytes,
+            ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
+            ScriptOperationCode.getHex('OP_DROP'),
+            pkBytes,
+            ScriptOperationCode.getHex('OP_CHECKSIG'),
+          ];
         }
 
         // 일반적인 and_v: 왼쪽(V) + 오른쪽(B) 스크립트 연결
@@ -241,6 +282,7 @@ class Miniscript {
     }
   }
 
+  /// Validates that [children] can be composed under [op].
   static void validate(MiniscriptOperation op, List<Miniscript> children) {
     switch (op) {
       case MiniscriptOperation.pk:

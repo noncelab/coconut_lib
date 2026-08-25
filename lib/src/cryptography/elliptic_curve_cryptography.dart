@@ -1,6 +1,13 @@
 // ignore_for_file: non_constant_identifier_names, constant_identifier_names
 part of '../../coconut_lib.dart';
 
+/// Low-level secp256k1 point, ECDSA, Schnorr, and MuSig2 operations.
+///
+/// Callers are responsible for choosing the correct transaction digest and key
+/// representation. Wallet and PSBT APIs are safer entry points for ordinary
+/// signing workflows.
+///
+/// {@category Cryptography and Encoding}
 class Ecc {
   static final ZERO32 = Uint8List.fromList(List.generate(32, (index) => 0));
   static final EC_GROUP_ORDER = HEX.decode(
@@ -64,17 +71,20 @@ class Ecc {
     return x.length == 32;
   }
 
-  static bool isOrderScalar(x) {
+  static bool isOrderScalar(Uint8List x) {
     if (!isScalar(x)) return false;
     return _compare(x, EC_GROUP_ORDER as Uint8List) < 0; // < G
   }
 
   static bool isSignature(Uint8List value) {
+    if (value.length != 64) {
+      return false;
+    }
+
     Uint8List r = value.sublist(0, 32);
     Uint8List s = value.sublist(32, 64);
 
-    return value.length == 64 &&
-        _compare(r, EC_GROUP_ORDER as Uint8List) < 0 &&
+    return _compare(r, EC_GROUP_ORDER as Uint8List) < 0 &&
         _compare(s, EC_GROUP_ORDER as Uint8List) < 0;
   }
 
@@ -170,14 +180,14 @@ class Ecc {
   static Uint8List? pointNegate(Uint8List p) {
     if (!isPoint(p)) throw ArgumentError(THROW_BAD_POINT);
 
-    BigInt order = fromBuffer(EC_GROUP_ORDER as Uint8List);
+    BigInt fieldPrime = fromBuffer(EC_P as Uint8List);
 
     ECPoint? P = decodeFrom(p);
     if (P == null || P.isInfinity) return null;
 
     BigInt? x = P.x!.toBigInteger();
     BigInt? y = P.y!.toBigInteger();
-    BigInt negY = (order - y!) % order;
+    BigInt negY = (fieldPrime - y!) % fieldPrime;
 
     ECPoint negP = secp256k1.curve.createPoint(x!, negY);
 
@@ -247,10 +257,12 @@ class Ecc {
 
     ECPoint? P = G * d0;
     if (P == null || P.isInfinity) {
-      throw Exception("Failed to derive public key.");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Failed to derive a public key for signing.');
     }
     if (P.y!.toBigInteger()!.isOdd) {
-      throw Exception("Public key is on the negative y-axis.");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Derived public key has invalid parity for signing.');
     }
 
     Uint8List P_x = getEncoded(P, false).sublist(1, 33);
@@ -269,13 +281,14 @@ class Ecc {
         "BIP0340/nonce", Uint8List.fromList([...t, ...P_x, ...message]));
     BigInt k0 = fromBuffer(k0Bytes) % n;
     if (k0 == BigInt.zero) {
-      throw Exception(
-          "Failure. This happens only with negligible probability.");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Nonce generation produced zero.');
     }
 
     ECPoint? R = G * k0;
     if (R == null || R.isInfinity) {
-      throw Exception("Failed to generate R point.");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Failed to generate the signature nonce point.');
     }
     if (R.y!.toBigInteger()!.isOdd) {
       k0 = n - k0;
@@ -297,13 +310,15 @@ class Ecc {
       paddedS.setAll(32 - sBytes.length, sBytes);
       sBytes = paddedS;
     } else if (sBytes.length > 32) {
-      throw Exception("s value is too large!");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Generated signature scalar is too large.');
     }
 
     Uint8List signature = Uint8List.fromList([...R_x, ...sBytes]);
 
     if (!verifySchnorr(message, getEncoded(P, true), signature)) {
-      throw Exception("The created signature does not pass verification.");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Generated Schnorr signature failed verification.');
     }
 
     return signature;
@@ -447,7 +462,8 @@ class Ecc {
     Uint8List publicKey = pointFromScalar(privateKey, true)!;
 
     if (publicKey[0] != 0x02 && publicKey[0] != 0x03) {
-      throw Exception("Invalid compressed public key from private key");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Private key produced an invalid compressed public key.');
     }
 
     Uint8List Q = getEncoded(sessionContext.aggregateQ, true);
@@ -517,7 +533,8 @@ class Ecc {
       paddedS.setAll(32 - sBytes.length, sBytes);
       sBytes = paddedS;
     } else if (sBytes.length > 32) {
-      throw Exception("s value is too large!");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Generated signature scalar is too large.');
     }
 
     Uint8List publicNonce = Uint8List.fromList(
@@ -528,7 +545,8 @@ class Ecc {
 
     if (!verifyMuSig2PartialSignature(
         fullSignature, publicNonce, publicKey, sessionContext)) {
-      throw Exception("Invalid signature generated");
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Generated MuSig2 partial signature failed verification.');
     }
 
     if (isFullSignature) {
@@ -656,7 +674,8 @@ class Ecc {
         Ecc.getEncoded(sessionContext.aggregateQ, true).sublist(1);
 
     if (!Ecc.verifySchnorr(sessionContext.message, publicKey, signature)) {
-      throw Exception('Invalid aggregated signature generated.');
+      throw SigningException(SigningErrorCode.signatureGenerationFailed,
+          'Generated MuSig2 aggregate signature failed verification.');
     }
     return signature;
   }

@@ -1,0 +1,41 @@
+@startuml exception_model
+!theme plain
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+
+interface Exception
+class "CoconutException<C extends Enum>" as CoconutException {
+  +code: C
+  +message: String
+  +cause: Object?
+  +context: Map<String, Object?>
+}
+class TransactionException
+class PsbtException {
+  +inputIndex: int?
+}
+class WalletException
+class SigningException
+enum TransactionErrorCode
+enum PsbtErrorCode
+enum WalletErrorCode
+enum SigningErrorCode
+
+Exception <|.. CoconutException
+CoconutException <|-- TransactionException
+CoconutException <|-- PsbtException
+CoconutException <|-- WalletException
+CoconutException <|-- SigningException
+TransactionException --> TransactionErrorCode : code
+PsbtException --> PsbtErrorCode : code
+WalletException --> WalletErrorCode : code
+SigningException --> SigningErrorCode : code
+
+note bottom
+  Parsing: FormatException
+  Invalid arguments: ArgumentError / RangeError
+  Invalid state: StateError
+  Recoverable domain failures: CoconutException subtype
+end note
+@enduml

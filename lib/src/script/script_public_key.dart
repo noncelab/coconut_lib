@@ -1,8 +1,12 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a public key script.
+///
+/// {@category Scripts and Policies}
 class ScriptPublicKey extends Script {
-  ScriptPublicKey(super.cmds);
+  ScriptPublicKey(List<dynamic> cmds) : super(cmds) {
+    _validateWitnessV0Commands(cmds);
+  }
 
   /// Parse the script from the given script hex.
   factory ScriptPublicKey.parse(String script) {
@@ -35,23 +39,55 @@ class ScriptPublicKey extends Script {
 
   /// Generate P2WPKH script public key from given address.
   factory ScriptPublicKey.p2wpkh(String address) {
-    var codec = Bech32Codec().decode(address);
-    codec.data.removeAt(0);
-    var data8Bits = Converter.convertBits(codec.data, 5, 8, pad: false);
+    final Uint8List program = _decodeWitnessV0Program(address);
+    if (program.length != 20) {
+      throw FormatException('P2WPKH witness program must be 20 bytes.');
+    }
     return ScriptPublicKey([
       0x00,
-      Uint8List.fromList(data8Bits),
+      program,
     ]);
   }
 
   factory ScriptPublicKey.p2wsh(String address) {
-    var codec = Bech32Codec().decode(address);
-    codec.data.removeAt(0);
-    var data8Bits = Converter.convertBits(codec.data, 5, 8, pad: false);
+    final Uint8List program = _decodeWitnessV0Program(address);
+    if (program.length != 32) {
+      throw FormatException('P2WSH witness program must be 32 bytes.');
+    }
     return ScriptPublicKey([
       0x00,
-      Uint8List.fromList(data8Bits),
+      program,
     ]);
+  }
+
+  factory ScriptPublicKey._fromSegwitV0Address(String address) {
+    return ScriptPublicKey([0x00, _decodeWitnessV0Program(address)]);
+  }
+
+  static Uint8List _decodeWitnessV0Program(String address) {
+    final Bech32 codec = Bech32Codec().decode(address);
+    if (codec.data.isEmpty || codec.data.first != 0) {
+      throw FormatException('Address is not witness version 0.');
+    }
+    final Uint8List program = Uint8List.fromList(
+        Converter.convertBits(codec.data.sublist(1), 5, 8, pad: false));
+    _validateWitnessV0Program(program);
+    return program;
+  }
+
+  static void _validateWitnessV0Commands(List<dynamic> commands) {
+    if (commands.length == 2 &&
+        commands.first == 0x00 &&
+        commands[1] is List<int>) {
+      _validateWitnessV0Program(Uint8List.fromList(commands[1] as List<int>));
+    }
+  }
+
+  static void _validateWitnessV0Program(Uint8List program) {
+    if (program.length != 20 && program.length != 32) {
+      throw FormatException(
+          'Witness version 0 program must be 20 or 32 bytes.');
+    }
   }
 
   factory ScriptPublicKey.p2tr(String address) {
@@ -59,7 +95,7 @@ class ScriptPublicKey extends Script {
     codec.data.removeAt(0);
     var data8Bits = Converter.convertBits(codec.data, 5, 8, pad: false);
     if (data8Bits.length != 32) {
-      throw Exception(
+      throw FormatException(
           "Invalid Taproot address: data8Bits length is ${data8Bits.length}, expected 32.");
     }
     return ScriptPublicKey([

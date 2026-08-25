@@ -1,9 +1,10 @@
 @Tags(['unit'])
+library;
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('Transaction', () {
@@ -19,25 +20,31 @@ void main() {
       legacyTransaction = Transaction.parse(legacyTransactionText);
       segwitTransaction = Transaction.parse(segwitTransactionText);
     });
-    group('get version', () {
+    group('version', () {
       test('Get version of transaction', () {
         expect(legacyTransaction.version, '01000000');
         expect(segwitTransaction.version, '02000000');
       });
     });
-    group('get inputs', () {
+    group('inputs', () {
       test('Get transaction input list', () {
         expect(legacyTransaction.inputs.length, 1);
         expect(segwitTransaction.inputs.length, 1);
       });
     });
-    group('get outputs', () {
+    group('outputs', () {
       test('Get transaction output list', () {
         expect(legacyTransaction.outputs.length, 1);
         expect(segwitTransaction.outputs.length, 2);
       });
     });
-    group('get transactionHash', () {
+    group('lockTime', () {
+      test('returns the little-endian lock time', () {
+        expect(legacyTransaction.lockTime, '00000000');
+        expect(segwitTransaction.lockTime, '00000000');
+      });
+    });
+    group('transactionHash', () {
       test('Get transaction hash', () {
         expect(legacyTransaction.transactionHash,
             '5e2a36182c1566495489bb86ce85ef386095a709bc53c7363ec18c99467aa63c');
@@ -45,16 +52,16 @@ void main() {
             'efb4cadbc8fa6ab7970b461bbc99e506403397bddc3280cbf847c1684b61248b');
       });
     });
-    group('get length', () {
+    group('length', () {
       test('Get length of transaction', () {
         expect(legacyTransaction.length, 188);
         expect(segwitTransaction.length, 115);
       });
     });
-    group('get utxoList', () {
+    group('utxoList', () {
       test('Get utxo list if exist', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        List<Utxo> utxoList = MockFactory.createUtxoList(count: 2);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        List<Utxo> utxoList = UtxoFixture.list(count: 2);
         Transaction tx = Transaction.forBatchPayment(
             utxoList,
             {'bcrt1qk4z5ysfc2k72pz2ws4dhskxdq772s7uq6cdqkv': 100000},
@@ -64,8 +71,18 @@ void main() {
         expect(tx.utxoList.length, 2);
       });
     });
+    group('totalInputAmount', () {
+      test('sums the amounts of transaction UTXOs', () {
+        final vault = WalletFixture.p2wpkhVault();
+        final utxos = UtxoFixture.list(count: 2);
+        final tx =
+            Transaction.forSweep(utxos, UtxoFixture.receiveAddress, 1, vault);
+        expect(tx.totalInputAmount,
+            utxos.fold<int>(0, (total, utxo) => total + utxo.amount));
+      });
+    });
 
-    group('Transaction.withDefault', () {
+    group('Transaction.withInputsAndOutputs', () {
       test('Generate default transaction', () {
         TransactionInput input = TransactionInput.parse(
             'a463a7a78daffa1bdb1248121adb14b94f70a1fabffc81637f4049c3d65cc69f000000000000000080');
@@ -79,12 +96,46 @@ void main() {
       });
     });
     group('Transaction.forSinglePayment', () {
-      List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+      List<Utxo> utxos = UtxoFixture.list(count: 5);
       String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
+      test('Reject invalid payment amounts and fee rates', () {
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final String changeAddressPath = '${vault.derivationPath}/1/0';
+
+        expect(
+            () => Transaction.forSinglePayment(utxos.sublist(0, 1),
+                receiveAddress, changeAddressPath, -1, 1, vault),
+            throwsRangeError);
+        for (final double feeRate in <double>[
+          -1,
+          double.nan,
+          double.infinity
+        ]) {
+          expect(
+              () => Transaction.forSinglePayment(utxos.sublist(0, 1),
+                  receiveAddress, changeAddressPath, 1000, feeRate, vault),
+              throwsArgumentError);
+        }
+      });
+
+      test('reports insufficient funds with a stable domain code', () {
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        expect(
+            () => Transaction.forSinglePayment(
+                utxos.sublist(0, 1),
+                receiveAddress,
+                '${vault.derivationPath}/1/0',
+                utxos.first.amount,
+                1,
+                vault),
+            throwsA(isA<TransactionException>().having((error) => error.code,
+                'code', TransactionErrorCode.insufficientFunds)));
+      });
+
       test(
           'Generate transaction from utxo list when change amount is under dust',
           () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         String changeAddressPath = '${vault.derivationPath}/1/0';
 
         Transaction tx = Transaction.forSinglePayment(utxos.sublist(0, 1),
@@ -103,16 +154,16 @@ void main() {
         expect(tx.outputs.length, 1);
       });
       test('Generate transactin for single payment (case 1)', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         String changeAddressPath = '${vault.derivationPath}/1/0';
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+        List<Utxo> utxos = UtxoFixture.list(count: 5);
         Transaction tx = Transaction.forSinglePayment(
             utxos, receiveAddress, changeAddressPath, 4200, 1, vault);
         expect(tx.outputs.length, 2);
       });
       test('Generate transactin for single payment (case 2)', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        List<Utxo> utxos = UtxoFixture.list(count: 5);
         String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
         String changeAddressPath = '${vault.derivationPath}/1/0';
         Transaction tx = Transaction.forSinglePayment(
@@ -126,8 +177,8 @@ void main() {
 
     group('Transaction.forSweep', () {
       test('Generate transaction for sweep', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        List<Utxo> utxos = UtxoFixture.list(count: 5);
         String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
         Transaction tx = Transaction.forSweep(utxos, receiveAddress, 1, vault);
         int utxoTotalAmount = 0;
@@ -141,8 +192,8 @@ void main() {
 
     group('Transaction.forBatchPayment', () {
       test('Generate transaction for batch', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        List<Utxo> utxos = UtxoFixture.list(count: 5);
         Map<String, int> paymentMap = {
           'bcrt1qzf8qs6qgyq9kgu225jatvvx0nvvm3u3ka5gf7w': 1000,
           'bcrt1qwr2aleje6vh48xzh9djeap9qcnc7atf57l302c': 2000
@@ -157,8 +208,8 @@ void main() {
     });
     group('Transaction.forBatchSweep', () {
       test('Generate transaction for batch sweep', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        List<Utxo> utxos = UtxoFixture.list(count: 5);
         Map<String, int> paymentMap = {
           'bcrt1qzf8qs6qgyq9kgu225jatvvx0nvvm3u3ka5gf7w': 1000,
           'bcrt1qwr2aleje6vh48xzh9djeap9qcnc7atf57l302c': 2000
@@ -174,6 +225,15 @@ void main() {
       });
     });
     group('Transaction.parse', () {
+      test('Reject malformed serialized transactions with FormatException', () {
+        expect(() => Transaction.parse('0'), throwsFormatException);
+        expect(() => Transaction.parse('00000000'), throwsFormatException);
+        expect(
+            () => Transaction.parse(
+                segwitTransaction.serialize().substring(0, 20)),
+            throwsFormatException);
+      });
+
       test('Generate transaction from parsing', () {
         String segwitTransactionText =
             '0100000000010126a348fa555f96162bc9e178d54dd8ebecf7f08ef20cc8415f3b4bd6756ada490300000000ffffffff035b5a2300000000001600144e778a823f6b0cd146fb9e63e33a80786c61ebc7ee5f03000000000017a914daffddf6f584eacfa1adbd88a98fdfc1e6f3510b87b4600f0000000000220020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d04004730440220311e2611916105cdc8b3be34ab2be50c97bebcaad598accc1c20b8244bdf3d77022072777a3754a231b57e404b94dbf7ee8d9cf20b29f35c9b310468a84aa792c1bd014730440220540695e2faab7ea0e7a54e744b2bf14234791eff4618ff74ebed481d85d0d5be02202f08aaef8b6e13dfba904d5af60811630b7dde051bec534af8008c1c6d1ff732016952210375e00eb72e29da82b89367947f29ef34afb75e8654f6ea368e0acdfd92976b7c2103a1b26313f430c4b15bb1fdce663207659d8cac749a0e53d70eff01874496feff2103c96d495bfdd5ba4145e3e046fee45e84a8a48ad05bd8dbb395c011a32cf9f88053ae00000000';
@@ -193,6 +253,18 @@ void main() {
         String transactionText =
             '02000000000105f350552c40f031b89f88b71f5b358f6449a489296775f96d9a0110f9562d3a390000000000ffffffff64707f50c099875d92cf4a8aec9a6883501bd692251226085bccf9cd892289760000000000ffffffff5f0cd93abafa0cbfcc78053c7a2146349db00ebb9b6584cc965741a9ff2c075c0000000000ffffffff94f2ddc4e19a413dfce0220777c044bc35beb8e3e50418560aab2285cdc1454b0000000000fffffffffc520bd6a2585b695369f809dd856e800f953422f3f02ab0800eda352a2f33bc0000000000ffffffff01a29f0700000000001600143e688ba507407356fd2cf0018b2b0a962befcfff000000000000000000';
         expect(Transaction.parse(transactionText), isA<Transaction>());
+      });
+    });
+    group('setOutputDerivationPath', () {
+      test('sets the path only on the matching output', () {
+        final target = segwitTransaction.outputs.first;
+        final other = segwitTransaction.outputs.last;
+        final path = "m/84'/1'/0'/1/7";
+
+        segwitTransaction.setOutputDerivationPath(target.getAddress(), path);
+
+        expect(target.derivationPath, path);
+        expect(other.derivationPath, isNot(path));
       });
     });
     group('serialize', () {
@@ -250,7 +322,7 @@ void main() {
       });
     });
 
-    group('validateSignature', () {
+    group('validateEcdsa', () {
       test('Validate signature of transaction', () {
         String transactionText =
             '020000000001016520eede29c5e034036a461980149268e263fed8a5b8e527ead8862123e3906b01000000000100000001f82a00000000000016001473f7aa4db6847eab27c59214f6ed7254627e7de002483045022100f369a3e1bdfb62a3ff875fa60bc9834326dead789a24ffcb2faf5f48628240e8022014cc216309a8ded296597cfd2680528729c0a55e43826d8af7d160d45be3df860121033b0492bf5c0a0222a55cdea04cdc022b1751112381ae6e9970319b3d6b161db900000000';
@@ -295,8 +367,8 @@ void main() {
     });
     group('estimateVirtualByte', () {
       test('Get estimated virtyal byte', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        List<Utxo> utxos = UtxoFixture.list(count: 5);
         String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
         String changeAddressPath = '${vault.derivationPath}/1/0';
         Transaction tx = Transaction.forBatchPayment(
@@ -304,8 +376,8 @@ void main() {
         expect(tx.estimateVirtualByte(AddressType.p2wpkh), 412.75);
       });
       test('Get estimated virtual byte in p2tr key path spending', () {
-        TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
-        List<Utxo> utxos = MockFactory.createUtxoList(count: 1);
+        TaprootVault vault = WalletFixture.p2trKeyPathVault();
+        List<Utxo> utxos = UtxoFixture.list(count: 1);
         Transaction tx = Transaction.forSweep(
             utxos,
             'bc1p5fdr2ht0y4rjckn869skpml7pulm8wx6lu4c5eezwngx3c3uupzssx4myf',
@@ -321,9 +393,9 @@ void main() {
         NetworkType.setNetworkType(NetworkType.regtest);
 
         SingleSignatureVault vault1 =
-            MockFactory.createP2wpkhVault(passphrase: 'A');
+            WalletFixture.p2wpkhVault(passphrase: 'A');
         SingleSignatureVault vault2 =
-            MockFactory.createP2wpkhVault(passphrase: 'B');
+            WalletFixture.p2wpkhVault(passphrase: 'B');
 
         keyStore1 = KeyStore.fromSeed(vault1.keyStore.seed, AddressType.p2tr);
         keyStore2 = KeyStore.fromSeed(vault2.keyStore.seed, AddressType.p2tr);
@@ -338,14 +410,14 @@ void main() {
             21000,
             "m/86'/1'/0'/0/$addressIndex");
         Transaction tx = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 1000, 3, vault);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 1000, 3, vault);
         expect(tx.estimateVirtualByte(AddressType.p2tr), 142.25);
       });
 
       test('Get estimated virtual byte in p2tr script path spending', () {
-        TaprootVault parentVault = MockFactory.createP2trVaultWithPolicies();
+        TaprootVault parentVault = WalletFixture.p2trPolicyVault();
         TaprootVault childVault =
-            MockFactory.createBeneficiaryVault(passphrase: 'C');
+            WalletFixture.beneficiaryVault(passphrase: 'C');
         TaprootVault beneficiaryVault =
             TaprootVault.fromDescriptor(parentVault.descriptor);
         beneficiaryVault
@@ -363,7 +435,7 @@ void main() {
 
         Transaction tx = Transaction.forSinglePayment(
             [utxo],
-            MockFactory.reveiveAddress,
+            UtxoFixture.receiveAddress,
             "m/86'/1'/0'/1/0",
             20000,
             1,
@@ -376,9 +448,9 @@ void main() {
       });
 
       test('Create p2tr script path transaction with policy fee', () {
-        TaprootVault parentVault = MockFactory.createP2trVaultWithPolicies();
+        TaprootVault parentVault = WalletFixture.p2trPolicyVault();
         TaprootVault childVault =
-            MockFactory.createBeneficiaryVault(passphrase: 'C');
+            WalletFixture.beneficiaryVault(passphrase: 'C');
         TaprootVault beneficiaryVault =
             TaprootVault.fromDescriptor(parentVault.descriptor);
         beneficiaryVault
@@ -392,7 +464,7 @@ void main() {
 
         Transaction tx = Transaction.forSinglePayment(
             [utxo],
-            MockFactory.reveiveAddress,
+            UtxoFixture.receiveAddress,
             "m/86'/1'/0'/1/0",
             20000,
             1,
@@ -419,8 +491,8 @@ void main() {
       });
     });
     group('addInputWithUtxo', () {
-      SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-      List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+      SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+      List<Utxo> utxos = UtxoFixture.list(count: 5);
       String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
       String changeAddressPath = '${vault.derivationPath}/1/0';
       double feeRate = 2.0;
@@ -450,8 +522,8 @@ void main() {
       });
     });
     group('removeInputWithUtxo', () {
-      SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-      List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+      SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+      List<Utxo> utxos = UtxoFixture.list(count: 5);
       String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
       String changeAddressPath = '${vault.derivationPath}/1/0';
       double feeRate = 2.0;
@@ -479,10 +551,23 @@ void main() {
       });
     });
     group('updateFeeRate', () {
-      SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-      List<Utxo> utxos = MockFactory.createUtxoList(count: 5);
+      SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+      List<Utxo> utxos = UtxoFixture.list(count: 5);
       String receiveAddress = 'bcrt1q8e5ghfg8gpe4dlfv7qqck2c2jc47lnllul3puh';
       String changeAddressPath = '${vault.derivationPath}/1/0';
+      test('Reject negative and non-finite fee rates', () {
+        final Transaction tx = Transaction.forBatchPayment(utxos.sublist(0, 4),
+            {receiveAddress: 24000}, changeAddressPath, 1, vault);
+
+        for (final double feeRate in <double>[
+          -1,
+          double.nan,
+          double.infinity
+        ]) {
+          expect(() => tx.updateFeeRate(feeRate, vault), throwsArgumentError);
+        }
+      });
+
       test('Lower fee rate', () {
         double beforeFeeRate = 4;
         double afterFeeRate = 2;
@@ -514,6 +599,7 @@ void main() {
 
         Transaction tx = Transaction.forBatchPayment(utxos.sublist(0, 4),
             {receiveAddress: 398200}, changeAddressPath, beforeFeeRate, vault);
+        int sendingAmount = tx.outputs[0].amount;
 
         tx.updateFeeRate(afterFeeRate, vault);
         int inputAmount = 0;
@@ -525,6 +611,7 @@ void main() {
           inputAmount += u.amount;
         }
         expect(tx.outputs.length, 1);
+        expect(tx.outputs[0].amount, sendingAmount);
         expect(
             inputAmount >=
                 outputAmount + tx.estimateFee(afterFeeRate, vault.addressType),

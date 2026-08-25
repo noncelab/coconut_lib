@@ -1,10 +1,24 @@
 part of '../../coconut_lib.dart';
 
+/// Taproot script-path policy requiring a beneficiary signature after locktime.
+///
+/// {@category Scripts and Policies}
 class InheritancePolicy extends Policy {
-  KeyStore beneficiaryKeyStore;
-  int locktime;
+  static const int maxLocktime = 0x7fffffff;
 
-  InheritancePolicy(this.beneficiaryKeyStore, this.locktime) : super();
+  KeyStore beneficiaryKeyStore;
+  final int locktime;
+
+  InheritancePolicy(this.beneficiaryKeyStore, int locktime)
+      : locktime = _validateLocktime(locktime),
+        super();
+
+  static int _validateLocktime(int locktime) {
+    if (locktime < 0 || locktime > maxLocktime) {
+      throw RangeError.range(locktime, 0, maxLocktime, 'locktime');
+    }
+    return locktime;
+  }
 
   factory InheritancePolicy.fromDescriptorAndLocktime(
       String descriptor, int locktime) {
@@ -13,7 +27,7 @@ class InheritancePolicy extends Policy {
       throw Exception('Only Taproot address type is supported.');
     } else if (beneficiaryDescriptor._keyOriginExpressionList.length > 1) {
       throw Exception('Only single signature address type is supported.');
-    } else if (beneficiaryDescriptor.miniscriptList.length > 0) {
+    } else if (beneficiaryDescriptor.miniscriptList.isNotEmpty) {
       throw Exception('Taproot script is not supported.');
     } else {
       TaprootWallet beneficiaryWallet =
@@ -43,9 +57,12 @@ class InheritancePolicy extends Policy {
 
   @override
   String toMiniscript() {
+    final KeyStore publicBeneficiaryKeyStore = KeyStore.fromExtendedPublicKey(
+        beneficiaryKeyStore.extendedPublicKey.serialize(),
+        beneficiaryKeyStore.masterFingerprint);
     TaprootWallet beneficiaryWallet =
-        TaprootWallet.fromKeyStoreList([beneficiaryKeyStore], []);
-    return 'and_v(v:pk(${beneficiaryWallet.getKeyOriginExpression()}),older($locktime))';
+        TaprootWallet.fromKeyStoreList([publicBeneficiaryKeyStore], []);
+    return 'and_v(v:pk(${beneficiaryWallet.getKeyOriginExpression()}),after($locktime))';
   }
 
   @override
@@ -62,23 +79,24 @@ class InheritancePolicy extends Policy {
   }
 
   factory InheritancePolicy.fromJson(String jsonStr) {
-    final Map<String, dynamic> map = jsonDecode(jsonStr);
-
-    final int locktime = map['locktime'];
-
-    final dynamic ks = map['beneficiaryKeyStore'];
-    if (ks == null) {
-      throw Exception(
-          'Invalid InheritancePolicy json: missing beneficiaryKeyStore');
-    }
-    final KeyStore beneficiaryKeyStore = KeyStore.fromJson(ks as String);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(jsonStr, name: 'InheritancePolicy JSON');
+    final int locktime = Codec._readJsonField<int>(map, 'locktime',
+        name: 'InheritancePolicy JSON');
+    final String keyStoreJson = Codec._readJsonField<String>(
+        map, 'beneficiaryKeyStore',
+        name: 'InheritancePolicy JSON');
+    final KeyStore beneficiaryKeyStore = KeyStore.fromJson(keyStoreJson);
 
     return InheritancePolicy(beneficiaryKeyStore, locktime);
   }
 
   static Policy fromMiniscript(String miniscript) {
-    RegExpMatch match =
-        RegExp(r'and_v\(v:pk\((.+)\),older\((\d+)\)\)').firstMatch(miniscript)!;
+    final RegExpMatch? match = RegExp(r'^and_v\(v:pk\((.+)\),after\((\d+)\)\)$')
+        .firstMatch(miniscript);
+    if (match == null) {
+      throw FormatException('Unsupported inheritance miniscript.');
+    }
     String pubkeyHex = match.group(1)!;
     int locktime = int.parse(match.group(2)!);
     TaprootWallet beneficiaryWallet =

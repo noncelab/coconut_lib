@@ -1,4 +1,6 @@
 @Tags(['unit'])
+library;
+
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
@@ -41,6 +43,21 @@ void main() {
         expect(descriptor, isA<Descriptor>());
         expect(descriptor.serialize(), desc);
       });
+
+      test('Reject invalid threshold and duplicate account xpub', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+            'xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz',
+            'e50bd392');
+
+        expect(
+            () => Descriptor.forMultisignature(
+                AddressType.p2wsh, [keyStore], "48h/0h/0h/2h", 0),
+            throwsArgumentError);
+        expect(
+            () => Descriptor.forMultisignature(
+                AddressType.p2wsh, [keyStore, keyStore], "48h/0h/0h/2h", 1),
+            throwsArgumentError);
+      });
     });
     group('Descriptor.parse(String descriptor)', () {
       test('Parse p2wpkh descriptor', () {
@@ -82,6 +99,14 @@ void main() {
         expect(descriptor.serialize(), desc);
         expect(descriptor, isA<Descriptor>());
         expect(descriptor.serialize(), desc);
+      });
+      test('Reject duplicate account xpub', () {
+        const expression =
+            '[e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*';
+        const descriptor = 'wsh(sortedmulti(1,$expression,$expression))';
+
+        expect(() => Descriptor.parse(descriptor, ignoreChecksum: true),
+            throwsArgumentError);
       });
       test('Parse p2wsh descriptor (unsorted multisig)', () {
         String desc =

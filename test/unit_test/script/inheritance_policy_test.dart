@@ -1,10 +1,12 @@
 @Tags(['unit'])
+library;
+
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('InheritancePolicy', () {
@@ -12,7 +14,28 @@ void main() {
 
     setUp(() {
       NetworkType.setNetworkType(NetworkType.regtest);
-      beneficiaryVault = MockFactory.createBeneficiaryVault(passphrase: 'B');
+      beneficiaryVault = WalletFixture.beneficiaryVault(passphrase: 'B');
+    });
+
+    group('constructor', () {
+      test('accepts ScriptNum locktime boundaries', () {
+        final KeyStore keyStore = beneficiaryVault.keyStoreList[0];
+
+        expect(InheritancePolicy(keyStore, 0).locktime, 0);
+        expect(
+            InheritancePolicy(keyStore, InheritancePolicy.maxLocktime).locktime,
+            InheritancePolicy.maxLocktime);
+      });
+
+      test('rejects locktime outside the supported ScriptNum range', () {
+        final KeyStore keyStore = beneficiaryVault.keyStoreList[0];
+
+        expect(() => InheritancePolicy(keyStore, -1), throwsRangeError);
+        expect(
+            () =>
+                InheritancePolicy(keyStore, InheritancePolicy.maxLocktime + 1),
+            throwsRangeError);
+      });
     });
 
     group('fromDescriptorAndLocktime', () {
@@ -25,7 +48,7 @@ void main() {
       });
 
       test('throws when descriptor is not taproot', () {
-        final SingleSignatureVault p2wpkh = MockFactory.createP2wpkhVault();
+        final SingleSignatureVault p2wpkh = WalletFixture.p2wpkhVault();
         expect(
             () => InheritancePolicy.fromDescriptorAndLocktime(
                 p2wpkh.descriptor, 1),
@@ -33,8 +56,7 @@ void main() {
       });
 
       test('throws when descriptor embeds tap scripts', () {
-        final TaprootVault vaultWithScripts =
-            MockFactory.createP2trVaultWithPolicies();
+        final TaprootVault vaultWithScripts = WalletFixture.p2trPolicyVault();
         expect(
             () => InheritancePolicy.fromDescriptorAndLocktime(
                 vaultWithScripts.descriptor, 1),
@@ -51,6 +73,25 @@ void main() {
             InheritancePolicy.fromMiniscript(original.toMiniscript());
         expect(parsed, isA<InheritancePolicy>());
         expect((parsed as InheritancePolicy).locktime, original.locktime);
+      });
+
+      test('rejects relative older expression', () {
+        final InheritancePolicy original =
+            InheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 987654321);
+        final String canonical = original.toMiniscript();
+        final String legacy = canonical.replaceFirst('after(', 'older(');
+        expect(() => InheritancePolicy.fromMiniscript(legacy),
+            throwsFormatException);
+      });
+    });
+
+    group('toMiniscript', () {
+      test('uses the canonical after expression', () {
+        final policy = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 987654321);
+        expect(policy.toMiniscript(), contains('after(987654321)'));
+        expect(policy.toMiniscript(), isNot(contains('older(')));
       });
     });
 
@@ -69,8 +110,16 @@ void main() {
       });
     });
 
-    group('toJson / fromJson', () {
-      test('roundtrips beneficiary key store and locktime', () {
+    group('toJson', () {
+      test('serializes policy', () {
+        final policy = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 555666777);
+        expect(policy.toJson(), isNotEmpty);
+      });
+    });
+
+    group('InheritancePolicy.fromJson', () {
+      test('restores beneficiary key store and locktime', () {
         final InheritancePolicy original =
             InheritancePolicy.fromDescriptorAndLocktime(
                 beneficiaryVault.descriptor, 555666777);

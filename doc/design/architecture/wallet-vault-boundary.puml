@@ -1,0 +1,45 @@
+@startuml wallet_vault_boundary
+!theme plain
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+left to right direction
+
+rectangle "Watch-only boundary" {
+  component Wallet
+  component "Public-only KeyStore" as PublicKeys
+  component "Transaction builder" as Builder
+}
+
+rectangle "Signing boundary" {
+  component Vault
+  component "Seed-bearing KeyStore" as PrivateKeys
+  component "Policy validator" as Validator
+  component Signer
+}
+
+artifact "Unsigned PSBT" as Unsigned
+artifact "Signed PSBT" as Signed
+artifact "Final transaction" as FinalTx
+
+Wallet *-- PublicKeys
+Wallet --> Builder
+Builder --> Unsigned : create
+Unsigned --> Vault : air-gap transfer
+Vault *-- PrivateKeys
+Vault --> Validator
+Validator --> Signer : validated input
+Signer --> Signed
+Signed --> Wallet : air-gap transfer
+Wallet --> FinalTx : verify and finalize
+
+note bottom of PublicKeys
+  No seed or private HD node.
+  Wallet construction rejects secret-bearing KeyStore objects.
+end note
+
+note bottom of PrivateKeys
+  Seed/private key material stays inside the vault boundary.
+  MuSig2 secret nonces are local and single-use.
+end note
+@enduml

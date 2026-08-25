@@ -1,6 +1,17 @@
 @Tags(['unit'])
+library;
+
+import 'dart:typed_data';
+
 import 'package:coconut_lib/coconut_lib.dart';
+import 'package:bech32/bech32.dart';
 import 'package:test/test.dart';
+
+String _witnessV0Address(int programLength, {String hrp = 'tb'}) {
+  final program = Uint8List(programLength);
+  final data = Converter.convertBits(program, 8, 5, pad: true);
+  return Bech32Codec().encode(Bech32(hrp, [0, ...data]));
+}
 
 void main() {
   group('ScriptPublicKey', () {
@@ -12,6 +23,12 @@ void main() {
         expect(script, isA<ScriptPublicKey>());
         expect(script.length, 35);
         expect(script.commands.length, 2);
+      });
+
+      test('Reject witness-v0 programs other than 20 or 32 bytes', () {
+        final invalidProgram = List.filled(21, '00').join();
+        expect(() => ScriptPublicKey.parse('170015$invalidProgram'),
+            throwsFormatException);
       });
     });
     group('ScriptPublicKey.p2pkh', () {
@@ -35,6 +52,13 @@ void main() {
         expect(
             script.getAddress(), 'tb1qkgm3dcvrhgy5n32adjkzrglfg9mwa5gjmwt5ex');
       });
+
+      test('Reject non-20-byte witness program', () {
+        expect(() => ScriptPublicKey.p2wpkh(_witnessV0Address(32)),
+            throwsFormatException);
+        expect(() => ScriptPublicKey.p2wpkh(_witnessV0Address(21)),
+            throwsFormatException);
+      });
     });
     group('ScriptPublicKey.p2wsh', () {
       test('Generate p2wsh script public key', () {
@@ -42,6 +66,13 @@ void main() {
             'tb1qd22redun2rm8mt4zxjazks5mr8dxxdjnk57hhgf2fw2ghmarjahqm9g672');
         expect(script.getAddress(),
             'tb1qd22redun2rm8mt4zxjazks5mr8dxxdjnk57hhgf2fw2ghmarjahqm9g672');
+      });
+
+      test('Reject non-32-byte witness program', () {
+        expect(() => ScriptPublicKey.p2wsh(_witnessV0Address(20)),
+            throwsFormatException);
+        expect(() => ScriptPublicKey.p2wsh(_witnessV0Address(31)),
+            throwsFormatException);
       });
     });
     group('ScriptPublicKey.p2tr', () {
@@ -86,36 +117,55 @@ void main() {
       });
     });
 
-    group('type predicates', () {
-      test('isP2wpkh / isP2tr / isP2wsh', () {
+    group('isP2wpkh', () {
+      test('identifies only P2WPKH scripts', () {
         final ScriptPublicKey p2wpkh = ScriptPublicKey.parse(
             '160014cb325c29ac1d9f9c56ab77c7f659f6a304a7bd02');
         final ScriptPublicKey p2wsh = ScriptPublicKey.parse(
             '2200200d03b386199fc909ca35652f582a526c6b1c45a588d0843759915eb6a41528b7');
+        expect(p2wpkh.isP2wpkh(), true);
+        expect(p2wsh.isP2wpkh(), false);
+      });
+    });
+
+    group('isP2wsh', () {
+      test('identifies only P2WSH scripts', () {
+        final ScriptPublicKey p2wsh = ScriptPublicKey.parse(
+            '2200200d03b386199fc909ca35652f582a526c6b1c45a588d0843759915eb6a41528b7');
         final ScriptPublicKey p2tr = ScriptPublicKey.parse(
             '22512028d00add401c7cacf799aa43d074972518c7dcc02c6bac140316707096c38510');
-
-        expect(p2wpkh.isP2wpkh(), true);
-        expect(p2wpkh.isP2tr(), false);
-
         expect(p2wsh.isP2wsh(), true);
-        expect(p2wsh.isP2wpkh(), false);
-
-        expect(p2tr.isP2tr(), true);
         expect(p2tr.isP2wsh(), false);
       });
+    });
 
-      test('isP2pkh / isP2sh', () {
+    group('isP2tr', () {
+      test('identifies only P2TR scripts', () {
+        final ScriptPublicKey p2wpkh = ScriptPublicKey.parse(
+            '160014cb325c29ac1d9f9c56ab77c7f659f6a304a7bd02');
+        final ScriptPublicKey p2tr = ScriptPublicKey.parse(
+            '22512028d00add401c7cacf799aa43d074972518c7dcc02c6bac140316707096c38510');
+        expect(p2tr.isP2tr(), true);
+        expect(p2wpkh.isP2tr(), false);
+      });
+    });
+
+    group('isP2pkh', () {
+      test('identifies only P2PKH scripts', () {
         final ScriptPublicKey p2pkh =
             ScriptPublicKey.p2pkh('moRfJ2A2uSRMz4tzTrn5VyiUMSMNSHxbL5');
         final ScriptPublicKey p2sh =
             ScriptPublicKey.p2sh('2N2JD6wb56AfK4tfmM6PwdVmoYk2dCKf4Br');
-
         expect(p2pkh.isP2pkh(), true);
-        expect(p2pkh.isP2wpkh(), false);
-
-        expect(p2sh.isP2sh(), true);
         expect(p2sh.isP2pkh(), false);
+      });
+    });
+
+    group('isP2sh', () {
+      test('identifies P2SH scripts', () {
+        final ScriptPublicKey p2sh =
+            ScriptPublicKey.p2sh('2N2JD6wb56AfK4tfmM6PwdVmoYk2dCKf4Br');
+        expect(p2sh.isP2sh(), true);
       });
     });
   });

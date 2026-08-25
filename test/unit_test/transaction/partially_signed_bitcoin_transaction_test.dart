@@ -1,51 +1,137 @@
 @Tags(['unit'])
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('Psbt', () {
     late Psbt unsignedPsbt;
     late Psbt signedPsbt;
     setUp(() {
-      unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
-      signedPsbt = MockFactory.createP2wpkhSignedPsbt();
+      unsignedPsbt = PsbtFixture.p2wpkhUnsigned();
+      signedPsbt = PsbtFixture.p2wpkhSigned();
     });
-    group('get fee', () {
+    group('fee', () {
       test('Get final fee', () {
         expect(signedPsbt.fee, 423);
       });
     });
-    group('get sendingAmount', () {
+    group('sendingAmount', () {
       test('Get sending amount except fee and change', () {
-        expect(signedPsbt.sendingAmount, 15000);
+        expect(signedPsbt.sendingAmount(WalletFixture.p2wpkhVault()), 15000);
       });
     });
-    group('get addressType', () {
+    group('addressType', () {
       test('Resolve address type from psbt input fields', () {
         expect(unsignedPsbt.addressType, AddressType.p2wpkh);
       });
     });
 
-    group('isForVault', () {
+    group('wallet', () {
+      test('identifies owned outputs after parsing', () {
+        final wallet = WalletFixture.p2wpkhVault();
+
+        final parsed = Psbt.parse(unsignedPsbt.serialize());
+
+        expect(parsed.outputs[0].isOwnedBy(wallet), false);
+        expect(parsed.outputs[1].isOwnedBy(wallet), true);
+      });
+
+      test('does not identify outputs owned by another wallet', () {
+        final otherWallet =
+            WalletFixture.p2wpkhVault(passphrase: 'another wallet');
+
+        final parsed = Psbt.parse(unsignedPsbt.serialize());
+
+        expect(parsed.outputs.every((output) => !output.isOwnedBy(otherWallet)),
+            true);
+      });
+
+      test('identifies multisig and taproot owned outputs', () {
+        final multisigPsbt = PsbtFixture.p2wshUnsigned();
+        final taprootPsbt = PsbtFixture.p2trKeyPathUnsigned();
+
+        final multisigWallet = WalletFixture.p2wshVault();
+        final taprootWallet = WalletFixture.p2trKeyPathVault();
+
+        expect(multisigPsbt.outputs[0].isOwnedBy(multisigWallet), false);
+        expect(multisigPsbt.outputs[1].isOwnedBy(multisigWallet), true);
+        expect(taprootPsbt.outputs[0].isOwnedBy(taprootWallet), false);
+        expect(taprootPsbt.outputs[1].isOwnedBy(taprootWallet), true);
+      });
+
+      test('uses BIP-371 output derivations for taproot change', () {
+        final taprootWallet = WalletFixture.p2trKeyPathVault();
+        final taprootPsbt = PsbtFixture.p2trKeyPathUnsigned();
+        final Map<String, dynamic> outputMap =
+            taprootPsbt.toKeyMap()['outputs'][1];
+
+        expect(outputMap.keys.any((key) => key.startsWith('07')), true);
+        expect(outputMap.keys.any((key) => key.startsWith('02')), false);
+        expect(taprootPsbt.outputs[1].bip32Derivations, isEmpty);
+        expect(taprootPsbt.outputs[1].tapBip32Derivations, hasLength(1));
+        expect(taprootPsbt.outputs[1].tapBip32Derivations.single.publicKey,
+            hasLength(64));
+        expect(taprootPsbt.outputs[1].tapBip32Derivations.single.leafHashes,
+            isEmpty);
+
+        final reparsed = Psbt.parse(taprootPsbt.serialize());
+        expect(reparsed.outputs[1].isChange(taprootWallet), true);
+      });
+
+      test('preserves taproot output leaf hashes for script policies', () {
+        final taprootWallet = WalletFixture.p2trPolicyVault();
+        final transaction = Transaction.forSinglePayment(
+            UtxoFixture.taprootList(count: 1),
+            taprootWallet.getAddress(1),
+            '${taprootWallet.derivationPath}/1/1',
+            15000,
+            3,
+            taprootWallet);
+
+        final psbt = Psbt.fromTransaction(transaction, taprootWallet);
+        final reparsed = Psbt.parse(psbt.serialize());
+        final derivations = reparsed.outputs[1].tapBip32Derivations;
+
+        expect(derivations, hasLength(3));
+        expect(
+            derivations.where((derivation) =>
+                derivation.leafHashes.length == 1 &&
+                derivation.leafHashes.single.length == 64),
+            hasLength(3));
+        expect(reparsed.outputs[1].isChange(taprootWallet), true);
+      });
+
+      test('requires a wallet when checking ownership and change', () {
+        final parsed = Psbt.parse(unsignedPsbt.serialize());
+        final wallet = WalletFixture.p2wpkhVault();
+
+        expect(parsed.outputs[1].isOwnedBy(wallet), true);
+        expect(parsed.outputs[1].isChange(wallet), true);
+      });
+    });
+
+    group('matchesVault', () {
       test('Check if psbt is for single signature vault', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-        expect(unsignedPsbt.isForVault(vault), true);
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        expect(unsignedPsbt.matchesVault(vault), true);
         expect(
             unsignedPsbt
-                .isForVault(MockFactory.createP2wpkhVault(passphrase: 'Z')),
+                .matchesVault(WalletFixture.p2wpkhVault(passphrase: 'Z')),
             false);
       });
       test('Check if psbt is for multisignature vault', () {
-        MultisignatureVault vault = MockFactory.createP2wshVault();
-        expect(MockFactory.createP2wshUnsignedPsbt().isForVault(vault), true);
-        final vault1 = MockFactory.createP2wpkhVault(passphrase: 'A');
-        final vault2 = MockFactory.createP2wpkhVault(passphrase: 'B');
-        final vault3 = MockFactory.createP2wpkhVault(passphrase: 'C');
+        MultisignatureVault vault = WalletFixture.p2wshVault();
+        expect(PsbtFixture.p2wshUnsigned().matchesVault(vault), true);
+        final vault1 = WalletFixture.p2wpkhVault(passphrase: 'A');
+        final vault2 = WalletFixture.p2wpkhVault(passphrase: 'B');
+        final vault3 = WalletFixture.p2wpkhVault(passphrase: 'C');
 
         KeyStore keyStore1 =
             KeyStore.fromSeed(vault1.keyStore.seed, AddressType.p2wsh);
@@ -59,10 +145,8 @@ void main() {
         MultisignatureVault targetVault2 =
             MultisignatureVault.fromKeyStoreList([keyStore1, keyStore2], 2);
 
-        expect(MockFactory.createP2wshUnsignedPsbt().isForVault(targetVault1),
-            false);
-        expect(MockFactory.createP2wshUnsignedPsbt().isForVault(targetVault2),
-            false);
+        expect(PsbtFixture.p2wshUnsigned().matchesVault(targetVault1), false);
+        expect(PsbtFixture.p2wshUnsigned().matchesVault(targetVault2), false);
       });
       test('Check if psbt is for taproot vault', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
@@ -78,14 +162,14 @@ void main() {
                 passphrase: utf8.encode('B')),
             AddressType.p2tr);
         TaprootVault childSingleVault =
-            MockFactory.createBeneficiaryVault(passphrase: 'C');
+            WalletFixture.beneficiaryVault(passphrase: 'C');
         Policy policy1 = InheritancePolicy.fromDescriptorAndLocktime(
             childSingleVault.descriptor, 1767225600);
         Policy policy2 = InheritancePolicy.fromDescriptorAndLocktime(
-            MockFactory.createBeneficiaryVault(passphrase: 'P2').descriptor,
+            WalletFixture.beneficiaryVault(passphrase: 'P2').descriptor,
             1767225600);
         Policy policy3 = InheritancePolicy.fromDescriptorAndLocktime(
-            MockFactory.createBeneficiaryVault(passphrase: 'P3').descriptor,
+            WalletFixture.beneficiaryVault(passphrase: 'P3').descriptor,
             1767225600);
         TaprootVault vault = TaprootVault.fromKeyStoreList(
             [keyStore1, keyStore2], [policy1, policy2, policy3]);
@@ -97,18 +181,170 @@ void main() {
             "m/86'/1'/0'/0/$addressIndex");
 
         Transaction tx = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
         TaprootVault childVault =
             TaprootVault.fromCoordinatorBsms(vault.getCoordinatorBsms());
         childVault.bindSeedToBeneficiaryKeyStore(
             childSingleVault.keyStoreList[0].seed);
         tx.setPolicy(childVault.getSpendablePolicy());
         Psbt unsignedPsbt = Psbt.fromTransaction(tx, vault);
-        expect(unsignedPsbt.isForVault(vault), true);
-        expect(unsignedPsbt.isForVault(childVault), true);
+        expect(unsignedPsbt.matchesVault(vault), true);
+        expect(unsignedPsbt.matchesVault(childVault), true);
         TaprootVault targetVault = TaprootVault.fromKeyStoreList(
             [keyStore1, keyStore2], [policy1, policy2]);
-        expect(unsignedPsbt.isForVault(targetVault), false);
+        expect(unsignedPsbt.matchesVault(targetVault), false);
+      });
+
+      test('matches only the single signature vault that owns the key', () {
+        final SingleSignatureVault vaultA = WalletFixture.p2wpkhVault();
+        final SingleSignatureVault vaultB =
+            WalletFixture.p2wpkhVault(passphrase: 'vaultB');
+
+        final Transaction txForA = Transaction.forSinglePayment(
+            UtxoFixture.list(count: 1),
+            vaultA.getAddress(1),
+            '${vaultA.derivationPath}/1/1',
+            15000,
+            3,
+            vaultA);
+        final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
+
+        expect(psbtForVaultA.matchesVault(vaultA), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultB), isFalse);
+      });
+
+      test(
+          'distinguishes multisig vaults with same keys but different required signers',
+          () {
+        final SingleSignatureVault signerA =
+            WalletFixture.p2wpkhVault(passphrase: 'A');
+        final SingleSignatureVault signerB =
+            WalletFixture.p2wpkhVault(passphrase: 'B');
+        final SingleSignatureVault signerC =
+            WalletFixture.p2wpkhVault(passphrase: 'C');
+
+        final KeyStore keyStoreA =
+            KeyStore.fromSeed(signerA.keyStore.seed, AddressType.p2wsh);
+        final KeyStore keyStoreB =
+            KeyStore.fromSeed(signerB.keyStore.seed, AddressType.p2wsh);
+        final KeyStore keyStoreC =
+            KeyStore.fromSeed(signerC.keyStore.seed, AddressType.p2wsh);
+        final List<KeyStore> keyStores = [keyStoreA, keyStoreB, keyStoreC];
+
+        final MultisignatureVault vault2Of3 =
+            MultisignatureVault.fromKeyStoreList(keyStores, 2);
+        final MultisignatureVault vault3Of3 =
+            MultisignatureVault.fromKeyStoreList(keyStores, 3);
+
+        final Transaction txFor2Of3 = Transaction.forSinglePayment(
+            UtxoFixture.list(
+                count: 1, derivationPath: "${vault2Of3.derivationPath}/0/0"),
+            vault2Of3.getAddress(1),
+            '${vault2Of3.derivationPath}/1/1',
+            15000,
+            3,
+            vault2Of3);
+        final Psbt psbtFor2Of3 = Psbt.fromTransaction(txFor2Of3, vault2Of3);
+
+        final Transaction txFor3Of3 = Transaction.forSinglePayment(
+            UtxoFixture.list(
+                count: 1, derivationPath: "${vault3Of3.derivationPath}/0/0"),
+            vault3Of3.getAddress(1),
+            '${vault3Of3.derivationPath}/1/1',
+            15000,
+            3,
+            vault3Of3);
+        final Psbt psbtFor3Of3 = Psbt.fromTransaction(txFor3Of3, vault3Of3);
+
+        expect(psbtFor2Of3.matchesVault(vault2Of3), isTrue);
+        expect(psbtFor2Of3.matchesVault(vault3Of3), isFalse);
+        expect(psbtFor3Of3.matchesVault(vault2Of3), isFalse);
+        expect(psbtFor3Of3.matchesVault(vault3Of3), isTrue);
+      });
+
+      test('matches only the exact taproot vault parent and child key set', () {
+        final KeyStore parentA1 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA1')),
+            AddressType.p2tr);
+        final KeyStore parentA2 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA2')),
+            AddressType.p2tr);
+        final TaprootVault childA =
+            WalletFixture.beneficiaryVault(passphrase: 'childA');
+        final Policy childPolicyA = InheritancePolicy.fromDescriptorAndLocktime(
+            childA.descriptor, 1767225600);
+        final TaprootVault vaultA =
+            TaprootVault.fromKeyStoreList([parentA1, parentA2], [childPolicyA]);
+        final TaprootVault vaultB =
+            TaprootVault.fromKeyStoreList([parentA1], [childPolicyA]);
+
+        const int addressIndex = 0;
+        final Utxo utxo = Utxo(
+            '0b5b43a8a09f1021bac4f4357c2808043b409231b42fc0143050ac37668a984b',
+            0,
+            21000,
+            "m/86'/1'/0'/0/$addressIndex");
+        final Transaction txForA = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
+        final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
+        final Transaction txForB = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
+        final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
+
+        expect(psbtForVaultA.matchesVault(vaultA), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultB), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultA), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultB), isTrue);
+      });
+
+      test('only beneficiary locktime diff of taproot wallets', () {
+        final KeyStore parentA1 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA1')),
+            AddressType.p2tr);
+        final KeyStore parentA2 = KeyStore.fromSeed(
+            Seed.fromMnemonic(
+                utf8.encode(
+                    'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+                passphrase: utf8.encode('parentA2')),
+            AddressType.p2tr);
+        final TaprootVault childA =
+            WalletFixture.beneficiaryVault(passphrase: 'childA');
+        final Policy childPolicyA = InheritancePolicy.fromDescriptorAndLocktime(
+            childA.descriptor, 1767225600);
+        final Policy childPolicyB = InheritancePolicy.fromDescriptorAndLocktime(
+            childA.descriptor, 1767225601);
+        final TaprootVault vaultA =
+            TaprootVault.fromKeyStoreList([parentA1, parentA2], [childPolicyA]);
+        final TaprootVault vaultB =
+            TaprootVault.fromKeyStoreList([parentA1, parentA2], [childPolicyB]);
+
+        const int addressIndex = 0;
+        final Utxo utxo = Utxo(
+            '0b5b43a8a09f1021bac4f4357c2808043b409231b42fc0143050ac37668a984b',
+            0,
+            21000,
+            "m/86'/1'/0'/0/$addressIndex");
+        final Transaction txForA = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultA);
+        final Transaction txForB = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vaultB);
+
+        final Psbt psbtForVaultA = Psbt.fromTransaction(txForA, vaultA);
+        final Psbt psbtForVaultB = Psbt.fromTransaction(txForB, vaultB);
+
+        expect(psbtForVaultA.matchesVault(vaultA), isTrue);
+        expect(psbtForVaultA.matchesVault(vaultB), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultA), isFalse);
+        expect(psbtForVaultB.matchesVault(vaultB), isTrue);
       });
     });
     group('serialize', () {
@@ -130,9 +366,9 @@ void main() {
 
     group('Psbt.fromTransaction', () {
       test('Generate psbt from transaction object (single sig)', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            UtxoFixture.list(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -143,9 +379,10 @@ void main() {
       });
 
       test('Generate psbt from transaction object (multisig)', () {
-        MultisignatureVault vault = MockFactory.createP2wshVault();
+        MultisignatureVault vault = WalletFixture.p2wshVault();
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createUtxoList(count: 1),
+            UtxoFixture.list(
+                count: 1, derivationPath: '${vault.derivationPath}/0/0'),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -155,8 +392,82 @@ void main() {
         final String serialized = psbt.serialize();
         expect(Psbt.parse(serialized).serialize(), serialized);
       });
+
+      test('rejects a transaction input and UTXO count mismatch', () {
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final Transaction tx = Transaction.forSinglePayment(
+            UtxoFixture.list(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        tx.utxoList.add(tx.utxoList.single);
+
+        expect(
+            () => Psbt.fromTransaction(tx, vault),
+            throwsA(isA<PsbtException>().having((error) => error.code, 'code',
+                PsbtErrorCode.transactionInputMismatch)));
+      });
+
+      test('rejects a UTXO with a different output index', () {
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final Transaction tx = Transaction.forSinglePayment(
+            UtxoFixture.list(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        final Utxo original = tx.utxoList.single;
+        tx.utxoList[0] = Utxo(original.transactionHash, original.index + 1,
+            original.amount, original.derivationPath);
+
+        expect(
+            () => Psbt.fromTransaction(tx, vault),
+            throwsA(isA<PsbtException>()
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.utxoMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 0)));
+      });
+
+      test('rejects duplicate input outpoints', () {
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final Utxo utxo = UtxoFixture.list(count: 1).single;
+        final Transaction tx = Transaction.forSinglePayment(
+            [utxo, utxo],
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+
+        expect(
+            () => Psbt.fromTransaction(tx, vault),
+            throwsA(isA<PsbtException>()
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.duplicateUtxo)
+                .having((error) => error.inputIndex, 'inputIndex', 1)));
+      });
     });
     group('Psbt.parse', () {
+      test('Reject malformed PSBT lengths and trailing data', () {
+        expect(() => Psbt.parse(base64Encode([0x70, 0x73])),
+            throwsFormatException);
+        expect(
+            () =>
+                Psbt.parse(base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0xfd])),
+            throwsFormatException);
+        expect(
+            () => Psbt.parse(
+                base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0x02, 0x00])),
+            throwsFormatException);
+
+        final bytes = base64Decode(unsignedPsbt.serialize());
+        expect(() => Psbt.parse(base64Encode([...bytes, 0x01])),
+            throwsFormatException);
+      });
+
       test('Generate psbt from base64 1', () {
         Psbt psbt = Psbt.parse(unsignedPsbt.serialize());
         expect(psbt.serialize(), unsignedPsbt.serialize());
@@ -191,7 +502,7 @@ void main() {
         Psbt psbt = Psbt.parse(psbtString);
         expect(psbt.unsignedTransaction!.transactionHash,
             "71ae48a404ce3ad731981532b3dbbde539f27ffc042c0f830576b50478cc16ea");
-        expect(psbt.outputs[0].bip32Derivation!.publicKey,
+        expect(psbt.outputs[0].bip32Derivations.single.publicKey,
             "0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824");
       });
       test('Generate psbt from base64 6', () {
@@ -226,7 +537,7 @@ void main() {
             '0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824');
 
         expect(signedPsbt.serialize(), unsignedPsbt.serialize());
-        unsignedPsbt = MockFactory.createP2wshUnsignedPsbt();
+        unsignedPsbt = PsbtFixture.p2wshUnsigned();
       });
     });
     group('getKeyType', () {
@@ -242,11 +553,11 @@ void main() {
     });
     group('getAggregatedPublicNonce', () {
       test('Get aggregated public nonce from input index', () {
-        TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
+        TaprootVault vault = WalletFixture.p2trMultikeyVault();
         KeyStore keyStore = vault.keyStoreList[0];
         Psbt psbt = Psbt.fromTransaction(
             Transaction.forSinglePayment(
-                [MockFactory.getCommonUtxo(AddressType.p2tr)],
+                [UtxoFixture.common(AddressType.p2tr)],
                 vault.getAddress(1),
                 '${vault.derivationPath}/1/1',
                 15000,
@@ -265,6 +576,54 @@ void main() {
             signedPsbt.getSignedTransaction(AddressType.p2wpkh).serialize();
         expect(Transaction.parse(signedTxHex).serialize(), signedTxHex);
       });
+
+      test('rejects duplicated signatures when finalizing p2wsh', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final Signature firstSignature = psbt.inputs[0].partialSig!.first;
+        final String secondPublicKey = psbt.inputs[0].partialSig![1].publicKey;
+        psbt.inputs[0].partialSig![1] =
+            Signature(firstSignature.signature, secondPublicKey);
+
+        expect(() => psbt.getSignedTransaction(AddressType.p2wsh),
+            throwsA(isA<PsbtException>()));
+      });
+
+      test('Taproot defaults to SIGHASH_DEFAULT without a PSBT sighash field',
+          () {
+        final Psbt psbt = PsbtFixture.p2trKeyPathUnsigned();
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+
+        expect(inputMap.containsKey('03'), isFalse);
+        expect(Psbt.parse(psbt.serialize()).inputs[0].sighashType, isNull);
+      });
+
+      test('Taproot SIGHASH_ALL is parsed, signed and finalized consistently',
+          () {
+        final TaprootVault vault = WalletFixture.p2trKeyPathVault();
+        final Psbt unsigned = PsbtFixture.p2trKeyPathUnsigned();
+        unsigned.toKeyMap()['inputs'][0]['03'] = '01000000';
+        final Psbt withSighashAll = Psbt.fromMap(unsigned.toKeyMap());
+
+        final Psbt signed =
+            Psbt.parse(vault.addSignatureToPsbt(withSighashAll.serialize()));
+        expect(signed.inputs[0].sighashType, 0x01);
+        expect(signed.inputs[0].tapKeySig, hasLength(130));
+        expect(signed.inputs[0].tapKeySig, endsWith('01'));
+
+        final Transaction transaction =
+            signed.getSignedTransaction(AddressType.p2tr);
+        expect(transaction.inputs[0].witnessList.single, endsWith('01'));
+      });
+
+      test('rejects unsupported Taproot sighash types before signing', () {
+        final TaprootVault vault = WalletFixture.p2trKeyPathVault();
+        final Psbt unsigned = PsbtFixture.p2trKeyPathUnsigned();
+        unsigned.toKeyMap()['inputs'][0]['03'] = '02000000';
+        final Psbt unsupported = Psbt.fromMap(unsigned.toKeyMap());
+
+        expect(() => vault.addSignatureToPsbt(unsupported.serialize()),
+            throwsUnsupportedError);
+      });
     });
 
     group('validateSignature', () {
@@ -277,18 +636,14 @@ void main() {
             true);
       });
       test('Validate signature for psbt (taproot)', () {
-        final Psbt signedPsbt =
-            MockFactory.createP2trKeyPathSpendingSignedPsbt();
+        final Psbt signedPsbt = PsbtFixture.p2trKeyPathSigned();
         final PsbtInput input = signedPsbt.inputs[0];
         expect(input.tapKeySig, isNotNull);
 
         final Uint8List outputKey =
             input.witnessUtxo!.scriptPubKey.commands[1] as Uint8List;
         final String outputKeyHex = Codec.encodeHex(outputKey);
-        final String signatureDerHex = Codec.encodeHex(
-            Converter.rawToDerSignature(Codec.decodeHex(input.tapKeySig!)));
-
-        expect(signedPsbt.validateSignature(0, signatureDerHex, outputKeyHex),
+        expect(signedPsbt.validateSignature(0, input.tapKeySig!, outputKeyHex),
             true);
       });
     });
@@ -296,18 +651,17 @@ void main() {
     group('isSigned', () {
       group('Check if psbt is signed', () {
         test('Check if psbt is signed (segwit)', () {
-          SingleSignatureVault vault = MockFactory.createP2wpkhVault();
-          Psbt unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
-          Psbt signedPsbt = MockFactory.createP2wpkhSignedPsbt();
+          SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+          Psbt unsignedPsbt = PsbtFixture.p2wpkhUnsigned();
+          Psbt signedPsbt = PsbtFixture.p2wpkhSigned();
 
           expect(unsignedPsbt.isSigned(vault.keyStore), false);
           expect(signedPsbt.isSigned(vault.keyStore), true);
         });
         test('Check if psbt is signed (taproot)', () {
-          TaprootVault vault = MockFactory.createP2trKeyPathSpendingVault();
-          Psbt unsignedPsbt =
-              MockFactory.createP2trKeyPathSpendingUnsignedPsbt();
-          Psbt signedPsbt = MockFactory.createP2trKeyPathSpendingSignedPsbt();
+          TaprootVault vault = WalletFixture.p2trKeyPathVault();
+          Psbt unsignedPsbt = PsbtFixture.p2trKeyPathUnsigned();
+          Psbt signedPsbt = PsbtFixture.p2trKeyPathSigned();
 
           expect(
               unsignedPsbt.isSigned(vault.keyStoreList[0],
@@ -326,33 +680,33 @@ void main() {
     late PsbtInput multisigInput;
 
     setUpAll(() {
-      input = MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
-      multisigInput = MockFactory.createP2wshUnsignedPsbt().inputs[0];
+      input = PsbtFixture.p2wpkhUnsigned().inputs[0];
+      multisigInput = PsbtFixture.p2wshUnsigned().inputs[0];
     });
 
-    group('get witnessUtxo', () {
+    group('witnessUtxo', () {
       test('Get witness utxo', () {
         expect(input.witnessUtxo!.serialize(),
             'a086010000000000160014b54542413855bca0894e855b7858cd07bca87b80');
       });
     });
-    group('get derivationPathList', () {
+    group('derivationPathList', () {
       test('Get derivation path list', () {
         expect(input.bip32Derivation![0].path, "m/84'/1'/0'/0/0");
         expect(multisigInput.bip32Derivation![0].path, "m/48'/1'/0'/2'/0/0");
       });
     });
-    group('get requiredSignature', () {
+    group('requiredSignature', () {
       test('Get number of required signature', () {
         expect(multisigInput.requiredSignature, 2);
       });
     });
-    group('get totalSigner', () {
+    group('totalSigner', () {
       test('Get number of total signer', () {
         expect(multisigInput.totalSigner, 3);
       });
     });
-    group('addSignature', () {
+    group('addPartialSig', () {
       test('Add signature into the psbt input', () {
         expect(
             () => multisigInput.addPartialSig(
@@ -362,34 +716,58 @@ void main() {
       });
     });
 
-    group('PsbtInput methods', () {
-      test('signatureList and signedCount reflect added signatures', () {
-        final PsbtInput mutableInput =
-            MockFactory.createP2wpkhUnsignedPsbt().inputs[0];
-        expect(mutableInput.signedCount, 0);
+    group('signatureList', () {
+      test('reflects added signatures', () {
+        final PsbtInput mutableInput = PsbtFixture.p2wpkhUnsigned().inputs[0];
         expect(mutableInput.signatureList, isEmpty);
-
         mutableInput.addPartialSig(
             '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
             mutableInput.derivationPathList.first.publicKey);
-
-        expect(mutableInput.signedCount, 1);
         expect(mutableInput.signatureList.length, 1);
       });
+    });
 
-      test('taproot/musig mutators update each field', () {
-        final PsbtInput tapInput =
-            MockFactory.createP2trKeyPathSpendingUnsignedPsbt().inputs[0];
+    group('signedCount', () {
+      test('reflects added signatures', () {
+        final PsbtInput mutableInput = PsbtFixture.p2wpkhUnsigned().inputs[0];
+        expect(mutableInput.signedCount, 0);
+        mutableInput.addPartialSig(
+            '304402201627e63472fc39db307a5db0e0450748fc6ea876c6376da7b1885a7464f2441302206ea2e3257755efa6552d4cb2082a6a4595fdff512411f51785ab7453ad3c092001',
+            mutableInput.derivationPathList.first.publicKey);
+        expect(mutableInput.signedCount, 1);
+      });
+    });
+
+    group('addTapKeySig', () {
+      test('updates tapKeySig', () {
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
         tapInput.addTapKeySig('aa' * 64);
-        tapInput.addTapScriptSig('bb' * 64, '02' + ('11' * 32));
-        tapInput.addMuSig2PubNonce(
-            '02' + ('22' * 32), '03' + ('33' * 32), '44' * 32, '55' * 66);
-        tapInput.addMuSig2PartialSig(
-            '66' * 64, '02' + ('22' * 32), '03' + ('33' * 32), '44' * 32);
-
         expect(tapInput.tapKeySig, isNotNull);
+      });
+    });
+
+    group('addTapScriptSig', () {
+      test('updates tapScriptSig', () {
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
+        tapInput.addTapScriptSig('bb' * 64, '02${'11' * 32}');
         expect(tapInput.tapScriptSig, isNotNull);
+      });
+    });
+
+    group('addMuSig2PubNonce', () {
+      test('updates muSig2PubNonces', () {
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
+        tapInput.addMuSig2PubNonce(
+            '02${'22' * 32}', '03${'33' * 32}', '44' * 32, '55' * 66);
         expect(tapInput.muSig2PubNonces, isNotNull);
+      });
+    });
+
+    group('addMuSig2PartialSig', () {
+      test('updates muSig2PartialSigs', () {
+        final PsbtInput tapInput = PsbtFixture.p2trKeyPathUnsigned().inputs[0];
+        tapInput.addMuSig2PartialSig(
+            '66' * 64, '02${'22' * 32}', '03${'33' * 32}', '44' * 32);
         expect(tapInput.muSig2PartialSigs, isNotNull);
       });
     });
@@ -427,34 +805,67 @@ void main() {
   group('PsbtOutput', () {
     late PsbtOutput output;
     late PsbtOutput multisigOutput;
+    late PsbtOutput multisigChangeOutput;
     late PsbtOutput parsedPsbtOutput;
+    late SingleSignatureVault wallet;
+    late MultisignatureVault multisigWallet;
 
     setUpAll(() {
-      output = MockFactory.createP2wpkhUnsignedPsbt().outputs[0];
-      multisigOutput = MockFactory.createP2wshUnsignedPsbt().outputs[0];
+      wallet = WalletFixture.p2wpkhVault();
+      multisigWallet = WalletFixture.p2wshVault();
+      output = PsbtFixture.p2wpkhUnsigned().outputs[0];
+      final Psbt multisigPsbt = PsbtFixture.p2wshUnsigned();
+      multisigOutput = multisigPsbt.outputs[0];
+      multisigChangeOutput = multisigPsbt.outputs[1];
       String psbtString =
           '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';
       parsedPsbtOutput = Psbt.parse(psbtString).outputs[0];
     });
-    group('get derivationPath', () {
+    group('derivationPath', () {
       test('Get derivation path from psbt output', () {
-        expect(parsedPsbtOutput.bip32Derivation!.path, "m/84'/1'/0'/0/0");
+        expect(
+            parsedPsbtOutput.bip32Derivations.single.path, "m/84'/1'/0'/0/0");
+      });
+
+      test('preserves every multisig output derivation path', () {
+        expect(multisigChangeOutput.bip32Derivations, hasLength(3));
+        expect(
+            multisigChangeOutput.bip32Derivations
+                .map((derivation) => derivation.path)
+                .toSet(),
+            {"m/48'/1'/0'/2'/1/1"});
       });
     });
-    group('get amount', () {
+    group('amount', () {
       test('Get amount of psbt output', () {
         expect(multisigOutput.outAmount, 15000);
       });
     });
-    group('get outAddress', () {
+    group('outAddress', () {
       test('Get address of psbt output', () {
         expect(output.outAddress, 'tb1qcjx6kazryh26wzpr2p66w2s0f7nv29n07fx05a');
       });
     });
+    group('isOwned', () {
+      test('is true only for an output owned by the supplied wallet', () {
+        expect(output.isOwnedBy(wallet), false);
+        expect(multisigOutput.isOwnedBy(multisigWallet), false);
+        expect(multisigChangeOutput.isOwnedBy(multisigWallet), true);
+      });
+    });
     group('isChange', () {
-      test('Check the output is for change', () {
-        expect(output.isChange, false);
-        expect(multisigOutput.isChange, false);
+      test('is true only for an owned output on the change branch', () {
+        expect(output.isChange(wallet), false);
+        expect(multisigOutput.isChange(multisigWallet), false);
+        expect(multisigChangeOutput.isChange(multisigWallet), true);
+      });
+
+      test('rejects a foreign address with forged change derivations', () {
+        final forgedOutput = PsbtOutput(multisigChangeOutput.bip32Derivations,
+            multisigOutput.outAmount, multisigOutput.outScript);
+
+        expect(forgedOutput.isOwnedBy(multisigWallet), false);
+        expect(forgedOutput.isChange(multisigWallet), false);
       });
     });
   });
@@ -466,20 +877,22 @@ void main() {
           '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';
       parsedPsbtOutput = Psbt.parse(psbtString).outputs[0];
     });
-    group('get publicKey', () {
+    group('publicKey', () {
       test('Get public key of bip32 derivation path', () {
-        expect(parsedPsbtOutput.bip32Derivation!.publicKey,
+        expect(parsedPsbtOutput.bip32Derivations.single.publicKey,
             "0246c18ea7c5624b87e5f65a60842c9a22b27ae7e3630a95abeb35455259761824");
       });
     });
-    group('get masterFingerprint', () {
+    group('masterFingerprint', () {
       test('Get master fingerprint of bip32 derivation path', () {
-        expect(parsedPsbtOutput.bip32Derivation!.masterFingerprint, "98C7D774");
+        expect(parsedPsbtOutput.bip32Derivations.single.masterFingerprint,
+            "98C7D774");
       });
     });
-    group('get path', () {
+    group('path', () {
       test('Get derivation path', () {
-        expect(parsedPsbtOutput.bip32Derivation!.path, "m/84'/1'/0'/0/0");
+        expect(
+            parsedPsbtOutput.bip32Derivations.single.path, "m/84'/1'/0'/0/0");
       });
     });
   });

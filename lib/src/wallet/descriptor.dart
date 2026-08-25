@@ -1,6 +1,8 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a descriptor of Bitcoin. (BIP-0380)
+///
+/// {@category Wallets and Keys}
 class Descriptor {
   String _scriptType;
   List<String> _keyOriginExpressionList = [];
@@ -25,6 +27,21 @@ class Descriptor {
     if (miniscriptList != null) {
       _miniscriptList = miniscriptList;
     }
+    if (_addressType.isMultisignature) {
+      final List<KeyStore> keyStores = <KeyStore>[];
+      for (int i = 0; i < _keyOriginExpressionList.length; i++) {
+        final ExtendedPublicKey extendedPublicKey =
+            ExtendedPublicKey.parse(getPublicKey(i), validateNetwork: false);
+        keyStores.add(KeyStore(
+          getFingerprint(i),
+          HDWallet.fromPublicKey(
+              extendedPublicKey.publicKey, extendedPublicKey.chainCode),
+          extendedPublicKey,
+        ));
+      }
+      MultisignatureWalletBase._validateSignerSet(
+          _requiredSignatures, keyStores);
+    }
   }
 
   /// Script type of the descriptor.
@@ -32,7 +49,7 @@ class Descriptor {
 
   int get totalSigner => _keyOriginExpressionList.length;
 
-  get miniscriptList => _miniscriptList;
+  List<String> get miniscriptList => _miniscriptList;
 
   /// Create a descriptor for a single signature.
   factory Descriptor.forSingleSignature(
@@ -100,7 +117,7 @@ class Descriptor {
   /// Parse the descriptor.
   factory Descriptor.parse(String descriptor, {bool ignoreChecksum = false}) {
     if (ignoreChecksum == false && !Checksum.isValidChecksum(descriptor)) {
-      throw Exception('Invalid descriptor format.');
+      throw const FormatException('Invalid descriptor checksum or format.');
     }
     AddressType addressType =
         Descriptor.getAddressTypeFromDescriptor(descriptor);
@@ -125,7 +142,7 @@ class Descriptor {
         require = int.parse(multisigContent.split(',')[0]);
         pubKeyContent = multisigContent.split(',').sublist(1);
       } else {
-        throw Exception('No multisig descriptor found.');
+        throw const FormatException('No multisig descriptor found.');
       }
     } else if (addressType == AddressType.p2tr) {
       // Parse tr(internal_key, {miniscript1}, {miniscript2}, ...)
@@ -161,7 +178,7 @@ class Descriptor {
       }
 
       if (topLevelParts.isEmpty) {
-        throw Exception('Invalid taproot descriptor format.');
+        throw const FormatException('Invalid Taproot descriptor format.');
       }
 
       // First part is internal key
@@ -196,7 +213,7 @@ class Descriptor {
           miniscriptList
               .add(miniscriptPart.substring(1, miniscriptPart.length - 1));
         } else {
-          throw Exception('Invalid miniscript format: $miniscriptPart');
+          throw FormatException('Invalid miniscript format: $miniscriptPart');
         }
       }
 

@@ -1,4 +1,6 @@
 @Tags(['unit'])
+library;
+
 import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
@@ -239,7 +241,7 @@ void main() {
         Uint8List shortSignature = Uint8List.fromList(
           bigIntToUint8List(BigInt.one), // Only 32 bytes (missing s)
         );
-        expect(() => Ecc.isSignature(shortSignature), throwsRangeError);
+        expect(Ecc.isSignature(shortSignature), isFalse);
       });
 
       test('Invalid: Signature too long', () {
@@ -342,17 +344,37 @@ void main() {
       });
     });
 
-    group('assumeCompression / compressPoint', () {
+    group('pointNegate', () {
+      test('Negates an uncompressed point over the secp256k1 field', () {
+        final generator = Codec.decodeHex(
+            '0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+            '483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8');
+        final expectedNegatedGenerator = Codec.decodeHex(
+            '0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'
+            'b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777');
+
+        final negatedGenerator = Ecc.pointNegate(generator);
+
+        expect(negatedGenerator, expectedNegatedGenerator,
+            reason: 'Point negation must compute -y modulo the field prime p.');
+        expect(Ecc.isPoint(negatedGenerator!), isTrue);
+        expect(Ecc.pointNegate(negatedGenerator), generator,
+            reason: 'Negating a point twice must return the original point.');
+      });
+    });
+
+    group('assumeCompression', () {
       test('assumeCompression infers compression from pubkey', () {
         final compressed = Uint8List.fromList([0x02] + List.filled(32, 0x01));
-        final uncompressed =
-            Uint8List.fromList([0x04] + List.filled(64, 0x01));
+        final uncompressed = Uint8List.fromList([0x04] + List.filled(64, 0x01));
         expect(Ecc.assumeCompression(null, compressed), true);
         expect(Ecc.assumeCompression(null, uncompressed), false);
         expect(Ecc.assumeCompression(null, null), true);
         expect(Ecc.assumeCompression(false, compressed), false);
       });
+    });
 
+    group('compressPoint', () {
       test('compressPoint throws on unsupported pubkey length', () {
         expect(() => Ecc.compressPoint(Uint8List(31)), throwsArgumentError);
       });
@@ -519,8 +541,7 @@ void main() {
         Uint8List hash = Uint8List.fromList(List.filled(32, 1));
         Uint8List privateKey = Codec.decodeHex(
             'C90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B14E5C9');
-        expect(
-            () => Ecc.signSchnorr(hash, privateKey, auxRand: Uint8List(31)),
+        expect(() => Ecc.signSchnorr(hash, privateKey, auxRand: Uint8List(31)),
             throwsArgumentError);
       });
 
@@ -536,8 +557,7 @@ void main() {
           }
         }
         expect(oddPrivateKey, isNotNull);
-        expect(() => Ecc.signSchnorr(hash, oddPrivateKey!),
-            throwsException);
+        expect(() => Ecc.signSchnorr(hash, oddPrivateKey!), throwsException);
       });
     });
 
@@ -1114,8 +1134,8 @@ void main() {
             aggregatePublicKey(participantPublicKeys, isXOnly: false);
         final aggregatedPubNonce = Codec.decodeHex(
             '0341432722c5cd0268d829c702cf0d1cbce57033eed201fd335191385227c3210c03d377f2d258b64aadc0e16f26462323d701d286046a2ea93365656afd9875982b');
-        final sessionContext = SessionContext(
-            participantPublicKeys, aggregatedPubNonce, aggregatedPublicKey, message,
+        final sessionContext = SessionContext(participantPublicKeys,
+            aggregatedPubNonce, aggregatedPublicKey, message,
             applyTaprootTweak: true);
 
         final secretNonce1 = Codec.decodeHex(
@@ -1138,7 +1158,8 @@ void main() {
                 isFullSignature: false)),
             Codec.encodeHex(participantPublicKeys[1]));
 
-        final agg = Ecc.getAggregatedSignatureForMuSig2(sessionContext, [sig1, sig2]);
+        final agg =
+            Ecc.getAggregatedSignatureForMuSig2(sessionContext, [sig1, sig2]);
         expect(agg.length, 64);
       });
     });

@@ -19,7 +19,10 @@ class HDWallet {
   Uint8List _parentFingerprint = Uint8List.fromList([0, 0, 0, 0, 0]);
 
   /// @nodoc
-  HDWallet(this._d, this._Q, this._chainCode);
+  HDWallet(Uint8List? privateKey, Uint8List? publicKey, Uint8List chainCode)
+      : _d = privateKey == null ? null : Uint8List.fromList(privateKey),
+        _Q = publicKey == null ? null : Uint8List.fromList(publicKey),
+        _chainCode = Uint8List.fromList(chainCode);
 
   /// @nodoc
   factory HDWallet.fromPublicKey(Uint8List publicKey, Uint8List chainCode) {
@@ -80,37 +83,44 @@ class HDWallet {
 
   /// @nodoc
   factory HDWallet.fromJson(String json) {
-    Map<String, dynamic> map = jsonDecode(json);
+    final Map<String, dynamic> map =
+        Codec._decodeJsonObject(json, name: 'HDWallet JSON');
+    final String publicKey =
+        Codec._readJsonField<String>(map, 'publicKey', name: 'HDWallet JSON');
+    final String chainCode =
+        Codec._readJsonField<String>(map, 'chainCode', name: 'HDWallet JSON');
     if (map.containsKey('privateKey')) {
-      return HDWallet(Codec.decodeHex(map['privateKey']),
-          Codec.decodeHex(map['publicKey']), Codec.decodeHex(map['chainCode']));
+      final String privateKey = Codec._readJsonField<String>(map, 'privateKey',
+          name: 'HDWallet JSON');
+      return HDWallet(Codec.decodeHex(privateKey), Codec.decodeHex(publicKey),
+          Codec.decodeHex(chainCode));
     } else {
       return HDWallet.fromPublicKey(
-          Codec.decodeHex(map['publicKey']), Codec.decodeHex(map['chainCode']));
+          Codec.decodeHex(publicKey), Codec.decodeHex(chainCode));
     }
   }
 
   /// @nodoc
   Uint8List get publicKey {
     _Q ??= Ecc.pointFromScalar(_d!, true)!;
-    return _Q!;
+    return Uint8List.fromList(_Q!);
   }
 
   /// @nodoc
-  Uint8List? get privateKey => _d;
+  Uint8List? get privateKey => _d == null ? null : Uint8List.fromList(_d!);
 
   /// @nodoc
   Uint8List get fingerprint =>
       Hash.sha160fromHex(HEX.encode(publicKey)).sublist(0, 4);
 
   /// @nodoc
-  Uint8List get chainCode => _chainCode;
+  Uint8List get chainCode => Uint8List.fromList(_chainCode);
 
   /// @nodoc
   int get index => _index;
 
   /// @nodoc
-  Uint8List get parentFingerprint => _parentFingerprint;
+  Uint8List get parentFingerprint => Uint8List.fromList(_parentFingerprint);
 
   /// @nodoc
   bool isNeutered() {
@@ -124,6 +134,16 @@ class HDWallet {
     neutered._index = index;
     neutered._parentFingerprint = parentFingerprint;
     return neutered;
+  }
+
+  /// @nodoc
+  void wipePrivateKey() {
+    if (_d == null) {
+      return;
+    }
+    _Q = Uint8List.fromList(publicKey);
+    _d!.fillRange(0, _d!.length, 0);
+    _d = null;
   }
 
   /// @nodoc
@@ -230,12 +250,16 @@ class HDWallet {
   }
 
   Uint8List signEcdsa(Uint8List message) {
+    if (privateKey == null) {
+      throw StateError('HDWallet: Private key is not available.');
+    }
     return Converter.rawToDerSignature(Ecc.signEcdsa(message, privateKey!));
   }
 
   Uint8List signSchnorr(Uint8List message, bool applyTweak,
       {Uint8List? auxRand, Uint8List? merkleRoot}) {
-    Uint8List secretKey = getPrivateKey(applyTweak, true, merkleRoot: merkleRoot);
+    Uint8List secretKey =
+        getPrivateKey(applyTweak, true, merkleRoot: merkleRoot);
     return Ecc.signSchnorr(message, secretKey, auxRand: auxRand);
   }
 
@@ -282,8 +306,11 @@ class HDWallet {
     return tweakedPrivateKey;
   }
 
-  Uint8List getPrivateKey(applyTweak, isXOnly,
+  Uint8List getPrivateKey(bool applyTweak, bool isXOnly,
       {Uint8List? merkleRoot, Uint8List? aggregatedPublicKey}) {
+    if (privateKey == null) {
+      throw StateError('HDWallet: Private key is not available.');
+    }
     Uint8List privKey;
     Uint8List pubKey;
 
@@ -305,7 +332,7 @@ class HDWallet {
     }
   }
 
-  Uint8List getPublicKey(applyTweak, isXOnly,
+  Uint8List getPublicKey(bool applyTweak, bool isXOnly,
       {Uint8List? merkleRoot, Uint8List? aggregatedPublicKey}) {
     Uint8List pubKey;
     if (applyTweak) {
@@ -355,11 +382,11 @@ class HDWallet {
     return tweakedPubKey;
   }
 
-  verifyEcdsa(Uint8List message, Uint8List signature) {
+  bool verifyEcdsa(Uint8List message, Uint8List signature) {
     return Ecc.verifyEcdsa(message, publicKey, signature);
   }
 
-  verifySchnorr(Uint8List message, Uint8List signature, bool applyTweak,
+  bool verifySchnorr(Uint8List message, Uint8List signature, bool applyTweak,
       {Uint8List? merkleRoot}) {
     if (applyTweak) {
       return Ecc.verifySchnorr(

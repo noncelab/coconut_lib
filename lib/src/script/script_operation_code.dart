@@ -1,5 +1,6 @@
 part of '../../coconut_lib.dart';
 
+/// Lookup utilities for Bitcoin Script operation codes.
 class ScriptOperationCode {
   Map<String, int> opCodeHexMap = {
     'OP_0': 0x00,

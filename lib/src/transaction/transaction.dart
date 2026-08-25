@@ -1,13 +1,24 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a transaction.
+/// Mutable Bitcoin transaction with optional prevout and wallet metadata.
+///
+/// Use the payment or sweep factories for wallet transactions because they
+/// validate amounts, estimate fees, and preserve change information. Use
+/// [Transaction.withInputsAndOutputs] for lower-level construction and
+/// [Transaction.parse] only for serialized data that will be validated before
+/// broadcast.
+///
+/// {@category Transactions}
 class Transaction {
   Uint8List _version;
   List<TransactionInput> _inputs;
   List<TransactionOutput> _outputs;
   Uint8List _lockTime;
   bool _isSegwit;
+  bool _isSweep = false;
   late final Map<String, int> _paymentMap;
+
+  /// Derivation path used to recreate and adjust the change output.
   late String? changeAddressDerivationPath;
 
   late List<Utxo> _utxoList = [];
@@ -52,7 +63,10 @@ class Transaction {
         return total;
       }();
 
+  /// Prevout metadata associated with [inputs].
   List<Utxo> get utxoList => _utxoList;
+
+  /// Sum of all amounts in [utxoList].
   int get totalInputAmount {
     int total = 0;
     for (Utxo utxo in _utxoList) {
@@ -65,6 +79,7 @@ class Transaction {
   Transaction(this._version, this._inputs, this._outputs, this._lockTime,
       this._isSegwit);
 
+  /// Creates a transaction directly from [inputs] and [outputs].
   factory Transaction.withInputsAndOutputs(List<TransactionInput> inputs,
       List<TransactionOutput> outputs, AddressType addressType,
       {int version = 2, int lockTime = 0}) {
@@ -86,6 +101,7 @@ class Transaction {
       {int version = 2,
       int lockTime = 0,
       Policy? policy}) {
+    _validateFeeRate(feeRate);
     int totalInputAmount = 0;
     List<TransactionInput> inputs = [];
     List<TransactionOutput> outputs = [];
@@ -128,7 +144,9 @@ class Transaction {
     int changeAmount = totalInputAmount - totalOutputAmount - fee;
     if (changeAmount < 0) {
       // tx.outputs.remove(changeOutput);
-      throw Exception('Not enough amount for sending. (Fee : $fee)');
+      throw TransactionException(TransactionErrorCode.insufficientFunds,
+          'Not enough amount for sending.',
+          context: {'fee': fee});
     } else {
       changeOutput.setAmount(changeAmount);
       if (changeOutput.isDustOutput(wallet.addressType.isSegwit)) {
@@ -163,6 +181,7 @@ class Transaction {
   factory Transaction.forSweep(
       List<Utxo> utxoList, String address, double feeRate, WalletBase wallet,
       {int version = 2, int lockTime = 0, Policy? policy}) {
+    _validateFeeRate(feeRate);
     List<TransactionInput> inputs = [];
     List<TransactionOutput> outputs = [];
     int inputAmount = 0;
@@ -175,11 +194,13 @@ class Transaction {
     }
 
     if (inputAmount == 0) {
-      throw Exception('No balance to send');
+      throw TransactionException(
+          TransactionErrorCode.insufficientFunds, 'No balance to send.');
     }
 
     if (inputAmount < _getDustThreshold(wallet.addressType)) {
-      throw Exception('Sending amount is under dust threshold.');
+      throw TransactionException(TransactionErrorCode.dustOutput,
+          'Sending amount is under dust threshold.');
     }
 
     TransactionOutput sendingOutput = TransactionOutput.forPayment(0, address);
@@ -188,6 +209,7 @@ class Transaction {
     Transaction transaction = Transaction.withInputsAndOutputs(
         inputs, outputs, wallet.addressType,
         version: version, lockTime: lockTime);
+    transaction._isSweep = true;
     if (policy != null) {
       transaction.setPolicy(policy);
     }
@@ -201,7 +223,9 @@ class Transaction {
     int fee = (vByte * feeRate).ceil();
 
     if (inputAmount < fee) {
-      throw Exception('Not enough amount for sending. (Fee : $fee)');
+      throw TransactionException(TransactionErrorCode.insufficientFunds,
+          'Not enough amount for sending.',
+          context: {'fee': fee});
     }
 
     sendingOutput.setAmount(inputAmount - fee);
@@ -223,6 +247,7 @@ class Transaction {
       {int version = 2,
       int lockTime = 0,
       Policy? policy}) {
+    _validateFeeRate(feeRate);
     int totalInputAmount = 0;
     List<TransactionInput> inputs = [];
     List<TransactionOutput> outputs = [];
@@ -261,7 +286,9 @@ class Transaction {
     int changeAmount = totalInputAmount - totalOutputAmount - fee;
     if (changeAmount < 0) {
       // tx.outputs.remove(changeOutput);
-      throw Exception('Not enough amount for sending. (Fee : $fee)');
+      throw TransactionException(TransactionErrorCode.insufficientFunds,
+          'Not enough amount for sending.',
+          context: {'fee': fee});
     } else {
       changeOutput.setAmount(changeAmount);
       if (changeOutput.isDustOutput(wallet.addressType.isSegwit)) {
@@ -311,9 +338,13 @@ class Transaction {
   factory Transaction.parse(String transaction,
       {bool isEmptySignature = false}) {
     Uint8List txBytes = Codec.decodeHex(transaction);
-
-    Uint8List sublist = txBytes.sublist(4);
-    bool isSegwit = sublist[0] == 0x00;
+    if (txBytes.length < 5) {
+      throw const FormatException('Truncated transaction header.');
+    }
+    bool isSegwit = txBytes[4] == 0x00;
+    if (isSegwit && txBytes.length < 6) {
+      throw const FormatException('Truncated segwit marker and flag.');
+    }
 
     // Move the pointer back by 5 bytes
     //sublist = txBytes.sublist(0, txBytes.length - 5);
@@ -334,46 +365,42 @@ class Transaction {
     }
   }
 
-  /// Get the length of a variable integer based on its first byte
-  static int _getVariableIntegerLength(Uint8List bytes, int offset) {
-    int firstByte = bytes[offset];
-    if (firstByte < 0xfd) {
-      return 1;
-    } else if (firstByte == 0xfd) {
-      return 3;
-    } else if (firstByte == 0xfe) {
-      return 5;
-    } else {
-      return 9;
-    }
-  }
-
   static Uint8List _parseLocktime(Uint8List txBytes, int offset) {
     const locktimeLength = 4;
     if (offset + locktimeLength > txBytes.length) {
-      throw Exception('Transaction : Invalid locktime length');
+      throw const FormatException('Transaction has a truncated locktime.');
     }
     if (offset + locktimeLength != txBytes.length) {
-      throw Exception('Transaction : Unexpected trailing bytes after locktime');
+      throw const FormatException(
+          'Transaction has unexpected trailing bytes after locktime.');
     }
     return txBytes.sublist(offset, offset + locktimeLength);
   }
 
+  static void _requireBytes(
+      Uint8List bytes, int offset, int length, String field) {
+    if (offset < 0 || length < 0 || offset > bytes.length - length) {
+      throw FormatException('Truncated transaction $field.');
+    }
+  }
+
   factory Transaction._parseSegwit(Uint8List txBytes) {
     int offset = 0;
+    _requireBytes(txBytes, offset, 6, 'header');
     Uint8List version = txBytes.sublist(0, 4);
     offset += 4;
     Uint8List marker = txBytes.sublist(offset, offset + 2);
     offset += 2;
     if (!(marker[0] == 0x00 && marker[1] == 0x01)) {
-      throw Exception('Transaction : Not a segwit transaction maker');
+      throw const FormatException('Invalid segwit marker and flag.');
     }
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
     //print(numInputs);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
     //print(Converter.bytesToHex(txBytes.sublist(offset)));
     for (int i = 0; i < numInputs; i++) {
+      _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input =
           TransactionInput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       inputs.add(input);
@@ -381,9 +408,10 @@ class Transaction {
       offset += size;
     }
     int numOutputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
+      _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
           TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       outputs.add(output);
@@ -393,14 +421,15 @@ class Transaction {
     //witness
     for (TransactionInput txIn in inputs) {
       int numItems = Codec.decodeVariableInteger(txBytes, offset);
-      offset += _getVariableIntegerLength(txBytes, offset);
+      offset += Codec.getVariableIntegerLength(txBytes, offset);
       List items = [];
       for (int i = 0; i < numItems; i++) {
         int itemLen = Codec.decodeVariableInteger(txBytes, offset);
-        offset += _getVariableIntegerLength(txBytes, offset);
+        offset += Codec.getVariableIntegerLength(txBytes, offset);
         if (itemLen == 0) {
           items.add(0);
         } else {
+          _requireBytes(txBytes, offset, itemLen, 'witness item');
           items.add(txBytes.sublist(offset, offset + itemLen));
           offset += itemLen;
         }
@@ -424,13 +453,15 @@ class Transaction {
 
   factory Transaction._parseLegacy(Uint8List txBytes, bool isEmptySignature) {
     int offset = 0;
+    _requireBytes(txBytes, offset, 5, 'header');
     Uint8List version = txBytes.sublist(0, 4);
     offset += 4;
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
     //print("numInputs : $numInputs");
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
     for (int i = 0; i < numInputs; i++) {
+      _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input =
           TransactionInput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       // print("input : ${input.serialize()}");
@@ -443,10 +474,11 @@ class Transaction {
     }
 
     int numOutputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     // print("numOutputs : $numOutputs");
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
+      _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
           TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       outputs.add(output);
@@ -461,14 +493,16 @@ class Transaction {
   factory Transaction.parseUnsignedTransaction(String transaction) {
     int offset = 0;
     Uint8List txBytes = Codec.decodeHex(transaction);
+    _requireBytes(txBytes, offset, 5, 'header');
     Uint8List version = txBytes.sublist(0, 4);
     offset += 4;
 
     int numInputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionInput> inputs = [];
 
     for (int i = 0; i < numInputs; i++) {
+      _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input = TransactionInput.parseForPsbt(
           Codec.encodeHex(txBytes.sublist(offset)));
       inputs.add(input);
@@ -482,9 +516,10 @@ class Transaction {
     }
 
     int numOutputs = Codec.decodeVariableInteger(txBytes, offset);
-    offset += _getVariableIntegerLength(txBytes, offset);
+    offset += Codec.getVariableIntegerLength(txBytes, offset);
     List<TransactionOutput> outputs = [];
     for (int i = 0; i < numOutputs; i++) {
+      _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
           TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
       outputs.add(output);
@@ -637,7 +672,7 @@ class Transaction {
     return Hash.sha256fromHex(Hash.sha256fromHex(sigHash));
   }
 
-  //BIP341
+  /// Computes the BIP341 signature hash for input [index].
   String getTaprootSigHash(int index, List<TransactionOutput> utxoList,
       {int hashType = 0,
       bool isTapscript = false,
@@ -728,6 +763,7 @@ class Transaction {
     }
   }
 
+  /// Computes the BIP341 hash of serialized input amounts.
   String getHashAmounts(List<int> amountList) {
     List<int> buffer = [];
     for (int amount in amountList) {
@@ -789,117 +825,89 @@ class Transaction {
       throw Exception('Unsupported Address Type');
     }
 
-    // 1. Generate sigHash
+    final TransactionInput input = inputs[inputIndex];
     String sigHash;
     if (utxoAddressType == AddressType.p2wpkh) {
       sigHash = getSigHash(inputIndex, utxo, utxoAddressType);
     } else if (utxoAddressType == AddressType.p2wsh) {
-      sigHash = getSigHash(inputIndex, utxo, utxoAddressType,
-          witnessScript: witnessScript);
-    } else {
-      throw Exception('Unsupported Address Type');
-    }
-    Uint8List msg = Codec.decodeHex(sigHash);
-
-    // 2.Validate signature
-    if (utxoAddressType == AddressType.p2wsh) {
-      String script = inputs[inputIndex].witnessList.last;
-      String size =
-          Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
-      MultisignatureScript witnessScript =
-          MultisignatureScript.parse(size + script);
-
-      List<Uint8List> signatures = [];
-
-      for (int i = 1; i < inputs[inputIndex].witnessList.length - 1; i++) {
-        signatures.add(Codec.decodeHex(inputs[inputIndex].witnessList[i]));
-      }
-
-      List<Uint8List> pubKeys = witnessScript.getPublicKeys();
-
-      int requiredSigs = witnessScript.getRequiredSignature();
-
-      if (signatures.length < requiredSigs) {
+      try {
+        if (input.witnessList.length < 3) {
+          return false;
+        }
+        final String finalizedWitnessScript = input.witnessList.last;
+        if (witnessScript != null &&
+            witnessScript.toLowerCase() !=
+                finalizedWitnessScript.toLowerCase()) {
+          return false;
+        }
+        sigHash = getSigHash(inputIndex, utxo, utxoAddressType,
+            witnessScript: finalizedWitnessScript);
+      } on FormatException {
+        return false;
+      } on RangeError {
         return false;
       }
-
-      int validSigs = 0;
-
-      for (Uint8List sig in signatures) {
-        for (Uint8List pub in pubKeys) {
-          int rLen = sig[3];
-          Uint8List r = sig.sublist(4, 4 + rLen);
-          if (r[0] == 0) r = r.sublist(1);
-          int sLen = sig[4 + rLen + 1];
-          Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
-          Uint8List rs = Uint8List.fromList([...r, ...s]);
-
-          if (Ecc.verifyEcdsa(msg, pub, rs)) {
-            validSigs += 1;
-            continue;
-          }
-        }
-      }
-      return validSigs >= requiredSigs;
-    } else if (utxoAddressType == AddressType.p2wpkh) {
-      //validate single signature
-      String signature;
-      String publicKey;
-
-      signature = inputs[inputIndex].witnessList[0];
-      publicKey = inputs[inputIndex].witnessList[1];
-
-      Uint8List sig = Codec.decodeHex(signature);
-      Uint8List pub = Codec.decodeHex(publicKey);
-
-      Uint8List rawSignature = Converter.derToRawSignature(sig);
-
-      // int rLen = sig[3];
-      // Uint8List r = sig.sublist(4, 4 + rLen);
-      // if (r[0] == 0) r = r.sublist(1);
-      // int sLen = sig[4 + rLen + 1];
-      // Uint8List s = sig.sublist(4 + rLen + 2, 4 + rLen + 2 + sLen);
-      // Uint8List rs = Uint8List.fromList([...r, ...s]);
-
-      return Ecc.verifyEcdsa(msg, pub, rawSignature);
     } else {
       throw Exception('Unsupported Address Type');
     }
+    return input.verifySpend(Codec.decodeHex(sigHash), utxo);
   }
 
   /// Validate taproot signature
   bool validateSchnorr(int inputIndex, List<TransactionOutput> utxoList) {
-    Uint8List sigHash =
-        Codec.decodeHex(getTaprootSigHash(inputIndex, utxoList));
+    final Uint8List encodedSignature =
+        Codec.decodeHex(inputs[inputIndex].witnessList[0]);
+    final int hashType = _taprootHashTypeFromSignature(encodedSignature);
+    Uint8List sigHash = Codec.decodeHex(
+        getTaprootSigHash(inputIndex, utxoList, hashType: hashType));
 
     Uint8List publicKey = utxoList[inputIndex].scriptPubKey.commands[1];
-    Uint8List signature = Codec.decodeHex(inputs[inputIndex].witnessList[0]);
+    Uint8List signature = encodedSignature.length == 65
+        ? encodedSignature.sublist(0, 64)
+        : encodedSignature;
     return Ecc.verifySchnorr(sigHash, publicKey, signature);
   }
 
+  static int _taprootHashTypeFromSignature(Uint8List signature) {
+    if (signature.length == 64) return 0x00;
+    if (signature.length != 65 || signature.last == 0x00) {
+      throw FormatException(
+          'Invalid Taproot signature length or sighash type.');
+    }
+    if (signature.last != 0x01) {
+      throw UnsupportedError(
+          'Unsupported Taproot sighash type: 0x${signature.last.toRadixString(16).padLeft(2, '0')}');
+    }
+    return signature.last;
+  }
+
+  /// Verifies every input witness against the corresponding prevout.
   bool validateSpend(List<TransactionOutput> utxoList) {
     for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
       TransactionInput input = inputs[inputIndex];
       TransactionOutput utxo = utxoList[inputIndex];
       Uint8List sigHash;
-      if (utxo.scriptPubKey.isP2wpkh()) {
-        sigHash =
-            Codec.decodeHex(getSigHash(inputIndex, utxo, AddressType.p2wpkh));
-      } else if (utxo.scriptPubKey.isP2wsh()) {
-        sigHash = Codec.decodeHex(getSigHash(
-            inputIndex, utxo, AddressType.p2wsh,
-            witnessScript: input.witnessList.last));
+      if (utxo.scriptPubKey.isP2wpkh() || utxo.scriptPubKey.isP2wsh()) {
+        if (!validateEcdsa(inputIndex, utxo)) {
+          return false;
+        }
+        continue;
       } else if (utxo.scriptPubKey.isP2tr()) {
+        final Uint8List taprootSignature =
+            Codec.decodeHex(input.witnessList[0]);
+        final int hashType = _taprootHashTypeFromSignature(taprootSignature);
         bool isKeyPathSpending;
         if (input.witnessList.length == 1) {
           isKeyPathSpending = true;
         } else if (input.witnessList.length == 3) {
           isKeyPathSpending = false;
         } else {
-          throw Exception('Invalid Taproot Transaction');
+          throw TransactionException(TransactionErrorCode.invalidTransaction,
+              'Invalid Taproot transaction.');
         }
         if (isKeyPathSpending) {
-          sigHash = Codec.decodeHex(getTaprootSigHash(inputIndex, utxoList));
+          sigHash = Codec.decodeHex(
+              getTaprootSigHash(inputIndex, utxoList, hashType: hashType));
         } else {
           final Uint8List controlBlockBytes =
               Codec.decodeHex(input.witnessList[2]);
@@ -915,6 +923,7 @@ class Transaction {
           sigHash = Codec.decodeHex(getTaprootSigHash(
             inputIndex,
             utxoList,
+            hashType: hashType,
             isTapscript: true,
             tapleafHash: tapleafHash,
             keyVersion: 0,
@@ -961,6 +970,7 @@ class Transaction {
     return vByte;
   }
 
+  /// Estimates signed virtual size for [addressType] and signing policy.
   double estimateVirtualByte(AddressType addressType,
       {int? requiredSignature, int? totalSigner, int? leafCount}) {
     if (!addressType.isSegwit) {
@@ -1080,6 +1090,7 @@ class Transaction {
   /// Estimate the fee of the transaction.
   int estimateFee(double feeRatePerByte, AddressType addressType,
       {int? requiredSignature, int? totalSigner, int? leafCount}) {
+    _validateFeeRate(feeRatePerByte);
     double vByte = estimateVirtualByte(addressType,
         requiredSignature: requiredSignature,
         totalSigner: totalSigner,
@@ -1090,15 +1101,24 @@ class Transaction {
   /// Add utxo to the transaction.
   void addInputWithUtxo(Utxo newUtxo, double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
+    _validateFeeRate(feeRate);
     for (TransactionInput input in inputs) {
       if (input.transactionHash == newUtxo.transactionHash &&
           input.index == newUtxo.index) {
-        throw Exception('UTXO already exists in the transaction');
+        throw TransactionException(TransactionErrorCode.duplicateUtxo,
+            'UTXO already exists in transaction.', context: {
+          'transactionHash': newUtxo.transactionHash,
+          'index': newUtxo.index
+        });
       }
     }
 
     if (_utxoList.contains(newUtxo)) {
-      throw Exception('UTXO already exists in UTXO list');
+      throw TransactionException(TransactionErrorCode.duplicateUtxo,
+          'UTXO already exists in UTXO list.', context: {
+        'transactionHash': newUtxo.transactionHash,
+        'index': newUtxo.index
+      });
     }
 
     TransactionInput input =
@@ -1122,7 +1142,8 @@ class Transaction {
     }
 
     int fee = (_estimateVirtualByteForWallet(this, wallet,
-                requiredSignature: requiredSignature, totalSigner: totalSigner) *
+                requiredSignature: requiredSignature,
+                totalSigner: totalSigner) *
             feeRate)
         .ceil();
     int changeAmount = totalInputAmount - _getTotalSendingAmount() - fee;
@@ -1145,8 +1166,14 @@ class Transaction {
   /// Remove utxo from the transaction.
   void removeInputWithUtxo(Utxo utxoToRemove, double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
+    _validateFeeRate(feeRate);
     if (!_utxoList.contains(utxoToRemove)) {
-      throw Exception('UTXO not found in the UTXO list');
+      throw TransactionException(
+          TransactionErrorCode.utxoNotFound, 'UTXO not found in the UTXO list.',
+          context: {
+            'transactionHash': utxoToRemove.transactionHash,
+            'index': utxoToRemove.index
+          });
     }
 
     TransactionInput? removeTarget;
@@ -1158,7 +1185,12 @@ class Transaction {
       }
     }
     if (removeTarget == null) {
-      throw Exception('UTXO not found in the transaction');
+      throw TransactionException(
+          TransactionErrorCode.utxoNotFound, 'UTXO not found in transaction.',
+          context: {
+            'transactionHash': utxoToRemove.transactionHash,
+            'index': utxoToRemove.index
+          });
     }
 
     String changeAddress =
@@ -1183,7 +1215,8 @@ class Transaction {
     }
     _utxoList.remove(utxoToRemove);
     int fee = (_estimateVirtualByteForWallet(this, wallet,
-                requiredSignature: requiredSignature, totalSigner: totalSigner) *
+                requiredSignature: requiredSignature,
+                totalSigner: totalSigner) *
             feeRate)
         .ceil();
     int changeAmount = totalInputAmount - _getTotalSendingAmount() - fee;
@@ -1198,20 +1231,25 @@ class Transaction {
     }
   }
 
+  /// Recalculates change or sweep output amount for a new [feeRate].
   void updateFeeRate(double feeRate, WalletBase wallet,
       {int? requiredSignature, int? totalSigner}) {
+    _validateFeeRate(feeRate);
     int fee = (_estimateVirtualByteForWallet(this, wallet,
-                requiredSignature: requiredSignature, totalSigner: totalSigner) *
+                requiredSignature: requiredSignature,
+                totalSigner: totalSigner) *
             feeRate)
         .ceil();
 
-    if (outputs.length == 1) {
+    if (_isSweep && outputs.length == 1) {
       if (outputs[0].amount <= fee) {
-        throw Exception('Not enough amount for sending.');
+        throw TransactionException(TransactionErrorCode.insufficientFunds,
+            'Not enough amount for sending.');
       }
       outputs[0].setAmount(totalInputAmount - fee);
       if (outputs[0].isDustOutput(wallet.addressType.isSegwit)) {
-        throw Exception('Sending amount is under dust threshold.');
+        throw TransactionException(TransactionErrorCode.dustOutput,
+            'Sending amount is under dust threshold.');
       }
     } else {
       String changeAddress =
@@ -1240,6 +1278,7 @@ class Transaction {
     }
   }
 
+  /// Selects a Taproot script policy and applies its locktime requirements.
   void setPolicy(Policy policy) {
     _appliedPolicy = policy;
     // If the policy uses CLTV (e.g. InheritancePolicy), make the transaction
@@ -1253,6 +1292,14 @@ class Transaction {
         }
       }
     }
+  }
+
+  static double _validateFeeRate(double feeRate) {
+    if (!feeRate.isFinite || feeRate < 0) {
+      throw ArgumentError.value(
+          feeRate, 'feeRate', 'Fee rate must be finite and non-negative.');
+    }
+    return feeRate;
   }
 
   int _getTotalSendingAmount() {

@@ -1,17 +1,18 @@
 @Tags(['unit'])
+library;
 
 import 'dart:convert';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('SingleSignatureVault', () {
     late SingleSignatureVault vault;
     setUpAll(() {
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
     });
     group('SingleSignatureVault.fromKeyStore', () {
       test('Generate single signature vault from key store', () {
@@ -33,6 +34,15 @@ void main() {
         expect(
             () => SingleSignatureVault.fromKeyStore(keyStore,
                 addressType: AddressType.p2wsh),
+            throwsException);
+      });
+
+      test('throws on key network mismatch', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        final mainnetKeyStore =
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        NetworkType.setNetworkType(NetworkType.testnet);
+        expect(() => SingleSignatureVault.fromKeyStore(mainnetKeyStore),
             throwsException);
       });
     });
@@ -94,8 +104,14 @@ void main() {
       });
     });
 
-    group('json', () {
-      test('toJson/fromJson roundtrip', () {
+    group('toJson', () {
+      test('serializes vault', () {
+        expect(vault.toJson(), isNotEmpty);
+      });
+    });
+
+    group('SingleSignatureVault.fromJson', () {
+      test('restores serialized vault', () {
         final source = vault.keyStore;
         final seedlessVault = SingleSignatureVault.fromKeyStore(
           KeyStore.fromExtendedPublicKey(
@@ -110,6 +126,41 @@ void main() {
         expect(restored.derivationPath, seedlessVault.derivationPath);
         expect(restored.keyStore.masterFingerprint,
             seedlessVault.keyStore.masterFingerprint);
+      });
+
+      test('throws on invalid derivation path format', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+          vault.keyStore.extendedPublicKey.serialize(),
+          vault.keyStore.masterFingerprint,
+        );
+        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
+            '"addressTypeName":"p2wpkh","derivationPath":"x/84\'/1\'/0\'"}';
+        expect(() => SingleSignatureVault.fromJson(json), throwsException);
+      });
+
+      test('throws on coin type mismatch in derivation path', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+          vault.keyStore.extendedPublicKey.serialize(),
+          vault.keyStore.masterFingerprint,
+        );
+        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
+            '"addressTypeName":"p2wpkh","derivationPath":"m/84\'/0\'/0\'"}';
+        expect(() => SingleSignatureVault.fromJson(json), throwsException);
+      });
+
+      test('throws on network mismatch', () {
+        final keyStore = KeyStore.fromExtendedPublicKey(
+          vault.keyStore.extendedPublicKey.serialize(),
+          vault.keyStore.masterFingerprint,
+        );
+        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
+            '"addressTypeName":"p2wpkh","derivationPath":"m/84\'/1\'/0\'"}';
+        NetworkType.setNetworkType(NetworkType.mainnet);
+        try {
+          expect(() => SingleSignatureVault.fromJson(json), throwsException);
+        } finally {
+          NetworkType.setNetworkType(NetworkType.testnet);
+        }
       });
     });
   });

@@ -1,8 +1,18 @@
 @Tags(['unit'])
-import 'dart:convert';
+library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:bech32/bech32.dart';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
+
+String _witnessV0Address(int programLength) {
+  final program = Uint8List(programLength);
+  final data = Converter.convertBits(program, 8, 5, pad: true);
+  return Bech32Codec().encode(Bech32('bc', [0, ...data]));
+}
 
 void main() {
   group('WalletUtility', () {
@@ -19,6 +29,16 @@ void main() {
       });
     });
     group('validateAddress', () {
+      test('Accept only 20-byte or 32-byte witness-v0 programs', () {
+        NetworkType.setNetworkType(NetworkType.mainnet);
+
+        expect(WalletUtility.validateAddress(_witnessV0Address(20)), isTrue);
+        expect(WalletUtility.validateAddress(_witnessV0Address(32)), isTrue);
+        expect(WalletUtility.validateAddress(_witnessV0Address(2)), isFalse);
+        expect(WalletUtility.validateAddress(_witnessV0Address(21)), isFalse);
+        expect(WalletUtility.validateAddress(_witnessV0Address(40)), isFalse);
+      });
+
       test('Validate address due to network type', () {
         NetworkType.setNetworkType(NetworkType.testnet);
         expect(
@@ -280,8 +300,63 @@ void main() {
             isTrue); // 2^31-1
       });
     });
+    group('satoshiToBitcoin', () {
+      test('converts satoshi to bitcoin', () {
+        expect(WalletUtility.satoshiToBitcoin(123456789), 1.23456789);
+      });
+    });
+    group('bitcoinToSatoshi', () {
+      test('converts bitcoin to satoshi without floating-point drift', () {
+        expect(WalletUtility.bitcoinToSatoshi(1.23456789), 123456789);
+      });
+    });
+    group('getAccountIndexFromDerivationPath', () {
+      test('returns the final path component', () {
+        expect(WalletUtility.getAccountIndexFromDerivationPath('m/84/1/7'), 7);
+      });
+    });
+    group('isChangeFromDerivationPath', () {
+      test('detects receive and change branches', () {
+        expect(
+            WalletUtility.isChangeFromDerivationPath('m/84/1/0/1/3'), isTrue);
+        expect(
+            WalletUtility.isChangeFromDerivationPath('m/84/1/0/0/3'), isFalse);
+      });
+    });
 
     group('estimateVirtualByte', () {
+      test('requires multisignature parameters for p2wsh', () {
+        expect(() => WalletUtility.estimateVirtualByte(AddressType.p2wsh, 1, 2),
+            throwsArgumentError);
+      });
+
+      test('estimates taproot key-path spending', () {
+        expect(
+            WalletUtility.estimateVirtualByte(AddressType.p2tr, 1, 2), 137.5);
+      });
+
+      test('estimates taproot script-path spending', () {
+        expect(
+            WalletUtility.estimateVirtualByte(AddressType.p2tr, 1, 2,
+                isScriptPath: true,
+                requiredSignature: 2,
+                leafCount: 4,
+                tapScriptSize: 68),
+            greaterThan(
+                WalletUtility.estimateVirtualByte(AddressType.p2tr, 1, 2)));
+      });
+
+      test('requires taproot script-path metadata', () {
+        expect(
+            () => WalletUtility.estimateVirtualByte(AddressType.p2tr, 1, 2,
+                isScriptPath: true),
+            throwsArgumentError);
+      });
+
+      test('rejects unsupported legacy address types', () {
+        expect(() => WalletUtility.estimateVirtualByte(AddressType.p2pkh, 1, 2),
+            throwsException);
+      });
       test('Estimate virtual byte for p2wpkh', () {
         Transaction transaction = Transaction.parse(
             '02000000000101e651891f611e71f59151325620d01b40808c6eab359cdc4164008fd02366db190100000000fdffffff025bfd100300000000160014192e80ed2c7c412bdc2a6c8f371d15cb90f3c85bb3ff0200000000001600142aa810d27d2f384feadab9fdda547678fbc9939e024730440220320a44fc713353c149b37f6f8b32e77ca79586cd0d84799ca3095feec143c02b0220025da285e3f22804dd3a8824aca745fa8d01ef8eac9f27bbc53ff9a13b038000012103b01bd095f648ea829f000207087f16622431077bb5cc0875225ada601375c88500000000');

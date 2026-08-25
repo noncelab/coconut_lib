@@ -12,24 +12,24 @@ abstract class MultisignatureWalletBase extends WalletBase {
   int get requiredSignature => _requiredSignature;
 
   /// Get the list of keyStores.
-  List<KeyStore> get keyStoreList => _keyStoreList;
+  List<KeyStore> get keyStoreList => List.unmodifiable(_keyStoreList);
 
   /// @nodoc
   MultisignatureWalletBase(this._requiredSignature, AddressType _addressType,
-      String derivationPath, this._keyStoreList)
-      : super(_addressType, derivationPath) {
+      String derivationPath, List<KeyStore> keyStores)
+      : _keyStoreList = List<KeyStore>.of(keyStores),
+        super(_addressType, derivationPath) {
     if (!_addressType.isMultisignature) {
-      throw Exception('Use Vault or Wallet class for multisignature.');
+      throw ArgumentError.value(
+          _addressType, 'addressType', 'Multisignature address type required.');
     }
 
-    if (_keyStoreList.length < requiredSignature) {
-      throw Exception(
-          'Required signature is greater than the number of keyStores.');
-    }
+    _validateSignerSet(requiredSignature, _keyStoreList);
 
     final segments = derivationPath.split('/');
     if (segments.length < 3 || segments[0] != 'm') {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Invalid wallet derivation path.');
     }
     final coinTypeSegment = segments[2];
 
@@ -37,20 +37,64 @@ abstract class MultisignatureWalletBase extends WalletBase {
         int.tryParse(coinTypeSegment.replaceAll(RegExp(r"[h']"), ""));
 
     if (coinType == 1 && !NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     } else if (coinType == 0 && NetworkType.currentNetworkType.isTestnet) {
-      throw Exception('Invalid derivation path.');
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Derivation path coin type does not match the network.');
     }
 
     for (KeyStore keyStore in _keyStoreList) {
       if (NetworkType.currentNetworkType.isTestnet !=
           AddressType.isTestnetVersion(keyStore.extendedPublicKey.version)) {
-        throw Exception('Network type mismatch.');
+        throw WalletException(
+            WalletErrorCode.networkMismatch, 'Network type mismatch.');
       }
     }
 
     _descriptor = Descriptor.forMultisignature(_addressType, _keyStoreList,
         _derivationPath.replaceAll("m/", ""), _requiredSignature);
+  }
+
+  static void _validateSignerSet(
+      int requiredSignature, List<KeyStore> keyStores) {
+    if (requiredSignature < 1) {
+      throw ArgumentError.value(requiredSignature, 'requiredSignature',
+          'Required signature must be at least 1.');
+    }
+
+    final Set<String> accountXpubIds = <String>{};
+    for (final KeyStore keyStore in keyStores) {
+      final ExtendedPublicKey xpub = keyStore.extendedPublicKey;
+      final String accountXpubId = <String>[
+        xpub.depth.toString(),
+        xpub.parentFingerprint,
+        xpub.index.toString(),
+        Codec.encodeHex(xpub.chainCode),
+        Codec.encodeHex(xpub.publicKey),
+      ].join(':');
+      if (!accountXpubIds.add(accountXpubId)) {
+        throw ArgumentError.value(
+            keyStores, 'keyStores', 'Duplicate account extended public key.');
+      }
+    }
+
+    for (final bool isChange in <bool>[false, true]) {
+      final Set<String> derivedPublicKeys = <String>{};
+      for (final KeyStore keyStore in keyStores) {
+        final String publicKey = keyStore.getPublicKey(0, isChange: isChange);
+        if (!derivedPublicKeys.add(publicKey)) {
+          throw ArgumentError.value(keyStores, 'keyStores',
+              'Duplicate derived public key in ${isChange ? 'change' : 'receive'} branch.');
+        }
+      }
+    }
+
+    final int distinctSignerCount = accountXpubIds.length;
+    if (requiredSignature > distinctSignerCount) {
+      throw ArgumentError.value(requiredSignature, 'requiredSignature',
+          'Must not exceed distinct signer count ($distinctSignerCount).');
+    }
   }
 
   @override
@@ -63,12 +107,15 @@ abstract class MultisignatureWalletBase extends WalletBase {
 
   @override
   String getAddressWithDerivationPath(String derivationPath) {
-    if (!WalletUtility.validateDerivationPath(_derivationPath)) {
-      throw Exception("Invalid derivation path (e.g., m/44'/0'/0'/0/0)");
+    if (!WalletUtility.validateDerivationPath(derivationPath)) {
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          "Invalid derivation path (e.g., m/44'/0'/0'/0/0).");
     }
 
-    if (!derivationPath.startsWith(derivationPath)) {
-      throw Exception("Derivation path does not match");
+    if (!derivationPath.startsWith('$_derivationPath/')) {
+      throw WalletException(WalletErrorCode.derivationPathMismatch,
+          'Derivation path does not belong to this wallet.',
+          context: {'path': derivationPath, 'walletPath': _derivationPath});
     }
 
     List<String> pubkeys = _keyStoreList
@@ -110,7 +157,8 @@ abstract class MultisignatureWalletBase extends WalletBase {
 
       return script.rawSerialize();
     } else {
-      throw Exception('Not support witness script for this address type.');
+      throw UnsupportedError(
+          'Witness scripts are not supported for this address type.');
     }
   }
 
@@ -128,13 +176,20 @@ abstract class MultisignatureWalletBase extends WalletBase {
   String addSignatureToPsbt(String psbt) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
-      throw Exception('Address Type is not matched.');
+      throw PsbtException(
+          PsbtErrorCode.policyMismatch, 'PSBT address type does not match.');
     }
 
     if (psbtObject.inputs.length !=
         psbtObject.unsignedTransaction!.inputs.length) {
-      throw Exception('Not enought psbt inputs or transaction inputs');
+      throw PsbtException(PsbtErrorCode.transactionInputMismatch,
+          'PSBT input count does not match the unsigned transaction.');
     }
+
+    if (this is! MultisignatureVault) {
+      throw StateError('Multisignature policy validation requires a vault.');
+    }
+    psbtObject.validateMultisignaturePolicy(this as MultisignatureVault);
 
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
@@ -148,7 +203,8 @@ abstract class MultisignatureWalletBase extends WalletBase {
       late String sigHash;
 
       if (addressType != AddressType.p2wsh) {
-        throw Exception('Not support witness script for this address type.');
+        throw UnsupportedError(
+            'Witness scripts are not supported for this address type.');
       }
       TransactionOutput utxo = psbtInput.witnessUtxo!;
       String? witnessScript = psbtInput.witnessScript!.rawSerialize();

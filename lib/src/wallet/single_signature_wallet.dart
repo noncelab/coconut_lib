@@ -1,6 +1,15 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a single signature wallet.
+/// Public-only single-signature wallet for address derivation and ownership
+/// checks.
+///
+/// This type must not contain seed material and cannot sign. Construct it from
+/// an account extended public key or output descriptor, then pair its PSBTs
+/// with a matching [SingleSignatureVault] in the signing environment.
+///
+/// See the [single-signature example](https://github.com/noncelab/coconut_lib/blob/main/doc/example/single_signature.dart).
+///
+/// {@category Wallets and Keys}
 class SingleSignatureWallet extends SingleSignatureWalletBase {
   /// Creates a new single signature wallet.
   SingleSignatureWallet(
@@ -9,10 +18,17 @@ class SingleSignatureWallet extends SingleSignatureWalletBase {
       AddressType addressType,
       String derivationPath,
       ExtendedPublicKey extendedPublicKey)
-      : super(KeyStore(masterFingerprint, wallet, extendedPublicKey),
-            addressType, derivationPath, false);
+      : super(
+            KeyStore.publicOnly(
+                KeyStore(masterFingerprint, wallet, extendedPublicKey)),
+            addressType,
+            derivationPath,
+            false);
 
-  /// Create a single signature wallet from descriptor.
+  /// Creates a watch-only wallet from an output [descriptor].
+  ///
+  /// The checksum is required unless [ignoreChecksum] is `true`. Multisignature
+  /// descriptors are rejected.
   factory SingleSignatureWallet.fromDescriptor(String descriptor,
       {bool ignoreChecksum = false}) {
     Descriptor descriptorObject =
@@ -37,6 +53,7 @@ class SingleSignatureWallet extends SingleSignatureWalletBase {
         addressType, descriptorObject.getDerivationPath(0), extendedPublicKey);
   }
 
+  /// Creates a watch-only wallet from an account [extendedPublicKey].
   factory SingleSignatureWallet.fromExtendedPublicKey(AddressType addressType,
       String extendedPublicKey, String masterFingerprint) {
     if (addressType.isMultisignature) {
@@ -54,8 +71,11 @@ class SingleSignatureWallet extends SingleSignatureWalletBase {
 
   /// Parse the single signature wallet from json string.
   factory SingleSignatureWallet.fromJson(String jsonStr) {
-    Map<String, dynamic> json = jsonDecode(jsonStr);
-    return SingleSignatureWallet.fromDescriptor(json['descriptor']);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'SingleSignatureWallet JSON');
+    return SingleSignatureWallet.fromDescriptor(Codec._readJsonField<String>(
+        json, 'descriptor',
+        name: 'SingleSignatureWallet JSON'));
   }
 
   factory SingleSignatureWallet.fromCryptoAccountPayload(

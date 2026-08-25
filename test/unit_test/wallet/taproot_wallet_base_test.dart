@@ -1,16 +1,18 @@
 @Tags(['unit'])
+library;
+
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('TaprootWalletBase', () {
     late TaprootVault vault;
     setUp(() {
-      vault = MockFactory.createP2trVaultWithPolicies();
+      vault = WalletFixture.p2trPolicyVault();
     });
 
     Uint8List concat(Uint8List a, Uint8List b) {
@@ -58,6 +60,49 @@ void main() {
       return current;
     }
 
+    group('keyStoreList', () {
+      test('returns parent signing key stores', () {
+        expect(vault.keyStoreList, isNotEmpty);
+      });
+    });
+
+    group('isVault', () {
+      test('distinguishes a vault from a watch-only wallet', () {
+        final wallet = TaprootWallet.fromDescriptor(vault.descriptor);
+        expect(vault.isVault, isTrue);
+        expect(wallet.isVault, isFalse);
+      });
+    });
+
+    group('policyList', () {
+      test('returns the descriptor policies', () {
+        expect(vault.policyList, isNotEmpty);
+      });
+    });
+
+    group('getInternalKey', () {
+      test('returns an x-only internal key', () {
+        expect(vault.getInternalKey(0), hasLength(32));
+      });
+    });
+
+    group('getOutputKey', () {
+      test('returns the tweaked x-only output key', () {
+        expect(vault.getOutputKey(0), hasLength(32));
+        expect(Codec.encodeHex(vault.getOutputKey(0)),
+            isNot(Codec.encodeHex(vault.getInternalKey(0))));
+      });
+    });
+
+    group('getKeyOriginExpression', () {
+      test('contains each parent key fingerprint', () {
+        final expression = vault.getKeyOriginExpression();
+        for (final keyStore in vault.keyStoreList) {
+          expect(expression, contains(keyStore.masterFingerprint));
+        }
+      });
+    });
+
     group('getAddress', () {
       test('returns a valid taproot address', () {
         NetworkType.setNetworkType(NetworkType.regtest);
@@ -84,6 +129,8 @@ void main() {
       test('throws on mismatch path', () {
         expect(() => vault.getAddressWithDerivationPath("m/84'/1'/0'/0/0"),
             throwsException);
+        expect(() => vault.getAddressWithDerivationPath("m/86'/1'/0x/0/0"),
+            throwsException);
       });
     });
 
@@ -96,7 +143,7 @@ void main() {
             "m/86'/1'/0'/0/0");
 
         Transaction tx = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
 
         // Build PSBT using the wallet that owns the UTXO (parentVault),
         // then sign via beneficiaryVault using script path.
@@ -109,7 +156,7 @@ void main() {
 
       test('returns true when psbt contains a key from policy list', () {
         TaprootVault childVault =
-            MockFactory.createBeneficiaryVault(passphrase: 'C');
+            WalletFixture.beneficiaryVault(passphrase: 'C');
         TaprootVault beneficiaryVault =
             TaprootVault.fromDescriptor(vault.descriptor);
         beneficiaryVault
@@ -120,7 +167,7 @@ void main() {
             21000,
             "m/86'/1'/0'/0/0");
         Transaction tx = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
         tx.setPolicy(beneficiaryVault.getSpendablePolicy());
 
         Psbt psbt = Psbt.fromTransaction(tx, beneficiaryVault);
@@ -128,7 +175,7 @@ void main() {
       });
 
       test('throws on address type mismatch', () {
-        final p2wpkh = MockFactory.createP2wpkhUnsignedPsbt();
+        final p2wpkh = PsbtFixture.p2wpkhUnsigned();
         expect(() => vault.hasPublicKeyInPsbt(p2wpkh.serialize()),
             throwsException);
       });
@@ -142,7 +189,7 @@ void main() {
             21000,
             "m/86'/1'/0'/0/0");
         Transaction tx = Transaction.forSinglePayment([utxo],
-            MockFactory.reveiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
         Psbt psbt = Psbt.fromTransaction(tx, vault);
         Psbt noncePsbt = Psbt.parse(vault.addPublicNonce(psbt.serialize()));
         Psbt signedPsbt =
@@ -157,7 +204,7 @@ void main() {
       });
       test('adds signatures for script path', () {
         TaprootVault childVault =
-            MockFactory.createBeneficiaryVault(passphrase: 'C');
+            WalletFixture.beneficiaryVault(passphrase: 'C');
         TaprootVault beneficiaryVault =
             TaprootVault.fromDescriptor(vault.descriptor);
         beneficiaryVault
@@ -169,7 +216,7 @@ void main() {
             "m/86'/1'/0'/0/0");
         Transaction tx = Transaction.forSinglePayment(
             [utxo],
-            MockFactory.reveiveAddress,
+            UtxoFixture.receiveAddress,
             "m/86'/1'/0'/1/0",
             20000,
             1,
@@ -188,6 +235,81 @@ void main() {
                   utxo.amount, beneficiaryVault.getAddress(0))
             ]),
             true);
+      });
+
+      test('rejects a forged internal key in a later input', () {
+        final List<Utxo> utxos = UtxoFixture.taprootList(count: 2);
+        final Transaction tx = Transaction.forSinglePayment(utxos,
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 40000, 1, vault);
+        final Psbt psbt = Psbt.fromTransaction(tx, vault);
+        psbt.toKeyMap()['inputs'][1]['17'] = List.filled(32, '00').join();
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(vault), isFalse);
+        expect(
+            () => forgedPsbt.validateTaprootPolicy(vault),
+            throwsA(isA<PsbtException>()
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.policyMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 1)));
+        expect(() => vault.addPublicNonce(forgedPsbt.serialize()),
+            throwsException);
+      });
+
+      test('rejects a forged MuSig2 aggregated public key', () {
+        final Utxo utxo = UtxoFixture.taprootList(count: 1).single;
+        final Transaction tx = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+        final Psbt psbt = Psbt.fromTransaction(tx, vault);
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+        final String aggregateKey =
+            inputMap.keys.firstWhere((key) => key.startsWith('1a'));
+        final String participants = inputMap.remove(aggregateKey);
+        inputMap['1a${participants.substring(0, 66)}'] = participants;
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(vault), isFalse);
+        expect(
+            () => forgedPsbt.validateTaprootPolicy(vault),
+            throwsA(isA<PsbtException>()
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.signerMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 0)));
+      });
+
+      test('rejects a forged script-path control block', () {
+        final TaprootVault childVault =
+            WalletFixture.beneficiaryVault(passphrase: 'C');
+        final TaprootVault beneficiaryVault =
+            TaprootVault.fromDescriptor(vault.descriptor);
+        beneficiaryVault
+            .bindSeedToBeneficiaryKeyStore(childVault.keyStoreList[0].seed);
+        final Utxo utxo = UtxoFixture.taprootList(count: 1).single;
+        final Transaction tx = Transaction.forSinglePayment(
+            [utxo],
+            UtxoFixture.receiveAddress,
+            "m/86'/1'/0'/1/0",
+            20000,
+            1,
+            beneficiaryVault);
+        tx.setPolicy(beneficiaryVault.getSpendablePolicy());
+        final Psbt psbt = Psbt.fromTransaction(tx, beneficiaryVault);
+        final Map<String, dynamic> inputMap = psbt.toKeyMap()['inputs'][0];
+        final String leafKey =
+            inputMap.keys.firstWhere((key) => key.startsWith('15'));
+        final String leafValue = inputMap.remove(leafKey);
+        final String forgedControlBlock =
+            '${leafKey.substring(2, leafKey.length - 2)}00';
+        inputMap['15$forgedControlBlock'] = leafValue;
+        final Psbt forgedPsbt = Psbt.parse(psbt.serialize());
+
+        expect(forgedPsbt.matchesVault(beneficiaryVault), isFalse);
+        expect(
+            () => forgedPsbt.validateTaprootPolicy(beneficiaryVault),
+            throwsA(isA<PsbtException>()
+                .having(
+                    (error) => error.code, 'code', PsbtErrorCode.policyMismatch)
+                .having((error) => error.inputIndex, 'inputIndex', 0)));
       });
     });
 
@@ -216,8 +338,8 @@ void main() {
 
     group('getControlBlock', () {
       test('throws when policy list is empty', () {
-        final emptyPolicyVault = MockFactory.createP2trKeyPathSpendingVault();
-        expect(() => emptyPolicyVault.getControlBlock(0, 0), throwsException);
+        final emptyPolicyVault = WalletFixture.p2trKeyPathVault();
+        expect(() => emptyPolicyVault.getControlBlock(0, 0), throwsStateError);
       });
 
       test('throws when policy index is out of range', () {

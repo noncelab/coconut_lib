@@ -1,11 +1,13 @@
 @Tags(['unit'])
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('KeyStore', () {
@@ -16,6 +18,68 @@ void main() {
       seed = Seed.fromMnemonic(utf8.encode(
           "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"));
       keyStore = KeyStore.fromSeed(seed, AddressType.p2wpkh);
+    });
+    group('masterFingerprint', () {
+      test('returns the root key fingerprint', () {
+        expect(keyStore.masterFingerprint, hasLength(8));
+      });
+    });
+    group('hdWallet', () {
+      test('returns the account-level HD wallet', () {
+        expect(
+            keyStore.hdWallet.publicKey, keyStore.extendedPublicKey.publicKey);
+      });
+    });
+    group('getChildHdWallet', () {
+      test('returns distinct receive and change branches', () {
+        expect(Codec.encodeHex(keyStore.getChildHdWallet(false).publicKey),
+            isNot(Codec.encodeHex(keyStore.getChildHdWallet(true).publicKey)));
+      });
+    });
+    group('extendedPublicKey', () {
+      test('returns the account extended public key', () {
+        expect(
+            keyStore.extendedPublicKey.publicKey, keyStore.hdWallet.publicKey);
+      });
+    });
+    group('seed', () {
+      test('returns the bound seed', () {
+        expect(keyStore.seed, seed);
+      });
+
+      test('creates an independent public-only copy', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+        final copy = KeyStore.publicOnly(watchOnly);
+        expect(copy.hasSeed, isFalse);
+        expect(copy.hdWallet.isNeutered(), isTrue);
+        expect(copy, isNot(same(watchOnly)));
+      });
+    });
+    group('hasSeed', () {
+      test('reports whether private seed material is available', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+        expect(keyStore.hasSeed, isTrue);
+        expect(watchOnly.hasSeed, isFalse);
+      });
+    });
+    group('hasSamePublicIdentity', () {
+      test('matches a watch-only key store for the same account key', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+
+        expect(keyStore.hasSamePublicIdentity(watchOnly), true);
+      });
+
+      test('rejects another account key with the same fingerprint', () {
+        final other = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'different'), AddressType.p2wpkh);
+        final fingerprintCollision = KeyStore(keyStore.masterFingerprint,
+            other.hdWallet, other.extendedPublicKey);
+
+        expect(keyStore.hasSamePublicIdentity(fingerprintCollision), false);
+      });
     });
     group('fromSeed', () {
       test('Generate key store from seed', () {
@@ -120,14 +184,14 @@ void main() {
 
     group('hasPublicKeyInPsbt', () {
       test('Check sign possibility with wrong key store', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
         expect(keyStore.hasPublicKeyInPsbt(psbt.serialize()), false);
       });
       test('Check sign possibility with right key store', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
 
         expect(
-            MockFactory.createP2wpkhVault()
+            WalletFixture.p2wpkhVault()
                 .keyStore
                 .hasPublicKeyInPsbt(psbt.serialize()),
             true);
@@ -136,8 +200,8 @@ void main() {
     group('addSignatureToPsbt', () {
       test('Sign to PSBT (single signature)', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        Psbt unsignedPsbt = MockFactory.createP2wpkhUnsignedPsbt();
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        Psbt unsignedPsbt = PsbtFixture.p2wpkhUnsigned();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
 
         String signedPsbtText = vault.keyStore
             .addSignatureToPsbt(unsignedPsbt.serialize(), vault.addressType);
@@ -145,8 +209,8 @@ void main() {
       });
       test('Sign to PSBT (multisignature)', () {
         NetworkType.setNetworkType(NetworkType.regtest);
-        Psbt unsignedPsbt = MockFactory.createP2wshUnsignedPsbt();
-        MultisignatureVault vault = MockFactory.createP2wshVault();
+        Psbt unsignedPsbt = PsbtFixture.p2wshUnsigned();
+        MultisignatureVault vault = WalletFixture.p2wshVault();
         String partialSignedPsbtText = vault.keyStoreList[0]
             .addSignatureToPsbt(unsignedPsbt.serialize(), vault.addressType);
         String signedPsbtText = vault.keyStoreList[1]
@@ -156,13 +220,13 @@ void main() {
       });
       test('Sign to PSBT (MuSig2)', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'A'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
         KeyStore keyStore2 = KeyStore.fromSeed(
-            MockFactory.getCommonSeed(passphrase: 'B'), AddressType.p2tr);
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
         TaprootVault vault =
             TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
         Transaction tx = Transaction.forSinglePayment(
-            MockFactory.createTaprootUtxoList(count: 1),
+            UtxoFixture.taprootList(count: 1),
             vault.getAddress(1),
             '${vault.derivationPath}/1/1',
             15000,
@@ -174,6 +238,86 @@ void main() {
             keyStore1.addSignatureToPsbt(noncePsbt, AddressType.p2tr);
         Psbt signedPsbt = Psbt.parse(signedPsbtText);
         expect(signedPsbt.isSigned(keyStore1), true);
+      });
+
+      test('MuSig2 secret nonce cannot be consumed twice', () {
+        KeyStore keyStore1 = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
+        KeyStore keyStore2 = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
+        TaprootVault vault =
+            TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
+        Transaction tx = Transaction.forSinglePayment(
+            UtxoFixture.taprootList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        String noncePsbt =
+            vault.addPublicNonce(Psbt.fromTransaction(tx, vault).serialize());
+
+        keyStore1.addSignatureToPsbt(noncePsbt, AddressType.p2tr);
+
+        expect(
+            () => keyStore1.addSignatureToPsbt(noncePsbt, AddressType.p2tr),
+            throwsA(isA<StateError>().having((error) => error.message,
+                'message', contains('already been consumed'))));
+      });
+
+      test('MuSig2 signing rejects a nonce after KeyStore restoration', () {
+        KeyStore keyStore1 = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
+        KeyStore keyStore2 = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
+        TaprootVault vault =
+            TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
+        Transaction tx = Transaction.forSinglePayment(
+            UtxoFixture.taprootList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        Psbt noncePsbt = Psbt.parse(
+            vault.addPublicNonce(Psbt.fromTransaction(tx, vault).serialize()));
+        KeyStore restoredKeyStore = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
+
+        expect(
+            () => restoredKeyStore.addSignatureToPsbt(
+                noncePsbt.serialize(), AddressType.p2tr),
+            throwsA(isA<StateError>().having(
+                (error) => error.message, 'message', contains('unavailable'))));
+      });
+
+      test('MuSig2 nonce can be safely replaced before signing', () {
+        KeyStore keyStore1 = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
+        KeyStore keyStore2 = KeyStore.fromSeed(
+            SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
+        TaprootVault vault =
+            TaprootVault.fromKeyStoreList([keyStore1, keyStore2], []);
+        Transaction tx = Transaction.forSinglePayment(
+            UtxoFixture.taprootList(count: 1),
+            vault.getAddress(1),
+            '${vault.derivationPath}/1/1',
+            15000,
+            3,
+            vault);
+        String unsignedPsbt = Psbt.fromTransaction(tx, vault).serialize();
+        String firstNoncePsbt = vault.addPublicNonce(unsignedPsbt);
+        String replacementNoncePsbt = vault.addPublicNonce(firstNoncePsbt);
+
+        expect(
+            Psbt.parse(replacementNoncePsbt).inputs.single.muSig2PubNonces,
+            isNot(equals(
+                Psbt.parse(firstNoncePsbt).inputs.single.muSig2PubNonces)));
+
+        String signedPsbt = vault.addSignatureToPsbt(replacementNoncePsbt);
+        expect(
+            () => Psbt.parse(signedPsbt).getSignedTransaction(AddressType.p2tr),
+            returnsNormally);
       });
     });
 
@@ -316,39 +460,32 @@ void main() {
         expect(keyStore.toString(), contains('extendedPublicKey'));
       });
     });
-    group('nonce nondeterminism test', () {
-      test('getSecretNonce should return different values for same inputs (BIP-0327 security requirement)', () {
-        Uint8List secretKey = Codec.decodeHex(
-            '53758e643751e3c23fd15b1c08a80179c8a6a78fed51c6e5961e2ea9d381925a');
-        Uint8List publicKey = Codec.decodeHex(
-            "0231cd531693ac6f845e040afbad01fc13816869436d5bbaa0367abc3809b8848f");
-        Uint8List aggPubkey = Codec.decodeHex(
-            "5c6bc6c83ac710fa23c806e3744d90cbd54899f38cfdb2f6310e9d664f79b5b9");
-        Uint8List message = Codec.decodeHex(
-            "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c");
-        Uint8List extraInput = Codec.decodeHex("");
-
-        Uint8List rand = Hash.sha160fromByte(
-            Uint8List.fromList([...secretKey, ...aggPubkey, ...message]));
-
-        Uint8List nonce1 = KeyStore.calculateSecretNonce(
-            rand, secretKey, publicKey, aggPubkey, message, extraInput,
-            isDeterministic: false);
-
-        rand = Hash.sha160fromByte(
-            Uint8List.fromList([...secretKey, ...aggPubkey, ...message]));
-
-        Uint8List nonce2 = KeyStore.calculateSecretNonce(
-            rand, secretKey, publicKey, aggPubkey, message, extraInput,
-            isDeterministic: false);
+    group('getSecretNonce', () {
+      test(
+          'getSecretNonce should return different values for same inputs (BIP-0327 security requirement)',
+          () {
+        KeyStore nonceKeyStore = KeyStore.fromSeed(seed, AddressType.p2tr);
+        String aggPubkey =
+            "5c6bc6c83ac710fa23c806e3744d90cbd54899f38cfdb2f6310e9d664f79b5b9";
+        String message =
+            "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c";
+        Uint8List nonce1 =
+            nonceKeyStore.getSecretNonce(message, aggPubkey, 0, false);
+        Uint8List nonce2 =
+            nonceKeyStore.getSecretNonce(message, aggPubkey, 0, false);
 
         // BIP-0327: Nonce MUST be unique for each signing session
         // This test EXPECTS different nonces but will FAIL with current deterministic implementation
         expect(Codec.encodeHex(nonce1), isNot(equals(Codec.encodeHex(nonce2))),
-            reason: 'MuSig2 nonce should be nondeterministic to prevent key extraction attacks');
+            reason:
+                'MuSig2 nonce should be nondeterministic to prevent key extraction attacks');
       });
+    });
 
-      test('getPublicNonce should return different values for same inputs across different KeyStore instances', () {
+    group('getPublicNonce', () {
+      test(
+          'getPublicNonce should return different values for same inputs across different KeyStore instances',
+          () {
         String sigHash =
             "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c";
         String aggPubKey =
@@ -367,10 +504,13 @@ void main() {
         // BIP-0327: Each signing session must use unique nonce
         // This test EXPECTS different nonces but will FAIL with current deterministic implementation
         expect(nonce1, isNot(equals(nonce2)),
-            reason: 'Different KeyStore instances should generate different nonces for security');
+            reason:
+                'Different KeyStore instances should generate different nonces for security');
       });
 
-      test('multiple calls should return different nonces (replay attack protection)', () {
+      test(
+          'multiple calls should return different nonces (replay attack protection)',
+          () {
         String sigHash =
             "90e6bcf20fccc52e974ecd7e9fa2b7e7af5832d9b8285078095b8b5dfb8d045c";
         String aggPubKey =
@@ -380,25 +520,27 @@ void main() {
 
         KeyStore keyStore = KeyStore.fromSeed(seed, AddressType.p2tr);
 
-        String nonce1 = keyStore.getPublicNonce(
-            sigHash, aggPubKey, accountIndex, isChange);
-        String nonce2 = keyStore.getPublicNonce(
-            sigHash, aggPubKey, accountIndex, isChange);
-        String nonce3 = keyStore.getPublicNonce(
-            sigHash, aggPubKey, accountIndex, isChange);
+        String nonce1 =
+            keyStore.getPublicNonce(sigHash, aggPubKey, accountIndex, isChange);
+        String nonce2 =
+            keyStore.getPublicNonce(sigHash, aggPubKey, accountIndex, isChange);
+        String nonce3 =
+            keyStore.getPublicNonce(sigHash, aggPubKey, accountIndex, isChange);
 
         // BIP-0327: Nonce reuse leads to private key extraction
         // This test EXPECTS different nonces but will FAIL with current deterministic implementation
         expect(nonce1, isNot(equals(nonce2)),
-            reason: 'Repeated getPublicNonce calls should generate different nonces');
+            reason:
+                'Repeated getPublicNonce calls should generate different nonces');
         expect(nonce2, isNot(equals(nonce3)),
-            reason: 'Repeated getPublicNonce calls should generate different nonces');
+            reason:
+                'Repeated getPublicNonce calls should generate different nonces');
       });
     });
 
     group('operator ==', () {
       test('Check equal', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         SingleSignatureWallet wallet =
             SingleSignatureWallet.fromDescriptor(vault.descriptor);
 
@@ -408,7 +550,7 @@ void main() {
       });
 
       test('Check unequal', () {
-        SingleSignatureVault vault = MockFactory.createP2wpkhVault();
+        SingleSignatureVault vault = WalletFixture.p2wpkhVault();
         expect(keyStore == vault.keyStore, false);
       });
     });
@@ -423,12 +565,14 @@ void main() {
       });
     });
 
-    group('additional coverage', () {
+    group('getPublicKeyBytes', () {
       test('getPublicKeyBytes matches getPublicKey hex', () {
         final Uint8List pubBytes = keyStore.getPublicKeyBytes(0);
         expect(Codec.encodeHex(pubBytes), keyStore.getPublicKey(0));
       });
+    });
 
+    group('fromJson', () {
       test('fromJson restores serialized form', () {
         final KeyStore watchOnly = KeyStore.fromExtendedPublicKey(
             keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
@@ -437,13 +581,101 @@ void main() {
         expect(restored.extendedPublicKey.serialize(),
             watchOnly.extendedPublicKey.serialize());
       });
+    });
 
-      test('wipeSeed clears sensitive data', () {
+    group('toJson', () {
+      test('serializes a watch-only key store', () {
+        final watchOnly = KeyStore.fromExtendedPublicKey(
+            keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+        final map = jsonDecode(watchOnly.toJson()) as Map<String, dynamic>;
+        expect(map['fingerprint'], watchOnly.masterFingerprint);
+        expect(
+            map['extendedPublicKey'], watchOnly.extendedPublicKey.serialize());
+        expect(map['seed'], isNull);
+      });
+
+      test('excludes private key material from a signing key store', () {
+        final signing =
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        final jsonText = signing.toJson();
+        final map = jsonDecode(jsonText) as Map<String, dynamic>;
+        final hdWalletMap =
+            jsonDecode(map['hdWallet'] as String) as Map<String, dynamic>;
+
+        expect(map.containsKey('seed'), isFalse);
+        expect(hdWalletMap.containsKey('privateKey'), isFalse);
+        expect(jsonText, isNot(contains('machine crack daughter')));
+
+        final restored = KeyStore.fromJson(jsonText);
+        expect(restored.hasSeed, isFalse);
+        expect(restored.hdWallet.isNeutered(), isTrue);
+        expect(restored.extendedPublicKey.serialize(),
+            signing.extendedPublicKey.serialize());
+      });
+    });
+
+    group('wipeSeed', () {
+      test('clears private wallets and preserves public derivation', () {
         final KeyStore mutable =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
+            KeyStore.fromSeed(SeedFixture.common(), AddressType.p2wpkh);
+        final HDWallet accountWallet = mutable.hdWallet;
+        final HDWallet receiveWallet = mutable.getChildHdWallet(false);
+        final HDWallet changeWallet = mutable.getChildHdWallet(true);
+        final Uint8List accountPrivateKey = accountWallet.privateKey!;
+        final Uint8List receivePrivateKey = receiveWallet.privateKey!;
+        final Uint8List changePrivateKey = changeWallet.privateKey!;
+        final Uint8List expectedAccountPrivateKey =
+            Uint8List.fromList(accountPrivateKey);
+        final Uint8List expectedReceivePrivateKey =
+            Uint8List.fromList(receivePrivateKey);
+        final Uint8List expectedChangePrivateKey =
+            Uint8List.fromList(changePrivateKey);
+        final String receivePublicKey = mutable.getPublicKey(0);
+
         expect(mutable.hasSeed, true);
         mutable.wipeSeed();
+
         expect(mutable.hasSeed, false);
+        expect(accountPrivateKey, expectedAccountPrivateKey);
+        expect(receivePrivateKey, expectedReceivePrivateKey);
+        expect(changePrivateKey, expectedChangePrivateKey);
+        expect(accountWallet.isNeutered(), isTrue);
+        expect(receiveWallet.isNeutered(), isTrue);
+        expect(changeWallet.isNeutered(), isTrue);
+        expect(mutable.hdWallet.isNeutered(), isTrue);
+        expect(mutable.getChildHdWallet(false).isNeutered(), isTrue);
+        expect(mutable.getChildHdWallet(true).isNeutered(), isTrue);
+        expect(mutable.getPublicKey(0), receivePublicKey);
+        expect(() => mutable.getPrivateKey(0), throwsException);
+        expect(() => accountWallet.signEcdsa(Uint8List(32)), throwsStateError);
+
+        final map = jsonDecode(mutable.toJson()) as Map<String, dynamic>;
+        final hdWalletMap =
+            jsonDecode(map['hdWallet'] as String) as Map<String, dynamic>;
+        expect(map.containsKey('seed'), isFalse);
+        expect(hdWalletMap.containsKey('privateKey'), isFalse);
+      });
+    });
+
+    group('addPublicNonceToPsbt', () {
+      test('Add public nonce to PSBT', () {
+        TaprootVault vault = WalletFixture.p2trMultikeyVault();
+        KeyStore keyStore = vault.keyStoreList[0];
+        Psbt psbt = Psbt.fromTransaction(
+            Transaction.forSinglePayment(
+                [UtxoFixture.common(AddressType.p2tr)],
+                vault.getAddress(1),
+                '${vault.derivationPath}/1/1',
+                15000,
+                3,
+                vault),
+            vault);
+
+        Psbt noncePsbt =
+            Psbt.parse(keyStore.addPublicNonceToPsbt(psbt.serialize()));
+        String aggregatedPublicNonce =
+            noncePsbt.inputs[0].getAggregatedPublicNonce();
+        expect(Codec.decodeHex(aggregatedPublicNonce), hasLength(66));
       });
     });
   });
@@ -543,29 +775,6 @@ void main() {
         expect(sessionContext.e.toString(),
             '75550762600552793952557687225983707197539317791023912703967559988774299150629');
       });
-    });
-  });
-
-  group('addMuSig2PublicNonceToPsbt', () {
-    test('Add public nonce to PSBT', () {
-      TaprootVault vault = MockFactory.createP2trVaultOnlyKeys();
-      KeyStore keyStore = vault.keyStoreList[0];
-      Psbt psbt = Psbt.fromTransaction(
-          Transaction.forSinglePayment(
-              [MockFactory.getCommonUtxo(AddressType.p2tr)],
-              vault.getAddress(1),
-              '${vault.derivationPath}/1/1',
-              15000,
-              3,
-              vault),
-          vault);
-
-      Psbt noncePsbt =
-          Psbt.parse(keyStore.addPublicNonceToPsbt(psbt.serialize()));
-      expect(noncePsbt.inputs[0].getAggregatedPublicNonce(),
-          '03a274a40c820b548f4ec877c8fc0d85ca40451cf23855ee26b1dd68f2163945d30276b16c8a45d31def76ad1849d19301a2a5e0db6726b6b3005551a57114606542');
-
-      // expect(keyStore.addPublicNonceToPsbt(psbt.serialize()), noncePsbtTarget);
     });
   });
 }

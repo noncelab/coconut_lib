@@ -1,6 +1,13 @@
 part of '../../coconut_lib.dart';
 
-/// Represents a PSBT(BIP-0174).
+/// Partially Signed Bitcoin Transaction used across signing boundaries.
+///
+/// [Psbt.fromTransaction] binds an unsigned transaction to wallet derivation
+/// and prevout metadata. Before signing an imported PSBT, confirm
+/// [matchesVault], inspect its recipients and fee, and validate signatures
+/// during finalization.
+///
+/// {@category PSBT}
 class Psbt {
   /// @nodoc
   static Map<int, String> globalKeyType = {
@@ -105,17 +112,20 @@ class Psbt {
         return totalInput - totalOutput;
       }();
 
-  /// Get the sending amount of the transaction.
-  int get sendingAmount => () {
-        int sendingAmount = 0;
-        for (PsbtOutput output in outputs) {
-          if (output.bip32Derivation != null && output.isChange) continue;
-          sendingAmount += output.outAmount!;
-        }
+  /// Get the sending amount, excluding change verified against [wallet].
+  int sendingAmount(WalletBase wallet) {
+    int sendingAmount = 0;
+    for (PsbtOutput output in outputs) {
+      if (output.isChange(wallet)) continue;
+      sendingAmount += output.outAmount!;
+    }
 
-        return sendingAmount;
-      }();
+    return sendingAmount;
+  }
 
+  /// Infers the common address type from the first input's derivation data.
+  ///
+  /// Returns `null` when the input does not contain a supported derivation map.
   AddressType? get addressType => () {
         if (inputs.isEmpty) {
           throw Exception('Inputs are empty');
@@ -133,8 +143,14 @@ class Psbt {
         }
       }();
 
-  bool isForVault(WalletBase wallet) {
+  /// Returns whether this PSBT's identifying metadata matches [wallet].
+  ///
+  /// Multisignature inputs are also checked against the complete vault policy.
+  bool matchesVault(WalletBase wallet) {
     if (wallet is SingleSignatureVault) {
+      if (globalExtendedPublicKeyList.length != 1) {
+        return false;
+      }
       KeyStore keyStore = wallet.keyStore;
       if (keyStore.extendedPublicKey.serializeForPsbt(toXpub: true) !=
           globalExtendedPublicKeyList.first.publicKey) {
@@ -151,7 +167,12 @@ class Psbt {
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
-      return true;
+      try {
+        validateSingleSignaturePolicy(wallet);
+        return true;
+      } on PsbtException {
+        return false;
+      }
     } else if (wallet is MultisignatureVault) {
       if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
         return false;
@@ -168,41 +189,410 @@ class Psbt {
       pubInPsbtList.sort();
       pubInVaultList.sort();
       if (pubInVaultList.join('') != pubInPsbtList.join('')) {
-        print('pubInVaultList: $pubInVaultList');
-        print('pubInPsbtList: $pubInPsbtList');
-        return false;
-      }
-      if (wallet.requiredSignature !=
-          inputs[0].witnessScript!.getRequiredSignature()) {
         return false;
       }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
-      return true;
+      try {
+        validateMultisignaturePolicy(wallet);
+        return true;
+      } on PsbtException {
+        return false;
+      }
     } else if (wallet is TaprootVault) {
-      List<String> pubInVaultList = [];
+      final Set<String> pubInVaultList = <String>{};
       for (KeyStore keyStore in wallet.keyStoreList) {
-        pubInVaultList
-            .add(keyStore.extendedPublicKey.serializeForPsbt(toXpub: true));
+        pubInVaultList.add(
+            '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+            '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
       }
       for (Policy policy in wallet.policyList) {
         if (policy is InheritancePolicy) {
-          pubInVaultList.add(policy.beneficiaryKeyStore.extendedPublicKey
-              .serializeForPsbt(toXpub: true));
+          final KeyStore keyStore = policy.beneficiaryKeyStore;
+          pubInVaultList.add(
+              '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+              '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
         }
       }
       if (pubInVaultList.length != globalExtendedPublicKeyList.length) {
         return false;
       }
+      final Set<String> pubInPsbtList = globalExtendedPublicKeyList
+          .map((entry) =>
+              '${entry.publicKey}:${entry.masterFingerprint.toUpperCase()}:${entry.path}')
+          .toSet();
+      if (pubInPsbtList.length != globalExtendedPublicKeyList.length ||
+          !pubInPsbtList.containsAll(pubInVaultList)) {
+        return false;
+      }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
-      return true;
+      try {
+        validateTaprootPolicy(wallet);
+        return true;
+      } on PsbtException {
+        return false;
+      }
     } else {
       return false;
+    }
+  }
+
+  /// Validates every P2WPKH input against [wallet]'s derived key and script.
+  ///
+  /// Throws when derivation metadata is forged or a witness UTXO does not
+  /// belong to the single-signature vault.
+  void validateSingleSignaturePolicy(SingleSignatureVault wallet) {
+    if (addressType != AddressType.p2wpkh || inputs.isEmpty) {
+      throw PsbtException(PsbtErrorCode.policyMismatch,
+          'PSBT is not a P2WPKH single-signature transaction.');
+    }
+
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      final List<DerivationPath>? derivations = input.bip32Derivation;
+      if (witnessUtxo == null ||
+          derivations == null ||
+          derivations.length != 1) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input is missing single-signature policy metadata.',
+            inputIndex: inputIndex);
+      }
+
+      final DerivationPath derivation = derivations.single;
+      final List<int> childPath = _validateWalletChildPath(
+          derivation.path, wallet.derivationPath, inputIndex);
+      final bool isChange = childPath[0] == 1;
+      final int addressIndex = childPath[1];
+      final String expectedPublicKey = wallet.keyStore
+          .getPublicKey(addressIndex, isChange: isChange, isXOnly: false);
+
+      if (derivation.masterFingerprint.toUpperCase() !=
+              wallet.keyStore.masterFingerprint.toUpperCase() ||
+          derivation.publicKey != expectedPublicKey) {
+        throw PsbtException(PsbtErrorCode.signerMismatch,
+            'Input derivation does not match the vault signer.',
+            inputIndex: inputIndex);
+      }
+
+      final String expectedScriptPubKey =
+          '0014${Codec.encodeHex(Hash.sha160fromHex(expectedPublicKey))}';
+      if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Input witness UTXO does not belong to the vault.',
+            inputIndex: inputIndex);
+      }
+    }
+  }
+
+  /// Validates every P2WSH input against [wallet]'s complete multisig policy.
+  ///
+  /// Throws when an input's witness script, derivation metadata, or witness
+  /// UTXO does not match the script independently derived from the vault.
+  void validateMultisignaturePolicy(MultisignatureVault wallet) {
+    if (addressType != AddressType.p2wsh || inputs.isEmpty) {
+      throw PsbtException(PsbtErrorCode.policyMismatch,
+          'PSBT is not a P2WSH multisignature transaction.');
+    }
+
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      final MultisignatureScript? witnessScript = input.witnessScript;
+      final List<DerivationPath>? derivations = input.bip32Derivation;
+      if (witnessUtxo == null || witnessScript == null || derivations == null) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input is missing multisignature policy metadata.',
+            inputIndex: inputIndex);
+      }
+      if (derivations.length != wallet.keyStoreList.length) {
+        throw PsbtException(
+            PsbtErrorCode.signerMismatch, 'Input has an invalid signer set.',
+            inputIndex: inputIndex);
+      }
+
+      final Set<String> paths = derivations.map((entry) => entry.path).toSet();
+      if (paths.length != 1) {
+        throw PsbtException(PsbtErrorCode.policyMismatch,
+            'Input has inconsistent derivation paths.',
+            inputIndex: inputIndex);
+      }
+      final String path = paths.single;
+      final List<String> vaultPathSegments = wallet.derivationPath.split('/');
+      final List<String> inputPathSegments = path.split('/');
+      final bool hasExpectedDepth =
+          inputPathSegments.length == vaultPathSegments.length + 2;
+      final bool hasExpectedPrefix = hasExpectedDepth &&
+          inputPathSegments.sublist(0, vaultPathSegments.length).join('/') ==
+              wallet.derivationPath;
+      final int? change = hasExpectedDepth
+          ? int.tryParse(inputPathSegments[vaultPathSegments.length])
+          : null;
+      final int? addressIndex = hasExpectedDepth
+          ? int.tryParse(inputPathSegments[vaultPathSegments.length + 1])
+          : null;
+      if (!hasExpectedPrefix ||
+          (change != 0 && change != 1) ||
+          addressIndex == null ||
+          addressIndex < 0) {
+        throw PsbtException(PsbtErrorCode.derivationPathMismatch,
+            'Input uses a path outside the vault.',
+            inputIndex: inputIndex, context: {'path': path});
+      }
+
+      final String expectedWitnessScript = wallet.getWitnessScript(path);
+      if (witnessScript.rawSerialize() != expectedWitnessScript) {
+        throw PsbtException(PsbtErrorCode.policyMismatch,
+            'Input does not match the vault multisig policy.',
+            inputIndex: inputIndex);
+      }
+
+      final Set<String> expectedDerivations =
+          wallet.keyStoreList.map((keyStore) {
+        final String publicKey = keyStore.getPublicKey(
+            WalletUtility.getAccountIndexFromDerivationPath(path),
+            isChange: WalletUtility.isChangeFromDerivationPath(path));
+        return '${keyStore.masterFingerprint.toUpperCase()}:$path:$publicKey';
+      }).toSet();
+      final Set<String> actualDerivations = derivations
+          .map((entry) =>
+              '${entry.masterFingerprint.toUpperCase()}:${entry.path}:${entry.publicKey}')
+          .toSet();
+      if (actualDerivations.length != derivations.length ||
+          actualDerivations.length != expectedDerivations.length ||
+          !actualDerivations.containsAll(expectedDerivations)) {
+        throw PsbtException(PsbtErrorCode.signerMismatch,
+            'Input derivations do not match the vault signer set.',
+            inputIndex: inputIndex);
+      }
+
+      final String expectedScriptPubKey =
+          '0020${Hash.sha256fromHex(expectedWitnessScript)}';
+      if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Input witness UTXO does not commit to the witness script.',
+            inputIndex: inputIndex);
+      }
+
+      final Set<String> witnessPublicKeys = witnessScript
+          .getPublicKeys()
+          .map((key) => Codec.encodeHex(key))
+          .toSet();
+      for (final Signature signature in input.partialSig ?? <Signature>[]) {
+        if (!witnessPublicKeys.contains(signature.publicKey)) {
+          throw PsbtException(PsbtErrorCode.signerMismatch,
+              'Input contains a signature outside the vault policy.',
+              inputIndex: inputIndex);
+        }
+      }
+    }
+  }
+
+  /// Validates every Taproot input against [wallet]'s complete policy.
+  void validateTaprootPolicy(TaprootVault wallet) {
+    if (addressType != AddressType.p2tr || inputs.isEmpty) {
+      throw PsbtException(
+          PsbtErrorCode.policyMismatch, 'PSBT is not a Taproot transaction.');
+    }
+
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      final List<DerivationPath>? derivations = input.tapBip32Derivation;
+      if (witnessUtxo == null ||
+          derivations == null ||
+          derivations.isEmpty ||
+          input.internalKey == null) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input is missing Taproot policy metadata.',
+            inputIndex: inputIndex);
+      }
+
+      final Set<String> paths = derivations.map((entry) => entry.path).toSet();
+      if (paths.length != 1) {
+        throw PsbtException(PsbtErrorCode.policyMismatch,
+            'Input has inconsistent derivation paths.',
+            inputIndex: inputIndex);
+      }
+      final String path = paths.single;
+      final List<int> childPath =
+          _validateWalletChildPath(path, wallet.derivationPath, inputIndex);
+      final bool isChange = childPath[0] == 1;
+      final int addressIndex = childPath[1];
+
+      final String expectedInternalKey = Codec.encodeHex(
+          wallet.getInternalKey(addressIndex, isChange: isChange));
+      if (input.internalKey != expectedInternalKey) {
+        throw PsbtException(PsbtErrorCode.policyMismatch,
+            'Input has an invalid Taproot internal key.',
+            inputIndex: inputIndex);
+      }
+      final String expectedMerkleRoot = Codec.encodeHex(
+          wallet.getMerkleRoot(addressIndex, isChange: isChange));
+      if ((input.tapMerkleRoot ?? '') != expectedMerkleRoot) {
+        throw PsbtException(PsbtErrorCode.policyMismatch,
+            'Input has an invalid Taproot merkle root.',
+            inputIndex: inputIndex);
+      }
+
+      final String expectedScriptPubKey =
+          '5120${Codec.encodeHex(wallet.getOutputKey(addressIndex, isChange: isChange))}';
+      if (witnessUtxo.scriptPubKey.rawSerialize() != expectedScriptPubKey) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Input witness UTXO does not match the Taproot policy.',
+            inputIndex: inputIndex);
+      }
+
+      if (input.tapLeafScript != null) {
+        _validateTaprootScriptPath(input, wallet, inputIndex, addressIndex,
+            isChange, path, derivations);
+      } else {
+        _validateTaprootKeyPath(input, wallet, inputIndex, addressIndex,
+            isChange, path, derivations);
+      }
+    }
+  }
+
+  static List<int> _validateWalletChildPath(
+      String path, String walletPath, int inputIndex) {
+    final List<String> walletSegments = walletPath.split('/');
+    final List<String> inputSegments = path.split('/');
+    if (inputSegments.length != walletSegments.length + 2 ||
+        inputSegments.sublist(0, walletSegments.length).join('/') !=
+            walletPath) {
+      throw PsbtException(PsbtErrorCode.derivationPathMismatch,
+          'Input uses a path outside the vault.',
+          inputIndex: inputIndex, context: {'path': path});
+    }
+    final int? change = int.tryParse(inputSegments[walletSegments.length]);
+    final int? addressIndex =
+        int.tryParse(inputSegments[walletSegments.length + 1]);
+    if ((change != 0 && change != 1) ||
+        addressIndex == null ||
+        addressIndex < 0) {
+      throw PsbtException(PsbtErrorCode.derivationPathMismatch,
+          'Input uses an invalid vault child path.',
+          inputIndex: inputIndex, context: {'path': path});
+    }
+    return <int>[change!, addressIndex];
+  }
+
+  static void _validateTaprootKeyPath(
+      PsbtInput input,
+      TaprootVault wallet,
+      int inputIndex,
+      int addressIndex,
+      bool isChange,
+      String path,
+      List<DerivationPath> derivations) {
+    final Set<String> expectedDerivations = wallet.keyStoreList.map((keyStore) {
+      final String publicKey = keyStore.getPublicKey(addressIndex,
+          isChange: isChange, isXOnly: true, applyTweak: false);
+      return '${keyStore.masterFingerprint.toUpperCase()}:$path:$publicKey';
+    }).toSet();
+    final Set<String> actualDerivations = derivations
+        .where((entry) => entry.leafHashes.isEmpty)
+        .map((entry) =>
+            '${entry.masterFingerprint.toUpperCase()}:${entry.path}:${entry.publicKey}')
+        .toSet();
+    if (derivations.any((entry) => entry.leafHashes.isNotEmpty) ||
+        actualDerivations.length != derivations.length ||
+        actualDerivations.length != expectedDerivations.length ||
+        !actualDerivations.containsAll(expectedDerivations)) {
+      throw PsbtException(PsbtErrorCode.signerMismatch,
+          'Input derivations do not match the Taproot key policy.',
+          inputIndex: inputIndex);
+    }
+
+    if (wallet.keyStoreList.length == 1) {
+      if (input.muSig2AggregatedPublicKey != null ||
+          input.muSig2ParticipantPubkeys != null) {
+        throw PsbtException(PsbtErrorCode.policyMismatch,
+            'Input has unexpected MuSig2 metadata.',
+            inputIndex: inputIndex);
+      }
+      return;
+    }
+
+    final List<String>? participants = input.muSig2ParticipantPubkeys;
+    final String? aggregatedPublicKey = input.muSig2AggregatedPublicKey;
+    final Set<String> expectedParticipants = wallet.keyStoreList
+        .map((keyStore) => keyStore.getPublicKey(addressIndex,
+            isChange: isChange, isXOnly: false, applyTweak: false))
+        .toSet();
+    if (participants == null ||
+        aggregatedPublicKey == null ||
+        participants.length != expectedParticipants.length ||
+        participants.toSet().length != participants.length ||
+        !participants.toSet().containsAll(expectedParticipants)) {
+      throw PsbtException(PsbtErrorCode.signerMismatch,
+          'Input has an invalid MuSig2 signer set.',
+          inputIndex: inputIndex);
+    }
+    final String expectedAggregatedPublicKey = Codec.encodeHex(
+        wallet.getAggregatedPublicKey(addressIndex,
+            isChange: isChange, isXOnly: false));
+    if (aggregatedPublicKey != expectedAggregatedPublicKey) {
+      throw PsbtException(PsbtErrorCode.signerMismatch,
+          'Input has an invalid MuSig2 aggregated public key.',
+          inputIndex: inputIndex);
+    }
+  }
+
+  static void _validateTaprootScriptPath(
+      PsbtInput input,
+      TaprootVault wallet,
+      int inputIndex,
+      int addressIndex,
+      bool isChange,
+      String path,
+      List<DerivationPath> derivations) {
+    final String actualScript = input.tapLeafScript!.rawSerialize();
+    final int policyIndex = wallet.policyList.indexWhere((policy) =>
+        policy.toScript(addressIndex, isChange: isChange).rawSerialize() ==
+        actualScript);
+    if (policyIndex < 0 ||
+        wallet.policyList[policyIndex] is! InheritancePolicy) {
+      throw PsbtException(PsbtErrorCode.policyMismatch,
+          'Input uses an unknown Taproot script policy.',
+          inputIndex: inputIndex);
+    }
+    final InheritancePolicy policy =
+        wallet.policyList[policyIndex] as InheritancePolicy;
+    final String expectedControlBlock =
+        wallet.getControlBlock(policyIndex, addressIndex, isChange: isChange);
+    if (input.controlBlock != expectedControlBlock) {
+      throw PsbtException(PsbtErrorCode.policyMismatch,
+          'Input has an invalid Taproot control block.',
+          inputIndex: inputIndex);
+    }
+
+    final String leafHash = Codec.encodeHex(
+        policy.getTapleafHash(addressIndex, isChange: isChange));
+    final KeyStore keyStore = policy.beneficiaryKeyStore;
+    final String publicKey = keyStore.getPublicKey(addressIndex,
+        isChange: isChange, isXOnly: true, applyTweak: false);
+    if (derivations.length != 1 ||
+        derivations.single.masterFingerprint != keyStore.masterFingerprint ||
+        derivations.single.path != path ||
+        derivations.single.publicKey != publicKey ||
+        derivations.single.leafHashes.length != 1 ||
+        derivations.single.leafHashes.single != leafHash) {
+      throw PsbtException(PsbtErrorCode.signerMismatch,
+          'Input derivation does not match the Taproot script policy.',
+          inputIndex: inputIndex);
+    }
+    for (final Signature signature in input.tapScriptSig ?? <Signature>[]) {
+      if (signature.publicKey != publicKey) {
+        throw PsbtException(PsbtErrorCode.signerMismatch,
+            'Input contains a signature outside the Taproot script policy.',
+            inputIndex: inputIndex);
+      }
     }
   }
 
@@ -215,13 +605,10 @@ class Psbt {
     psbtMap["global"].keys.forEach((key) {
       if (key.startsWith('01')) {
         String publicKey = key.substring(2);
-        String masterFingerprint = psbtMap["global"][key].substring(0, 8);
-        String derivationPath = _parseDerivationPath(
-            Codec.decodeHex(psbtMap["global"][key].substring(8)));
-        extendedPublicKeyList
-            .add(DerivationPath(publicKey, masterFingerprint, derivationPath));
-        globalExtendedPublicKeyList
-            .add(DerivationPath(publicKey, masterFingerprint, derivationPath));
+        final DerivationPath derivation =
+            DerivationPath.fromBip32(publicKey, psbtMap["global"][key]);
+        extendedPublicKeyList.add(derivation);
+        globalExtendedPublicKeyList.add(derivation);
       }
       if (key.startsWith('fc07636f636f6e757401')) {
         isFromCoconut = true;
@@ -234,6 +621,15 @@ class Psbt {
       TransactionOutput? witnessUtxo;
       if (psbtMap["inputs"][i].containsKey("01")) {
         witnessUtxo = TransactionOutput.parse(psbtMap["inputs"][i]["01"]);
+      }
+      int? sighashType;
+      if (psbtMap["inputs"][i].containsKey("03")) {
+        final Uint8List sighashBytes =
+            Codec.decodeHex(psbtMap["inputs"][i]["03"]);
+        if (sighashBytes.length != 4) {
+          throw FormatException('Invalid PSBT input sighash type length.');
+        }
+        sighashType = Converter.littleEndianToInt(sighashBytes);
       }
 
       List<DerivationPath> inputDerivationPathList = [];
@@ -265,11 +661,8 @@ class Psbt {
         // 06 : BIP32_DERIVATION
         if (key.startsWith('06')) {
           String publicKey = key.substring(2);
-          String masterFingerprint = psbtMap["inputs"][i][key].substring(0, 8);
-          String derivationPath = _parseDerivationPath(
-              Codec.decodeHex(psbtMap["inputs"][i][key].substring(8)));
           inputDerivationPathList.add(
-              DerivationPath(publicKey, masterFingerprint, derivationPath));
+              DerivationPath.fromBip32(publicKey, psbtMap["inputs"][i][key]));
         }
         // 02 : PARTIAL_SIG
         if (key.startsWith('02')) {
@@ -322,30 +715,8 @@ class Psbt {
 
         // 22 : TAP_BIP32_DERIVATION
         if (key.startsWith('16')) {
-          String publicKey = key.substring(2);
-          Uint8List valueBytes = Codec.decodeHex(psbtMap["inputs"][i][key]);
-          int offset = 0;
-
-          String numberOfTapleafHash =
-              Codec.encodeHex(valueBytes.sublist(offset, offset + 1));
-          List<String> tapleafHashList = [];
-          for (int i = 0; i < int.parse(numberOfTapleafHash); i++) {
-            String tapleafHash =
-                Codec.encodeHex(valueBytes.sublist(offset, offset + 32));
-            tapleafHashList.add(tapleafHash);
-            offset += 32;
-          }
-          offset += 1;
-          String masterFingerprint =
-              Codec.encodeHex(valueBytes.sublist(offset, offset + 4));
-          offset += 4;
-
-          String derivationPath = _parseDerivationPath(
-              valueBytes.sublist(offset, valueBytes.length));
-          tapBip32Derivation.add(DerivationPath(
-              publicKey, masterFingerprint, derivationPath,
-              numberOfTapleafHash: numberOfTapleafHash,
-              tapleafHashList: tapleafHashList));
+          tapBip32Derivation.add(DerivationPath.fromTaproot(
+              key.substring(2), psbtMap["inputs"][i][key]));
         }
 
         // 24 : TAP_MERKLE_ROOT
@@ -359,7 +730,7 @@ class Psbt {
           String concatenatedPubKeys = psbtMap["inputs"][i][key];
           muSig2participantPubKeyList ??= [];
           if (concatenatedPubKeys.length % 66 != 0) {
-            throw Exception(
+            throw FormatException(
                 "Invalid participant public key list: length is not multiple of 66 (got ${concatenatedPubKeys.length})");
           }
           int numberOfKeys = concatenatedPubKeys.length ~/ 66;
@@ -429,6 +800,7 @@ class Psbt {
       if (finalScriptWitness.isNotEmpty) {
         input.finalScriptWitness = finalScriptWitness;
       }
+      input.sighashType = sighashType;
       inputs.add(input);
     }
 
@@ -446,7 +818,9 @@ class Psbt {
       amount = unsignedTransaction!.outputs[i].amount;
       script = unsignedTransaction!.outputs[i].scriptPubKey;
 
-      DerivationPath? outputDerivationPath;
+      final List<DerivationPath> outputDerivationPaths = <DerivationPath>[];
+      final List<DerivationPath> outputTaprootDerivationPaths =
+          <DerivationPath>[];
       MultisignatureScript? witnessScript;
       psbtMap["outputs"][i].keys.forEach((key) {
         if (key.startsWith('01')) {
@@ -456,14 +830,15 @@ class Psbt {
           witnessScript = MultisignatureScript.parse(size + script);
         } else if (key.startsWith('02')) {
           String publicKey = key.substring(2);
-          String masterFingerprint = psbtMap["outputs"][i][key].substring(0, 8);
-          String derivationPath = _parseDerivationPath(
-              Codec.decodeHex(psbtMap["outputs"][i][key].substring(8)));
-          outputDerivationPath =
-              DerivationPath(publicKey, masterFingerprint, derivationPath);
+          outputDerivationPaths.add(
+              DerivationPath.fromBip32(publicKey, psbtMap["outputs"][i][key]));
+        } else if (key.startsWith('07')) {
+          outputTaprootDerivationPaths.add(DerivationPath.fromTaproot(
+              key.substring(2), psbtMap["outputs"][i][key]));
         }
       });
-      outputs.add(PsbtOutput(outputDerivationPath, amount, script,
+      outputs.add(PsbtOutput(outputDerivationPaths, amount, script,
+          tapBip32Derivations: outputTaprootDerivationPaths,
           witnessScript: witnessScript));
     }
   }
@@ -523,10 +898,8 @@ class Psbt {
       }
       if (inputs[i].muSig2PubNonces != null) {
         for (String publicKey in inputs[i].muSig2PubNonces!.keys) {
-          if (!psbtMap["inputs"][i].keys.contains("1b$publicKey")) {
-            psbtMap["inputs"][i]["1b$publicKey"] =
-                inputs[i].muSig2PubNonces![publicKey]!;
-          }
+          psbtMap["inputs"][i]["1b$publicKey"] =
+              inputs[i].muSig2PubNonces![publicKey]!;
         }
       }
       if (inputs[i].tapMerkleRoot != null) {
@@ -537,6 +910,7 @@ class Psbt {
     }
   }
 
+  /// Returns the hexadecimal PSBT key-value map used for serialization.
   Map<String, dynamic> toKeyMap() {
     return psbtMap;
   }
@@ -561,11 +935,37 @@ class Psbt {
     }
 
     if (tx.utxoList.isEmpty) {
-      throw Exception('No UTXOs in transaction');
+      throw PsbtException(
+          PsbtErrorCode.missingMetadata, 'Transaction has no UTXOs.');
     }
+    if (tx.inputs.length != tx.utxoList.length) {
+      throw PsbtException(PsbtErrorCode.transactionInputMismatch,
+          'Transaction input and UTXO count mismatch.', context: {
+        'inputCount': tx.inputs.length,
+        'utxoCount': tx.utxoList.length
+      });
+    }
+    final Set<String> outpoints = <String>{};
     for (int i = 0; i < tx.inputs.length; i++) {
-      if (tx.inputs[i].transactionHash != tx.utxoList[i].transactionHash) {
-        throw Exception('Transaction input and UTXO list mismatch');
+      final TransactionInput input = tx.inputs[i];
+      final Utxo utxo = tx.utxoList[i];
+      if (input.transactionHash.toLowerCase() !=
+              utxo.transactionHash.toLowerCase() ||
+          input.index != utxo.index) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Transaction input and UTXO outpoint mismatch.',
+            inputIndex: i,
+            context: {
+              'transactionHash': utxo.transactionHash,
+              'index': utxo.index
+            });
+      }
+      final String outpoint =
+          '${utxo.transactionHash.toLowerCase()}:${utxo.index}';
+      if (!outpoints.add(outpoint)) {
+        throw PsbtException(PsbtErrorCode.duplicateUtxo,
+            'Duplicate transaction input outpoint.',
+            inputIndex: i, context: {'outpoint': outpoint});
       }
     }
 
@@ -647,9 +1047,11 @@ class Psbt {
       String witnessUtxoKey = getKeyType(inputKeyType, 'WITNESS_UTXO');
       inputData[witnessUtxoKey] = witnessUtxoList[i].serialize();
 
-      String sigHashTypeKey = getKeyType(inputKeyType, 'SIGHASH_TYPE');
-      inputData[sigHashTypeKey] =
-          Codec.encodeHex(Converter.intToLittleEndianBytes(1, 4));
+      if (!wallet.addressType.isTaproot) {
+        String sigHashTypeKey = getKeyType(inputKeyType, 'SIGHASH_TYPE');
+        inputData[sigHashTypeKey] =
+            Codec.encodeHex(Converter.intToLittleEndianBytes(1, 4));
+      }
 
       // Each address type
       if (wallet.addressType == AddressType.p2wpkh) {
@@ -739,7 +1141,9 @@ class Psbt {
             final int policyIndex = taprootWallet.policyList.indexWhere(
                 (p) => p.toMiniscript() == inheritancePolicy.toMiniscript());
             if (policyIndex < 0) {
-              throw Exception('Applied policy not found in wallet policy list');
+              throw PsbtException(PsbtErrorCode.policyMismatch,
+                  'Applied policy was not found in wallet policy list.',
+                  inputIndex: i);
             }
             String controlBlock = taprootWallet.getControlBlock(
                 policyIndex, tx.utxoList[i].accountIndex,
@@ -859,17 +1263,45 @@ class Psbt {
                     _serializeDerivationPath(tx.changeAddressDerivationPath!));
           }
         } else if (wallet is TaprootWalletBase) {
-          for (KeyStore keyStore in taprootWallet.keyStoreList) {
-            String publicKey = keyStore.getPublicKey(
-                WalletUtility.getAccountIndexFromDerivationPath(
-                    tx.changeAddressDerivationPath!),
-                isChange: WalletUtility.isChangeFromDerivationPath(
-                    tx.changeAddressDerivationPath!));
+          final String derivationPath = tx.outputs[i].derivationPath!;
+          final int addressIndex =
+              WalletUtility.getAccountIndexFromDerivationPath(derivationPath);
+          final bool isChange =
+              WalletUtility.isChangeFromDerivationPath(derivationPath);
+          final Map<String, KeyStore> keyStoresByPublicKey =
+              <String, KeyStore>{};
+          final Map<String, List<String>> leafHashesByPublicKey =
+              <String, List<String>>{};
 
-            String fingerPrint = keyStore.masterFingerprint;
-            outputData[bip32DerivationKeyType + publicKey] = fingerPrint +
-                Codec.encodeHex(
-                    _serializeDerivationPath(tx.changeAddressDerivationPath!));
+          for (KeyStore keyStore in taprootWallet.keyStoreList) {
+            final String xOnlyPublicKey = keyStore.getPublicKey(addressIndex,
+                isChange: isChange, isXOnly: true);
+            keyStoresByPublicKey[xOnlyPublicKey] = keyStore;
+            leafHashesByPublicKey.putIfAbsent(xOnlyPublicKey, () => <String>[]);
+          }
+
+          for (final Policy policy in taprootWallet.policyList) {
+            if (policy is! InheritancePolicy) continue;
+            final KeyStore keyStore = policy.beneficiaryKeyStore;
+            final String xOnlyPublicKey = keyStore.getPublicKey(addressIndex,
+                isChange: isChange, isXOnly: true);
+            keyStoresByPublicKey[xOnlyPublicKey] = keyStore;
+            leafHashesByPublicKey
+                .putIfAbsent(xOnlyPublicKey, () => <String>[])
+                .add(Codec.encodeHex(
+                    policy.getTapleafHash(addressIndex, isChange: isChange)));
+          }
+
+          final String tapBip32DerivationKeyType =
+              getKeyType(outputKeyType, 'TAP_BIP32_DERIVATION');
+          for (final MapEntry<String, KeyStore> entry
+              in keyStoresByPublicKey.entries) {
+            final List<String> leafHashes = leafHashesByPublicKey[entry.key]!;
+            outputData[tapBip32DerivationKeyType + entry.key] =
+                '${Codec.encodeHex(Codec.encodeVariableInteger(leafHashes.length))}'
+                '${leafHashes.join()}'
+                '${entry.value.masterFingerprint}'
+                '${Codec.encodeHex(_serializeDerivationPath(derivationPath))}';
           }
         }
       }
@@ -895,8 +1327,40 @@ class Psbt {
     return psbt;
   }
 
+  /// Creates a PSBT from a decoded global, input, and output key map.
   factory Psbt.fromMap(Map<String, dynamic> keyMap) {
     return Psbt(keyMap);
+  }
+
+  static ({Map<String, String> map, int offset}) _parseMap(
+      Uint8List bytes, int offset) {
+    final Map<String, String> result = {};
+    while (true) {
+      final int keyLen = Codec.decodeVariableInteger(bytes, offset);
+      offset += Codec.getVariableIntegerLength(bytes, offset);
+      if (keyLen == 0) {
+        return (map: result, offset: offset);
+      }
+      if (keyLen > bytes.length - offset) {
+        throw const FormatException('PSBT key exceeds remaining data.');
+      }
+      final Uint8List key = bytes.sublist(offset, offset + keyLen);
+      offset += keyLen;
+
+      final int valueLen = Codec.decodeVariableInteger(bytes, offset);
+      offset += Codec.getVariableIntegerLength(bytes, offset);
+      if (valueLen > bytes.length - offset) {
+        throw const FormatException('PSBT value exceeds remaining data.');
+      }
+      final Uint8List value = bytes.sublist(offset, offset + valueLen);
+      offset += valueLen;
+
+      final String encodedKey = Codec.encodeHex(key);
+      if (result.containsKey(encodedKey)) {
+        throw const FormatException('PSBT map contains a duplicate key.');
+      }
+      result[encodedKey] = Codec.encodeHex(value);
+    }
   }
 
   /// Parse a PSBT from a base64 string.
@@ -904,119 +1368,81 @@ class Psbt {
     int offset = 0;
 
     Uint8List psbtBytes = base64Decode(psbtBase64);
+    if (psbtBytes.length < 5) {
+      throw const FormatException('Truncated PSBT header.');
+    }
     final version = psbtBytes.sublist(0, 5);
     if (version[0] != 0x70 ||
         version[1] != 0x73 ||
         version[2] != 0x62 ||
         version[3] != 0x74 ||
         version[4] != 0xff) {
-      throw Exception('Invalid PSBT');
+      throw const FormatException('Invalid PSBT magic bytes.');
     }
     offset += 5;
 
     Map<String, dynamic> psbtData = {"global": {}, "inputs": [], "outputs": []};
 
     // Global
-    Map<String, String> globalMap = {};
-    // print(' ---> GLOBAL ---');
-    while (true) {
-      int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-      offset += _getOffset(psbtBytes[offset]);
-      if (keyLen == 0) {
-        break;
-      }
-      Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
-      offset += keyLen;
-      int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-      offset += _getOffset(psbtBytes[offset]);
-      Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
-      offset += valueLen;
-      globalMap[Codec.encodeHex(key)] = Codec.encodeHex(value);
-    }
-    psbtData["global"] = globalMap;
+    final globalResult = _parseMap(psbtBytes, offset);
+    offset = globalResult.offset;
+    psbtData["global"] = globalResult.map;
 
     // Inputs
     if (psbtData["global"]["00"] == null) {
-      throw Exception('Invalid PSBT');
+      throw const FormatException('PSBT is missing the unsigned transaction.');
     }
     Transaction globalTx =
         Transaction.parseUnsignedTransaction(psbtData["global"]["00"]);
 
     for (int i = 0; i < globalTx.inputs.length; i++) {
-      Map<String, String> inputData = {};
-      while (true) {
-        int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += _getOffset(psbtBytes[offset]);
-        if (keyLen == 0) {
-          break;
-        }
-        Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
-        offset += keyLen;
-        int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += _getOffset(psbtBytes[offset]);
-        Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
-        offset += valueLen;
-        inputData[Codec.encodeHex(key)] = Codec.encodeHex(value);
-      }
-      psbtData["inputs"].add(inputData);
+      final inputResult = _parseMap(psbtBytes, offset);
+      offset = inputResult.offset;
+      psbtData["inputs"].add(inputResult.map);
     }
 
     // Outputs
     for (int i = 0; i < globalTx.outputs.length; i++) {
-      Map<String, String> outputData = {};
-      while (true) {
-        int keyLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        // print(' -key len ${keyLen.toString()}-');
-        offset += _getOffset(psbtBytes[offset]);
-        if (keyLen == 0) {
-          break;
-        }
-        Uint8List key = psbtBytes.sublist(offset, offset + keyLen);
-        offset += keyLen;
-        int valueLen = Codec.decodeVariableInteger(psbtBytes, offset);
-        offset += _getOffset(psbtBytes[offset]);
-        Uint8List value = psbtBytes.sublist(offset, offset + valueLen);
-        offset += valueLen;
-        outputData[Codec.encodeHex(key)] = Codec.encodeHex(value);
-      }
-      psbtData["outputs"].add(outputData);
+      final outputResult = _parseMap(psbtBytes, offset);
+      offset = outputResult.offset;
+      psbtData["outputs"].add(outputResult.map);
+    }
+
+    if (psbtBytes.sublist(offset).any((byte) => byte != 0x00)) {
+      throw const FormatException('Unexpected trailing data after PSBT maps.');
     }
 
     return Psbt(psbtData);
   }
 
+  /// Returns the MuSig2 aggregated public nonce for the input at [inputIndex].
   String getAggregatedPublicNonce(int inputIndex) {
     return inputs[inputIndex].getAggregatedPublicNonce();
-  }
-
-  static int _getOffset(int prefix) {
-    if (prefix == 0xfd) {
-      return 3;
-    } else if (prefix == 0xfe) {
-      return 5;
-    } else if (prefix == 0xff) {
-      return 9;
-    }
-    return 1;
   }
 
   static List<String> _parseScriptWitness(String witnessHex) {
     Uint8List witnessBytes = Codec.decodeHex(witnessHex);
     int offset = 0;
     int numItems = Codec.decodeVariableInteger(witnessBytes, offset);
-    offset += _getOffset(witnessBytes[offset]);
+    offset += Codec.getVariableIntegerLength(witnessBytes, offset);
 
     List<String> witnessList = [];
     for (int j = 0; j < numItems; j++) {
       int itemLen = Codec.decodeVariableInteger(witnessBytes, offset);
-      offset += _getOffset(witnessBytes[offset]);
+      offset += Codec.getVariableIntegerLength(witnessBytes, offset);
       if (itemLen == 0) {
         witnessList.add('00');
       } else {
+        if (itemLen > witnessBytes.length - offset) {
+          throw const FormatException('Witness item exceeds remaining data.');
+        }
         witnessList.add(
             Codec.encodeHex(witnessBytes.sublist(offset, offset + itemLen)));
         offset += itemLen;
       }
+    }
+    if (offset != witnessBytes.length) {
+      throw const FormatException('Unexpected trailing witness data.');
     }
     return witnessList;
   }
@@ -1049,29 +1475,6 @@ class Psbt {
     return Uint8List.fromList(serializedPath);
   }
 
-  /// @nodoc
-  static String _parseDerivationPath(Uint8List serializedPath) {
-    if (serializedPath.length % 4 != 0) {
-      throw ArgumentError('Serialized path length must be a multiple of 4');
-    }
-
-    List<String> pathSegments = ['m'];
-
-    for (int i = 0; i < serializedPath.length; i += 4) {
-      Uint8List valueBytes = serializedPath.sublist(i, i + 4);
-      int value = Converter.littleEndianToInt(valueBytes);
-
-      if (value & 0x80000000 != 0) {
-        value &= ~0x80000000;
-        pathSegments.add('$value\'');
-      } else {
-        pathSegments.add('$value');
-      }
-    }
-
-    return pathSegments.join('/');
-  }
-
   /// Get the transaction if all inputs are signed.
   Transaction getSignedTransaction(AddressType addressType) {
     Transaction signedTransaction =
@@ -1081,7 +1484,9 @@ class Psbt {
     if (addressType == AddressType.p2wsh) {
       for (int i = 0; i < inputs.length; i++) {
         if (inputs[i].totalSigner < inputs[i].requiredSignature) {
-          throw Exception('Not enough signatures');
+          throw PsbtException(PsbtErrorCode.insufficientSignatures,
+              'Input does not have enough signatures.',
+              inputIndex: i);
         }
         signedTransaction.inputs[i].setSignature(
             addressType, inputs[i].partialSig!,
@@ -1095,7 +1500,9 @@ class Psbt {
             witnessScript: inputs[i].witnessScript!.rawSerialize())) {
           continue;
         } else {
-          throw Exception('Invalid Signatures');
+          throw PsbtException(PsbtErrorCode.invalidSignature,
+              'Input contains invalid signatures.',
+              inputIndex: i);
         }
       }
       //p2wpkh single signature
@@ -1111,7 +1518,9 @@ class Psbt {
           if (signedTransaction.validateEcdsa(i, inputs[i].witnessUtxo!)) {
             continue;
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(PsbtErrorCode.invalidSignature,
+                'Input contains an invalid signature.',
+                inputIndex: i);
           }
         } else if (inputs[i].finalScriptWitness != null &&
             inputs[i].finalScriptWitness!.isNotEmpty) {
@@ -1123,20 +1532,33 @@ class Psbt {
           if (signedTransaction.validateEcdsa(i, inputs[i].witnessUtxo!)) {
             continue;
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(PsbtErrorCode.invalidSignature,
+                'Input contains an invalid finalized signature.',
+                inputIndex: i);
           }
         } else {
-          throw Exception('Not enough signatures');
+          throw PsbtException(PsbtErrorCode.insufficientSignatures,
+              'Input does not have enough signatures.',
+              inputIndex: i);
         }
       }
     } else if (addressType == AddressType.p2tr) {
       List<TransactionOutput> utxoList = [];
       for (int i = 0; i < inputs.length; i++) {
-        utxoList.add(inputs[i].witnessUtxo!);
+        final TransactionOutput? witnessUtxo = inputs[i].witnessUtxo;
+        if (witnessUtxo == null) {
+          throw PsbtException(PsbtErrorCode.missingMetadata,
+              'Input is missing its witness UTXO.',
+              inputIndex: i);
+        }
+        utxoList.add(witnessUtxo);
       }
       for (int i = 0; i < inputs.length; i++) {
-        if (inputs[i].tapScriptSig != null) {
+        if (inputs[i].tapScriptSig != null &&
+            inputs[i].tapScriptSig!.isNotEmpty) {
           //Script path spending
+          _validateTaprootSignatureEncoding(
+              inputs[i], inputs[i].tapScriptSig![0].signature);
           signedTransaction.inputs[i].setTaprootScriptPathSpendingSignature(
               inputs[i].tapScriptSig![0].signature,
               // Witness must contain raw tapscript bytes (no length prefix).
@@ -1145,26 +1567,38 @@ class Psbt {
         } else if (inputs[i].tapScriptSig == null &&
             inputs[i].muSig2AggregatedPublicKey == null) {
           // key path spending
+          final String? tapKeySig = inputs[i].tapKeySig;
+          if (tapKeySig == null) {
+            throw PsbtException(PsbtErrorCode.insufficientSignatures,
+                'Input is missing its Taproot key-path signature.',
+                inputIndex: i);
+          }
+          _validateTaprootSignatureEncoding(inputs[i], tapKeySig);
           signedTransaction.inputs[i]
-              .setTaprootKeyPathSpendingSignature(inputs[i].tapKeySig!);
+              .setTaprootKeyPathSpendingSignature(tapKeySig);
           if (signedTransaction.validateSchnorr(i, utxoList)) {
             continue;
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(PsbtErrorCode.invalidSignature,
+                'Input contains an invalid Taproot signature.',
+                inputIndex: i);
           }
         } else if (inputs[i].tapScriptSig == null &&
             inputs[i].muSig2AggregatedPublicKey != null) {
           //MuSig2
           if (inputs[i].totalSigner < inputs[i].requiredSignature) {
-            throw Exception('Not enough signatures');
+            throw PsbtException(PsbtErrorCode.insufficientSignatures,
+                'Input does not have enough MuSig2 partial signatures.',
+                inputIndex: i);
           }
 
           Uint8List aggregatedPubKey =
               Codec.decodeHex(inputs[i].muSig2AggregatedPublicKey!);
           Uint8List aggregatedPubNonce =
               Codec.decodeHex(inputs[i].getAggregatedPublicNonce());
-          Uint8List message =
-              Codec.decodeHex(signedTransaction.getTaprootSigHash(i, utxoList));
+          Uint8List message = Codec.decodeHex(
+              signedTransaction.getTaprootSigHash(i, utxoList,
+                  hashType: inputs[i].taprootSighashType));
 
           SessionContext sessionContext = SessionContext(
             inputs[i]
@@ -1188,14 +1622,22 @@ class Psbt {
               Ecc.getEncoded(sessionContext.aggregateQ, true).sublist(1),
               aggregatedSignature)) {
             signedTransaction.inputs[i].setTaprootKeyPathSpendingSignature(
-                Codec.encodeHex(aggregatedSignature));
+                Codec.encodeHex(inputs[i].taprootSighashType == 0
+                    ? aggregatedSignature
+                    : Uint8List.fromList([
+                        ...aggregatedSignature,
+                        inputs[i].taprootSighashType
+                      ])));
           } else {
-            throw Exception('Invalid Signatures');
+            throw PsbtException(PsbtErrorCode.invalidSignature,
+                'Input contains invalid MuSig2 signatures.',
+                inputIndex: i);
           }
         }
       }
       if (!signedTransaction.validateSpend(utxoList)) {
-        throw Exception('Invalid Transaction');
+        throw PsbtException(PsbtErrorCode.invalidTransaction,
+            'Finalized PSBT produced an invalid transaction.');
       }
     } else {
       throw Exception('Unsupported Address Type');
@@ -1204,6 +1646,9 @@ class Psbt {
     return signedTransaction;
   }
 
+  /// Verifies [signature] for [publicKey] against the selected input sighash.
+  ///
+  /// ECDSA is used for SegWit v0 inputs and Schnorr for Taproot inputs.
   bool validateSignature(int inputIndex, String signature, String publicKey) {
     String sigHash = _getSigHash(inputIndex);
     late bool isValid;
@@ -1217,12 +1662,30 @@ class Psbt {
           Codec.decodeHex(publicKey),
           Converter.derToRawSignature(Codec.decodeHex(signature)));
     } else {
+      final Uint8List signatureBytes =
+          _validateTaprootSignatureEncoding(inputs[inputIndex], signature);
       isValid = Ecc.verifySchnorr(
-          Codec.decodeHex(sigHash),
-          Codec.decodeHex(publicKey),
-          Converter.derToRawSignature(Codec.decodeHex(signature)));
+          Codec.decodeHex(sigHash), Codec.decodeHex(publicKey), signatureBytes);
     }
     return isValid;
+  }
+
+  static Uint8List _validateTaprootSignatureEncoding(
+      PsbtInput input, String signatureHex) {
+    final Uint8List signature = Codec.decodeHex(signatureHex);
+    final int encodedHashType;
+    if (signature.length == 64) {
+      encodedHashType = 0x00;
+    } else if (signature.length == 65 && signature.last != 0x00) {
+      encodedHashType = signature.last;
+    } else {
+      throw FormatException('Invalid Taproot signature encoding.');
+    }
+    if (encodedHashType != input.taprootSighashType) {
+      throw FormatException(
+          'Taproot signature sighash type does not match PSBT input.');
+    }
+    return signature.length == 65 ? signature.sublist(0, 64) : signature;
   }
 
   String _getSigHash(int inputIndex) {
@@ -1250,11 +1713,16 @@ class Psbt {
       for (int j = 0; j < unsignedTransaction!.inputs.length; j++) {
         utxoList.add(inputs[j].witnessUtxo!);
       }
-      sigHash = unsignedTransaction!.getTaprootSigHash(inputIndex, utxoList);
+      sigHash = unsignedTransaction!.getTaprootSigHash(inputIndex, utxoList,
+          hashType: psbtInput.taprootSighashType);
     }
     return sigHash;
   }
 
+  /// Returns whether an input contains a signature belonging to [keyStore].
+  ///
+  /// Set [isKeyPathSpending] to inspect Taproot key-path signatures instead of
+  /// script-path signatures.
   bool isSigned(KeyStore keyStore, {isKeyPathSpending = false}) {
     for (PsbtInput input in inputs) {
       for (DerivationPath path in input.derivationPathList) {
@@ -1299,7 +1767,12 @@ class Psbt {
   }
 }
 
-/// @nodoc
+/// Decoded per-input metadata in a PSBT.
+///
+/// Fields correspond to the standard PSBT input key types and are populated
+/// while parsing or constructing a [Psbt].
+///
+/// {@category PSBT}
 class PsbtInput {
   //Field for Segwit v0
   TransactionOutput? witnessUtxo; //0x01
@@ -1307,6 +1780,7 @@ class PsbtInput {
   List<DerivationPath>? bip32Derivation; //0x03
   MultisignatureScript? witnessScript; //0x05
   List<String>? finalScriptWitness; //0x08
+  int? sighashType; //0x03
 
   //Field for taproot
   String? internalKey; //0x17
@@ -1374,6 +1848,18 @@ class PsbtInput {
     return derivationPathList.length;
   }
 
+  /// Effective Taproot sighash type used for signing this input.
+  ///
+  /// This library currently signs SIGHASH_DEFAULT and SIGHASH_ALL only.
+  int get taprootSighashType {
+    final int type = sighashType ?? 0x00;
+    if (type != 0x00 && type != 0x01) {
+      throw UnsupportedError(
+          'Unsupported Taproot sighash type: 0x${type.toRadixString(16).padLeft(2, '0')}');
+    }
+    return type;
+  }
+
   int get signedCount {
     if (tapScriptSig != null) {
       return tapScriptSig!.length;
@@ -1383,32 +1869,33 @@ class PsbtInput {
     return 0;
   }
 
-  addPartialSig(String signature, String publicKey) {
+  void addPartialSig(String signature, String publicKey) {
     // check if the public key is in the bip32 derivation list
     if (bip32Derivation != null) {
       if (!bip32Derivation!.any((element) => element.publicKey == publicKey)) {
-        throw Exception('Public key not in PSBT input');
+        throw PsbtException(PsbtErrorCode.signerMismatch,
+            'Public key is not included in the PSBT input.');
       }
     }
     partialSig!.add(Signature(signature, publicKey));
   }
 
-  addTapKeySig(String signature) {
+  void addTapKeySig(String signature) {
     tapKeySig = signature;
   }
 
-  addTapScriptSig(String signature, String publicKey) {
+  void addTapScriptSig(String signature, String publicKey) {
     tapScriptSig ??= [];
     tapScriptSig!.add(Signature(signature, publicKey));
   }
 
-  addMuSig2PubNonce(String publicKey, String aggregatedPublicKey,
+  void addMuSig2PubNonce(String publicKey, String aggregatedPublicKey,
       String sigHash, String publicNonce) {
     muSig2PubNonces ??= {};
     muSig2PubNonces!["$publicKey$aggregatedPublicKey$sigHash"] = publicNonce;
   }
 
-  addMuSig2PartialSig(
+  void addMuSig2PartialSig(
     String signature,
     String publicKey,
     String aggregatedPublicKey,
@@ -1466,47 +1953,161 @@ class PsbtInput {
   }
 }
 
-/// @nodoc
+/// Decoded per-output metadata in a PSBT.
+///
+/// {@category PSBT}
 class PsbtOutput {
-  final DerivationPath? bip32Derivation; //0x02
+  final List<DerivationPath> bip32Derivations; //0x02
+  final List<DerivationPath> tapBip32Derivations; //0x07
   final int? outAmount; //0x03
   final ScriptPublicKey? outScript; //0x04
   MultisignatureScript? witnessScript; //0x01
 
-  PsbtOutput(this.bip32Derivation, this.outAmount, this.outScript,
-      {this.witnessScript});
+  PsbtOutput(
+      List<DerivationPath> bip32Derivations, this.outAmount, this.outScript,
+      {List<DerivationPath> tapBip32Derivations = const [], this.witnessScript})
+      : bip32Derivations = List.unmodifiable(bip32Derivations),
+        tapBip32Derivations = List.unmodifiable(tapBip32Derivations);
 
   String get outAddress => outScript!.getAddress();
 
-  /// @nodoc
-  bool get isChange {
-    if (bip32Derivation == null) {
-      return false;
-    } else if (bip32Derivation!.path.split('/')[1].startsWith('48') &&
-        bip32Derivation!.path.split('/')[5] == '1') {
-      return true;
-    } else if (bip32Derivation!.path.split('/')[4] == '1') {
-      return true;
-    } else {
+  /// Returns whether this output is verified as change for [wallet].
+  bool isChange(WalletBase wallet) {
+    final List<String> derivationPaths = wallet.addressType.isTaproot
+        ? tapBip32Derivations.map((derivation) => derivation.path).toList()
+        : bip32Derivations.map((derivation) => derivation.path).toList();
+    return isOwnedBy(wallet) &&
+        derivationPaths.isNotEmpty &&
+        derivationPaths.every(WalletUtility.isChangeFromDerivationPath);
+  }
+
+  /// Returns whether this output belongs to [wallet].
+  bool isOwnedBy(WalletBase wallet) {
+    final List<String> derivationPaths = wallet.addressType.isTaproot
+        ? tapBip32Derivations.map((derivation) => derivation.path).toList()
+        : bip32Derivations.map((derivation) => derivation.path).toList();
+    if (outScript == null || derivationPaths.isEmpty) {
       return false;
     }
+
+    final List<String> walletPathSegments = wallet.derivationPath.split('/');
+
+    for (final String path in derivationPaths) {
+      final List<String> pathSegments = path.split('/');
+      final bool isDirectAddressPath = pathSegments.length ==
+              walletPathSegments.length + 2 &&
+          pathSegments
+              .sublist(0, walletPathSegments.length)
+              .asMap()
+              .entries
+              .every((entry) => entry.value == walletPathSegments[entry.key]) &&
+          (pathSegments[pathSegments.length - 2] == '0' ||
+              pathSegments[pathSegments.length - 2] == '1') &&
+          int.tryParse(pathSegments.last) != null;
+
+      if (!isDirectAddressPath || !WalletUtility.validateDerivationPath(path)) {
+        continue;
+      }
+
+      try {
+        if (wallet.getAddressWithDerivationPath(path) == outAddress) {
+          return true;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    return false;
   }
 }
 
-/// @nodoc
+/// Associates a public key with its master fingerprint and BIP32 path.
+///
+/// Taproot derivations may additionally contain the leaf hashes for which the
+/// key participates in script-path spending.
+///
+/// {@category PSBT}
 class DerivationPath {
   final String _publicKey;
   final String _masterFingerprint;
   final String _path;
-  final String? numberOfTapleafHash;
-  final List<String>? tapleafHashList;
+  final List<String> _leafHashes;
 
   DerivationPath(this._publicKey, this._masterFingerprint, this._path,
-      {this.numberOfTapleafHash, this.tapleafHashList});
+      {List<String> leafHashes = const []})
+      : _leafHashes = List.unmodifiable(leafHashes);
+
+  factory DerivationPath.fromBip32(String publicKey, String value) {
+    final Uint8List valueBytes = Codec.decodeHex(value);
+    if (valueBytes.length < 4 || (valueBytes.length - 4) % 4 != 0) {
+      throw const FormatException('Invalid BIP32_DERIVATION value');
+    }
+
+    final String masterFingerprint = Codec.encodeHex(valueBytes.sublist(0, 4));
+    final String path = _parsePath(valueBytes.sublist(4));
+    return DerivationPath(publicKey, masterFingerprint, path);
+  }
+
+  factory DerivationPath.fromTaproot(String xOnlyPublicKey, String value) {
+    if (xOnlyPublicKey.length != 64) {
+      throw const FormatException(
+          'TAP_BIP32_DERIVATION requires a 32-byte X-only key');
+    }
+
+    final Uint8List valueBytes = Codec.decodeHex(value);
+    if (valueBytes.isEmpty) {
+      throw const FormatException('TAP_BIP32_DERIVATION value is empty');
+    }
+
+    int offset = Codec.getVariableIntegerLength(valueBytes, 0);
+    if (valueBytes.length < offset) {
+      throw const FormatException('Invalid TAP_BIP32_DERIVATION CompactSize');
+    }
+    final int leafHashCount = Codec.decodeVariableInteger(valueBytes, 0);
+    final int metadataLength = leafHashCount * 32 + 4;
+    if (valueBytes.length < offset + metadataLength ||
+        (valueBytes.length - offset - metadataLength) % 4 != 0) {
+      throw const FormatException('Invalid TAP_BIP32_DERIVATION value');
+    }
+
+    final List<String> leafHashes = <String>[];
+    for (int i = 0; i < leafHashCount; i++) {
+      leafHashes.add(Codec.encodeHex(valueBytes.sublist(offset, offset + 32)));
+      offset += 32;
+    }
+
+    final String masterFingerprint =
+        Codec.encodeHex(valueBytes.sublist(offset, offset + 4));
+    offset += 4;
+    final String path = _parsePath(valueBytes.sublist(offset));
+    return DerivationPath(xOnlyPublicKey, masterFingerprint, path,
+        leafHashes: leafHashes);
+  }
+
+  static String _parsePath(Uint8List serializedPath) {
+    if (serializedPath.length % 4 != 0) {
+      throw const FormatException(
+          'Serialized derivation path length must be a multiple of 4');
+    }
+
+    final List<String> pathSegments = <String>['m'];
+    for (int i = 0; i < serializedPath.length; i += 4) {
+      int value = Converter.littleEndianToInt(serializedPath.sublist(i, i + 4));
+      if (value & 0x80000000 != 0) {
+        value &= ~0x80000000;
+        pathSegments.add('$value\'');
+      } else {
+        pathSegments.add('$value');
+      }
+    }
+    return pathSegments.join('/');
+  }
 
   String get publicKey => _publicKey;
   String get masterFingerprint => _masterFingerprint.toUpperCase();
   String get path => _path;
+  List<String> get leafHashes => _leafHashes;
   int get accountIndex {
     return WalletUtility.getAccountIndexFromDerivationPath(_path);
   }

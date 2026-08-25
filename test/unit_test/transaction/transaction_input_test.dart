@@ -1,14 +1,16 @@
 @Tags(['unit'])
+library;
+
 import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('TransactionInput', () {
-    group('get transactionHash', () {
+    group('transactionHash', () {
       test('Get transaction hash', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -17,7 +19,7 @@ void main() {
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0');
       });
     });
-    group('get index', () {
+    group('index', () {
       test('Get index', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -25,7 +27,7 @@ void main() {
         expect(input.index, 0);
       });
     });
-    group('get sequence', () {
+    group('sequence', () {
       test('Get sequence', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -33,7 +35,7 @@ void main() {
         expect(input.sequence, 4294967295);
       });
     });
-    group('get length', () {
+    group('length', () {
       test('Get length of transaction input', () {
         TransactionInput input = TransactionInput.forPayment(
             '44403a0a82763da2360b7ba4087609cb9a43549f2b3147d9bde3bd4a455060d0',
@@ -43,7 +45,12 @@ void main() {
     });
     group('TransactionInput.parse', () {
       test('throws on too short input', () {
-        expect(() => TransactionInput.parse('0011'), throwsException);
+        expect(() => TransactionInput.parse('0011'), throwsFormatException);
+      });
+
+      test('throws when the script length exceeds the remaining input', () {
+        final input = '${'00' * 32}0100000005aabb';
+        expect(() => TransactionInput.parse(input), throwsFormatException);
       });
 
       test('Generate transaction input from parsing on p2pkh', () {
@@ -79,6 +86,11 @@ void main() {
       });
     });
     group('TransactionInput.parseForPsbt', () {
+      test('Reject truncated unsigned input', () {
+        expect(() => TransactionInput.parseForPsbt('00' * 40),
+            throwsFormatException);
+      });
+
       test('Generate transaction input for psbt', () {
         String inputText =
             'd06050454abde3bdd947312b9f54439acb097608a47b0b36a23d76820a3a40440000000000ffffffff';
@@ -198,7 +210,7 @@ void main() {
       });
     });
 
-    group('taproot signature setters', () {
+    group('setTaprootKeyPathSpendingSignature', () {
       test('Set taproot key path witness', () {
         TransactionInput input = TransactionInput.forPayment(
             'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',
@@ -206,20 +218,22 @@ void main() {
         input.setTaprootKeyPathSpendingSignature('aa' * 64);
         expect(input.witnessList.length, 1);
       });
+    });
 
+    group('setTaprootScriptPathSpendingSignature', () {
       test('Set taproot script path witness', () {
         TransactionInput input = TransactionInput.forPayment(
             'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',
             1);
         input.setTaprootScriptPathSpendingSignature(
-            'aa' * 64, '51', 'c0' + ('11' * 32));
+            'aa' * 64, '51', 'c0${'11' * 32}');
         expect(input.witnessList.length, 3);
       });
     });
 
     group('verifySpend', () {
       test('returns true on valid p2wpkh spend', () {
-        final Psbt psbt = MockFactory.createP2wpkhSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wpkhSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final String sigHash =
             psbt.unsignedTransaction!.getSigHash(0, utxo, AddressType.p2wpkh);
@@ -230,7 +244,7 @@ void main() {
       });
 
       test('returns true on valid p2wsh spend', () {
-        final Psbt psbt = MockFactory.createP2wshSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2wshSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final String witnessScript =
             psbt.inputs[0].witnessScript!.rawSerialize();
@@ -243,8 +257,134 @@ void main() {
             true);
       });
 
+      test('returns false when a p2wsh signature is duplicated', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        input.witnessList[2] = input.witnessList[1];
+
+        expect(input.verifySpend(sigHash, utxo), false);
+        expect(signedTx.validateEcdsa(0, utxo, witnessScript: witnessScript),
+            false);
+        expect(
+            signedTx.validateSpend(
+                psbt.inputs.map((input) => input.witnessUtxo!).toList()),
+            false);
+      });
+
+      test('returns false when p2wsh signatures are out of script order', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        final String firstSignature = input.witnessList[1];
+        input.witnessList[1] = input.witnessList[2];
+        input.witnessList[2] = firstSignature;
+
+        expect(input.verifySpend(sigHash, utxo), false);
+      });
+
+      test('returns false on a non-empty p2wsh dummy witness item', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        signedTx.inputs[0].witnessList[0] = '01';
+
+        expect(signedTx.inputs[0].verifySpend(sigHash, utxo), false);
+      });
+
+      test('returns false on malformed p2wsh witness structures', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        final List<String> validWitness = List<String>.from(input.witnessList);
+
+        input.witnessList = ['00', witnessScript];
+        expect(input.verifySpend(sigHash, utxo), false);
+
+        input.witnessList = List<String>.from(validWitness)
+          ..insert(validWitness.length - 1, validWitness[1]);
+        expect(input.verifySpend(sigHash, utxo), false);
+
+        input.witnessList = List<String>.from(validWitness);
+        input.witnessList.last = 'zz';
+        expect(input.verifySpend(sigHash, utxo), false);
+        expect(signedTx.validateEcdsa(0, utxo), false);
+      });
+
+      test('returns false on an unsupported p2wsh sighash type', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+        final TransactionInput input = signedTx.inputs[0];
+        input.witnessList[1] =
+            '${input.witnessList[1].substring(0, input.witnessList[1].length - 2)}02';
+
+        expect(input.verifySpend(sigHash, utxo), false);
+      });
+
+      test('returns false on malformed p2wsh DER signatures', () {
+        final Psbt psbt = PsbtFixture.p2wshSigned();
+        final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
+        final String witnessScript =
+            psbt.inputs[0].witnessScript!.rawSerialize();
+        final Uint8List sigHash = Codec.decodeHex(psbt.unsignedTransaction!
+            .getSigHash(0, utxo, AddressType.p2wsh,
+                witnessScript: witnessScript));
+        final Transaction signedTx =
+            psbt.getSignedTransaction(AddressType.p2wsh);
+
+        const malformedSignatures = [
+          '30', // truncated sequence
+          '310602010102010101', // wrong sequence tag
+          '300602018002010101', // negative R
+          '30070202000102010101', // non-minimal R
+          '300602010102020101', // inconsistent S length
+        ];
+
+        for (final signature in malformedSignatures) {
+          final input = signedTx.inputs[0];
+          final originalSignature = input.witnessList[1];
+          input.witnessList[1] = signature;
+          expect(input.verifySpend(sigHash, utxo), false);
+          input.witnessList[1] = originalSignature;
+        }
+      });
+
       test('returns true on valid taproot key-path spend', () {
-        final Psbt psbt = MockFactory.createP2trKeyPathSpendingSignedPsbt();
+        final Psbt psbt = PsbtFixture.p2trKeyPathSigned();
         final TransactionOutput utxo = psbt.inputs[0].witnessUtxo!;
         final List<TransactionOutput> utxos = [utxo];
         final String sigHash =
@@ -279,7 +419,7 @@ void main() {
           '5221028106e5b5449e0b78e7e06c6435f724b9797db0926ed3ba59b01d6e3dee8fd74b2102869102bed3322707dfebeaf06f9e0f89b5d133e48ee481bcd624dfc1fa1b188052ae'
         ];
         TransactionOutput utxo =
-            TransactionOutput.parse('a086010000000000220020' + ('00' * 32));
+            TransactionOutput.parse('a086010000000000220020${'00' * 32}');
         expect(input.verifySpend(Uint8List(32), utxo), false);
       });
 
@@ -291,7 +431,7 @@ void main() {
             1);
         input.witnessList = ['11' * 64, '51', 'c0']; // too short control block
         TransactionOutput utxo =
-            TransactionOutput.parse('a086010000000000225120' + ('11' * 32));
+            TransactionOutput.parse('a086010000000000225120${'11' * 32}');
         expect(input.verifySpend(Uint8List(32), utxo), false);
       });
 

@@ -1,0 +1,64 @@
+@startuml transaction_model
+!theme plain
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+left to right direction
+
+class Transaction {
+  +inputs: List<TransactionInput>
+  +outputs: List<TransactionOutput>
+  +utxoList: List<Utxo>
+  +parse(serialized): Transaction
+  +forSinglePayment(...): Transaction
+  +forBatchPayment(...): Transaction
+  +forSweep(...): Transaction
+  +serialize(): String
+}
+class TransactionInput
+class TransactionOutput
+class Utxo {
+  +transactionHash: String
+  +index: int
+  +amount: int
+  +derivationPath: String
+}
+class Script
+class ScriptSignature
+class ScriptPublicKey
+
+class Psbt {
+  +unsignedTransaction: Transaction?
+  +inputs: List<PsbtInput>
+  +outputs: List<PsbtOutput>
+  +fromTransaction(tx, wallet): Psbt
+  +parse(base64): Psbt
+  +serialize(): String
+  +validateMultisignaturePolicy(vault)
+  +validateTaprootPolicy(vault)
+  +getSignedTransaction(type): Transaction
+}
+class PsbtInput
+class PsbtOutput
+class DerivationPath
+
+Transaction *-- "0..*" TransactionInput
+Transaction *-- "0..*" TransactionOutput
+Transaction o-- "0..*" Utxo : prevout metadata
+TransactionInput *-- ScriptSignature
+TransactionOutput *-- ScriptPublicKey
+Script <|-- ScriptSignature
+Script <|-- ScriptPublicKey
+
+Psbt o-- "0..1" Transaction : unsigned transaction
+Psbt *-- "0..*" PsbtInput
+Psbt *-- "0..*" PsbtOutput
+PsbtInput o-- "0..*" DerivationPath
+PsbtOutput o-- "0..*" DerivationPath
+PsbtInput --> TransactionOutput : witness UTXO
+
+note bottom of PsbtInput
+  Contains signer derivations, prevout data, scripts,
+  sighash type, Taproot fields, and MuSig2 public data.
+end note
+@enduml

@@ -1,0 +1,39 @@
+@startuml signing_flow
+!theme plain
+skinparam monochrome true
+skinparam shadowing false
+
+actor Wallet
+participant Transaction
+participant Psbt
+actor Vault
+participant KeyStore
+
+Wallet -> Transaction : build payment from validated UTXOs
+Wallet -> Psbt : fromTransaction(transaction, wallet)
+Psbt -> Psbt : validate input count, outpoints, amount, script
+Wallet -> Vault : transfer unsigned PSBT
+
+alt Taproot MuSig2
+  Vault -> Psbt : validateTaprootPolicy(vault)
+  Vault -> KeyStore : create public nonce
+  KeyStore -> KeyStore : retain single-use secret nonce locally
+  Vault -> Wallet : transfer nonce-bearing PSBT
+  Wallet -> Vault : aggregate public nonces / return PSBT
+else Single signature, multisig, or Taproot single key
+  Vault -> Psbt : validate wallet policy
+end
+
+Vault -> KeyStore : sign validated sighash
+KeyStore -> KeyStore : verify generated signature
+KeyStore -> Psbt : attach signature / partial signature
+Vault -> Wallet : transfer signed PSBT
+Wallet -> Psbt : verify signatures and required count
+Psbt -> Transaction : getSignedTransaction(addressType)
+Transaction --> Wallet : final serialized transaction
+
+note over Vault,KeyStore
+  Seed and private keys never enter the PSBT.
+  MuSig2 secret nonce is consumed once and wiped.
+end note
+@enduml

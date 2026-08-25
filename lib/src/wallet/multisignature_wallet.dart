@@ -1,10 +1,21 @@
 part of '../../coconut_lib.dart';
 
 /// Represents a multisignature wallet.
+///
+/// See the [multisignature example](https://github.com/noncelab/coconut_lib/blob/main/doc/example/multisignature.dart)
+/// for watch-only construction, PSBT creation, and offline signing.
+///
+/// {@category Wallets and Keys}
 class MultisignatureWallet extends MultisignatureWalletBase {
   /// @nodoc
-  MultisignatureWallet(super.requiredSignature, super.addressType,
-      super.derivationPath, super.keyStores);
+  MultisignatureWallet(int requiredSignature, AddressType addressType,
+      String derivationPath, List<KeyStore> keyStores)
+      : super(requiredSignature, addressType, derivationPath,
+            _validateKeyStores(keyStores));
+
+  static List<KeyStore> _validateKeyStores(List<KeyStore> keyStores) {
+    return keyStores.map(KeyStore.publicOnly).toList(growable: false);
+  }
 
   /// Create a multisignature wallet from descriptor.
   factory MultisignatureWallet.fromDescriptor(String descriptor,
@@ -45,8 +56,11 @@ class MultisignatureWallet extends MultisignatureWalletBase {
 
   /// Parse the multisignature wallet from json string.
   factory MultisignatureWallet.fromJson(String jsonStr) {
-    Map<String, dynamic> json = jsonDecode(jsonStr);
-    return MultisignatureWallet.fromDescriptor(json['descriptor']);
+    final Map<String, dynamic> json =
+        Codec._decodeJsonObject(jsonStr, name: 'MultisignatureWallet JSON');
+    return MultisignatureWallet.fromDescriptor(Codec._readJsonField<String>(
+        json, 'descriptor',
+        name: 'MultisignatureWallet JSON'));
   }
 
   /// Get Json string of the multisignature wallet.

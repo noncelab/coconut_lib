@@ -1,26 +1,26 @@
 @Tags(['unit'])
-import 'dart:convert';
+library;
 
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
-import '../../mock_factory.dart';
+import '../../fixtures/test_fixtures.dart';
 
 void main() {
   group('SingleSignatureWalletBase', () {
     late SingleSignatureVault vault;
     late SingleSignatureWallet wallet;
     setUp(() {
-      vault = MockFactory.createP2wpkhVault();
+      vault = WalletFixture.p2wpkhVault();
       wallet = SingleSignatureWallet.fromDescriptor(vault.descriptor);
     });
-    group('get isVault', () {
+    group('isVault', () {
       test('Check the object is vault', () {
         expect(wallet.isVault, false);
         expect(vault.isVault, true);
       });
     });
-    group('get keyStore', () {
+    group('keyStore', () {
       test('Get key store from wallet base', () {
         expect(vault.keyStore.masterFingerprint,
             wallet.keyStore.masterFingerprint);
@@ -42,6 +42,13 @@ void main() {
         expect(wallet.getAddressWithDerivationPath("m/84'/1'/0'/1/0"),
             "tb1qyg29ghzqe5fweer9tyga4dtccxhnx4yqudfygp");
       });
+
+      test('rejects paths outside the wallet account', () {
+        expect(() => wallet.getAddressWithDerivationPath("m/84'/1'/1'/0/0"),
+            throwsException);
+        expect(() => wallet.getAddressWithDerivationPath("m/84'/1'/0x/0/0"),
+            throwsException);
+      });
     });
     group('getKeyOriginExpression', () {
       test('Get key origin expression', () {
@@ -50,7 +57,7 @@ void main() {
     });
     group('hasPublicKeyInPsbt', () {
       test('Can right vault can sign', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
         expect(vault.hasPublicKeyInPsbt(psbt.serialize()), true);
 
         SingleSignatureVault targetVault = SingleSignatureVault.random();
@@ -59,61 +66,32 @@ void main() {
     });
     group('addSignatureToPsbt', () {
       test('Sign to psbt', () {
-        Psbt psbt = MockFactory.createP2wpkhUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wpkhUnsigned();
         String signedPsbt = vault.addSignatureToPsbt(psbt.serialize());
         expect(signedPsbt.hashCode, 695547130);
       });
 
       test('throws when psbt address type mismatches', () {
-        Psbt psbt = MockFactory.createP2wshUnsignedPsbt();
+        Psbt psbt = PsbtFixture.p2wshUnsigned();
         expect(
             () => vault.addSignatureToPsbt(psbt.serialize()), throwsException);
       });
-    });
 
-    group('constructor guards via SingleSignatureVault.fromJson', () {
-      test('throws on key network mismatch', () {
-        NetworkType.setNetworkType(NetworkType.mainnet);
-        final mainnetKeyStore =
-            KeyStore.fromSeed(MockFactory.getCommonSeed(), AddressType.p2wpkh);
-        NetworkType.setNetworkType(NetworkType.testnet);
-        expect(() => SingleSignatureVault.fromKeyStore(mainnetKeyStore),
-            throwsException);
-      });
+      test('rejects a witness UTXO that does not belong to the vault', () {
+        final Psbt psbt = PsbtFixture.p2wpkhUnsigned();
+        final SingleSignatureVault foreignVault =
+            WalletFixture.p2wpkhVault(passphrase: 'foreign');
+        final int amount = psbt.inputs.single.witnessUtxo!.amount;
+        final TransactionOutput foreignUtxo =
+            TransactionOutput.forPayment(amount, foreignVault.getAddress(0));
+        psbt.psbtMap['inputs'][0]['01'] = foreignUtxo.serialize();
+        final String forgedPsbt = psbt.serialize();
 
-      test('throws on invalid derivation path format', () {
-        final keyStore = KeyStore.fromExtendedPublicKey(
-          vault.keyStore.extendedPublicKey.serialize(),
-          vault.keyStore.masterFingerprint,
-        );
-        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
-            '"addressTypeName":"p2wpkh","derivationPath":"x/84\'/1\'/0\'"}';
-        expect(() => SingleSignatureVault.fromJson(json), throwsException);
-      });
-
-      test('throws on coin type mismatch in derivation path', () {
-        final keyStore = KeyStore.fromExtendedPublicKey(
-          vault.keyStore.extendedPublicKey.serialize(),
-          vault.keyStore.masterFingerprint,
-        );
-        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
-            '"addressTypeName":"p2wpkh","derivationPath":"m/84\'/0\'/0\'"}';
-        expect(() => SingleSignatureVault.fromJson(json), throwsException);
-      });
-
-      test('throws on network mismatch', () {
-        final keyStore = KeyStore.fromExtendedPublicKey(
-          vault.keyStore.extendedPublicKey.serialize(),
-          vault.keyStore.masterFingerprint,
-        );
-        final json = '{"keyStore":${jsonEncode(keyStore.toJson())},'
-            '"addressTypeName":"p2wpkh","derivationPath":"m/84\'/1\'/0\'"}';
-        NetworkType.setNetworkType(NetworkType.mainnet);
-        try {
-          expect(() => SingleSignatureVault.fromJson(json), throwsException);
-        } finally {
-          NetworkType.setNetworkType(NetworkType.testnet);
-        }
+        expect(Psbt.parse(forgedPsbt).matchesVault(vault), isFalse);
+        expect(
+            () => vault.addSignatureToPsbt(forgedPsbt),
+            throwsA(isA<PsbtException>().having(
+                (error) => error.code, 'code', PsbtErrorCode.utxoMismatch)));
       });
     });
   });

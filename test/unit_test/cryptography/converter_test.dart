@@ -1,4 +1,6 @@
 @Tags(['unit'])
+library;
+
 import 'dart:typed_data';
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
@@ -24,6 +26,13 @@ void main() {
         expect(Converter.bigDecToHex(decimalValue), '3635c9adc5dea00000');
       });
     });
+    group('bigIntToBytes', () {
+      test('converts a big integer with and without fixed byte length', () {
+        expect(Converter.bigIntToBytes(BigInt.from(0x1234)), [0x12, 0x34]);
+        expect(Converter.bigIntToBytes(BigInt.from(0x1234), byteLength: 4),
+            [0x00, 0x00, 0x12, 0x34]);
+      });
+    });
     group('decToBin', () {
       test('Get binary from decimal', () {
         int decimalValue = 10;
@@ -36,10 +45,27 @@ void main() {
         expect(Converter.hexToDec(hexString), 10);
       });
     });
+    group('hexToBigDec', () {
+      test('converts hexadecimal larger than the integer range', () {
+        expect(Converter.hexToBigDec('ffffffffffffffff'),
+            BigInt.parse('18446744073709551615'));
+      });
+    });
     group('hexToBin', () {
       test('Get binary from hexadeciaml', () {
         String hexString = 'a';
         expect(Converter.hexToBin(hexString), '1010');
+      });
+    });
+    group('binToDec', () {
+      test('converts binary text to decimal', () {
+        expect(Converter.binToDec('10101101'), 173);
+      });
+    });
+    group('uint8ListToDec', () {
+      test('converts big-endian bytes to decimal', () {
+        expect(
+            Converter.uint8ListToDec(Uint8List.fromList([0x01, 0x02])), 0x0102);
       });
     });
     group('binToHex', () {
@@ -47,11 +73,19 @@ void main() {
         String binary = '1010';
         expect(Converter.binToHex(binary), 'A');
       });
+      test('Reject invalid binary length', () {
+        expect(() => Converter.binToHex('101'), throwsFormatException);
+      });
     });
     group('binToBytes', () {
       test('Get bytes from binary', () {
         String binary = '10101101';
         expect(Converter.binToBytes(binary), [173]);
+      });
+    });
+    group('bytesToDec', () {
+      test('converts bytes to decimal', () {
+        expect(Converter.bytesToDec(Uint8List.fromList([0x01, 0x02])), 0x0102);
       });
     });
     group('bytesToBinary', () {
@@ -86,7 +120,12 @@ void main() {
             BigInt.parse('13292279960944008827972097230598307840'));
       });
     });
-    group('bitsToBytes', () {
+    group('toLittleEndian', () {
+      test('reverses hexadecimal byte order', () {
+        expect(Converter.toLittleEndian('12345678'), '78563412');
+      });
+    });
+    group('binaryToBytes', () {
       test('Check bits to uint8 list', () {
         expect(
             Converter.binaryToBytes([0, 0, 1, 1]), Uint8List.fromList([0x03]));
@@ -121,22 +160,22 @@ void main() {
             equals(expectedOutput));
       });
 
-      test('Illegal zero padding should throw Exception', () {
+      test('Illegal zero padding should throw FormatException', () {
         var input = [1, 2, 3];
         expect(() => Converter.convertBits(input, 8, 5, pad: false),
-            throwsException);
+            throwsFormatException);
       });
 
-      test('Negative values should throw Exception', () {
+      test('Negative values should throw FormatException', () {
         var input = [-1, 2, 3];
         expect(() => Converter.convertBits(input, 8, 5, pad: true),
-            throwsException);
+            throwsFormatException);
       });
 
-      test('Values out of range should throw Exception', () {
+      test('Values out of range should throw FormatException', () {
         var input = [256]; // 8-bit max is 255
         expect(() => Converter.convertBits(input, 8, 5, pad: true),
-            throwsException);
+            throwsFormatException);
       });
     });
     group("derToRawSignature", () {
@@ -149,9 +188,30 @@ void main() {
             Codec.encodeHex(Converter.derToRawSignature(Codec.decodeHex(der))),
             raw);
       });
+
+      test('Rejects malformed DER signatures', () {
+        final List<String> malformed = [
+          '',
+          '30',
+          // Wrong sequence tag.
+          '3144022051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+          // Wrong sequence length.
+          '3043022051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+          // Negative R.
+          '30440220d1b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+          // Redundant leading zero in R.
+          '304502210051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01',
+        ];
+
+        for (final String signature in malformed) {
+          expect(() => Converter.derToRawSignature(Codec.decodeHex(signature)),
+              throwsFormatException,
+              reason: signature);
+        }
+      });
     });
 
-    group("derToRawSignature", () {
+    group("rawToDerSignature", () {
       test("Get raw signature from der (case 1)", () {
         String der =
             '3044022051b558cdf6c0b2380798708ee596de9dfcffe8482cda01cd6532c6a2c34f79cd022031615f5c1b73eda34ec496f133c2e8a6cc04dd3683de1991c869fb8cbd33f18a01';
