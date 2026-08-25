@@ -98,42 +98,6 @@ void main() {
 }
 ```
 
-## Tests
-
-### Generate Mock Classes
-
-```sh
-dart pub run build_runner build
-```
-
-### Unit Test
-
-```sh
-dart test -t unit
-```
-
-### E2E Test
-
-```sh
-dart test -t e2e
-```
-
-### Coverage
-
-The following tools are required to generate test coverage (for MacOS):
-
-```sh
-dart pub global activate coverage
-
-brew install lcov
-```
-
-To generate test coverage, run the following command:
-
-```sh
-sh ./generate_unit_coverage.sh
-```
-
 ## BIP Support
 
 Support is scoped to the wallet, address, transaction, PSBT, and descriptor
@@ -179,6 +143,30 @@ also not supported.
 - [BIP-383](https://github.com/bitcoin/bips/blob/master/bip-0383.mediawiki): Multisig Output Script Descriptors
 - [BIP-386](https://github.com/bitcoin/bips/blob/master/bip-0386.mediawiki): Taproot Output Script Descriptors
 - [BIP-389](https://github.com/bitcoin/bips/blob/master/bip-0389.mediawiki): Multipath Descriptor Key Expressions
+
+## Tests
+
+Install the package dependencies before running the test suite.
+
+```shell
+dart pub get
+```
+
+Run all unit and scenario tests:
+
+```shell
+dart test
+```
+
+Run only one test group:
+
+```shell
+# Unit tests
+dart test test/unit_test
+
+# Scenario tests
+dart test test/scenario_test
+```
 
 ## Contribution
 
