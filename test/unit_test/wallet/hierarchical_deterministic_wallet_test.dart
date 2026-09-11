@@ -94,13 +94,13 @@ void main() {
         expect(
             () => hdWallet.neutered().getMasterPrivateKey(), throwsException);
         expect(hdWallet.getMasterPrivateKey(),
-            '3uNnGw4JgsA7hujrSBWqqXCWYQigfK22MSbeoHg6zniQP9J');
+            'KznpsaPziENrRFRbL96vNQrx9bbtqHfgWB54Hs2E29ZdfJPYUjoY');
       });
     });
     group('derive', () {
       test('Derive path', () {
         expect(hdWallet.derive(1).getMasterPrivateKey(),
-            '3ua7HWmDyPmia6kvJuDdwd2wTAnpA1os4uH5MgiVP1zuK6g');
+            'L24x7cJ3HU1dyVbRrpEsKdS6Mon8ZmzFKmk9Q1Toq55TUT4Vo7gN');
       });
     });
     group('deriveHardened', () {
@@ -109,7 +109,7 @@ void main() {
       });
       test('Derive Hardened', () {
         expect(hdWallet.deriveHardened(1).getMasterPrivateKey(),
-            '3uR1RgfpE7B7TmV32C2M2Cy4yQg32op9NUQH37A4cxCxQkY');
+            'L13PzR7G2UWLQ5y2zYTVNCchZ3C1vzRpdcWCn2Mn9jHRuHXuiPTD');
       });
     });
     group('derivePath', () {
@@ -125,14 +125,14 @@ void main() {
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"));
         HDWallet rootWallet = HDWallet.fromRootSeed(seed.rootSeed);
         expect(rootWallet.derivePath("m/84'/1'/0'/1").getMasterPrivateKey(),
-            '3twVhJJ3ecUjpz9uQk3wbQ6mU5MBMkWxxRXrsJSvRpvh5cL');
+            'KwwN6ESfukboUwM1ojxpcwCSUNPEiieUsdRCChKRfbchVk4KT8ff');
       });
       test('Derive from child with h', () {
         Seed seed = Seed.fromMnemonic(utf8.encode(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"));
         HDWallet rootWallet = HDWallet.fromRootSeed(seed.rootSeed);
         expect(rootWallet.derivePath("m/84h/1h/0h/1").getMasterPrivateKey(),
-            '3twVhJJ3ecUjpz9uQk3wbQ6mU5MBMkWxxRXrsJSvRpvh5cL');
+            'KwwN6ESfukboUwM1ojxpcwCSUNPEiieUsdRCChKRfbchVk4KT8ff');
       });
     });
     group('signEcdsa', () {

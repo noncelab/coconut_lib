@@ -375,7 +375,65 @@ void main() {
             ]),
             compressed: true);
         expect(Codec.encodeWif(wif),
-            '3uNnGw4JgsA7hujrSBWqqXCWYQigfK22MSbeoHg6zniQP9J');
+            'KznpsaPziENrRFRbL96vNQrx9bbtqHfgWB54Hs2E29ZdfJPYUjoY');
+      });
+
+      test('Mainnet compressed WIF is 52 characters and starts with K or L',
+          () {
+        // BIP32 test vector: master key of the "abandon ... about" mnemonic.
+        WIF wif = WIF(
+            version: 0x80,
+            privateKey: Codec.decodeHex(
+                '1837c1be8e2995ec11cda2b066151be2cfb48adf9e47b151d46adab3a21cdf67'),
+            compressed: true);
+        expect(Codec.encodeWif(wif),
+            'Kx2nc8CerNfcsutaet3rPwVtxQvXuQTYxw1mSsfFHsWExJ9xVpLf');
+      });
+
+      test('Uncompressed WIF starts with 5', () {
+        WIF wif = WIF(
+            version: 0x80,
+            privateKey: Codec.decodeHex(
+                '1837c1be8e2995ec11cda2b066151be2cfb48adf9e47b151d46adab3a21cdf67'),
+            compressed: false);
+        expect(Codec.encodeWif(wif),
+            '5HzxC8XHHAtoC5jVvScY8Tr99Ud9MwFdF2pJKYsMTUknJZEurYr');
+      });
+    });
+
+    group('decodeWif', () {
+      final privateKey = Codec.decodeHex(
+          '1837c1be8e2995ec11cda2b066151be2cfb48adf9e47b151d46adab3a21cdf67');
+
+      test('Round-trips a compressed key', () {
+        String encoded = Codec.encodeWif(
+            WIF(version: 0x80, privateKey: privateKey, compressed: true));
+        WIF decoded = Codec.decodeWif(encoded);
+        expect(decoded.privateKey, equals(privateKey));
+        expect(decoded.version, equals(0x80));
+        expect(decoded.compressed, isTrue);
+      });
+
+      test('Round-trips an uncompressed key', () {
+        String encoded = Codec.encodeWif(
+            WIF(version: 0x80, privateKey: privateKey, compressed: false));
+        WIF decoded = Codec.decodeWif(encoded);
+        expect(decoded.privateKey, equals(privateKey));
+        expect(decoded.compressed, isFalse);
+      });
+
+      test('A mistyped character is rejected by the checksum', () {
+        String encoded = Codec.encodeWif(
+            WIF(version: 0x80, privateKey: privateKey, compressed: true));
+        String mistyped =
+            encoded.replaceRange(10, 11, encoded[10] == 'a' ? 'b' : 'a');
+        expect(() => Codec.decodeWif(mistyped), throwsFormatException);
+      });
+
+      test('Rejects a WIF from another network when a version is given', () {
+        String mainnet = Codec.encodeWif(
+            WIF(version: 0x80, privateKey: privateKey, compressed: true));
+        expect(() => Codec.decodeWif(mainnet, 0xef), throwsArgumentError);
       });
     });
   });

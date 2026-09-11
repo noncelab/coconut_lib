@@ -192,27 +192,27 @@ class Codec {
     return payload;
   }
 
-  // static WIF _decodeWifRaw(Uint8List buffer, [int? version]) {
-  //   if (version != null && buffer[0] != version) {
-  //     throw ArgumentError("Invalid network version");
-  //   }
-  //   if (buffer.length == 33) {
-  //     return WIF(
-  //         version: buffer[0],
-  //         privateKey: buffer.sublist(1, 33),
-  //         compressed: false);
-  //   }
-  //   if (buffer.length != 34) {
-  //     throw ArgumentError("Invalid WIF length");
-  //   }
-  //   if (buffer[33] != 0x01) {
-  //     throw ArgumentError("Invalid compression flag");
-  //   }
-  //   return WIF(
-  //       version: buffer[0],
-  //       privateKey: buffer.sublist(1, 33),
-  //       compressed: true);
-  // }
+  static WIF _decodeWifRaw(Uint8List buffer, [int? version]) {
+    if (version != null && buffer[0] != version) {
+      throw ArgumentError("Invalid network version");
+    }
+    if (buffer.length == 33) {
+      return WIF(
+          version: buffer[0],
+          privateKey: buffer.sublist(1, 33),
+          compressed: false);
+    }
+    if (buffer.length != 34) {
+      throw ArgumentError("Invalid WIF length");
+    }
+    if (buffer[33] != 0x01) {
+      throw ArgumentError("Invalid compression flag");
+    }
+    return WIF(
+        version: buffer[0],
+        privateKey: buffer.sublist(1, 33),
+        compressed: true);
+  }
 
   static Uint8List _encodeWifRaw(
       int version, Uint8List privateKey, bool compressed) {
@@ -229,13 +229,23 @@ class Codec {
     return result;
   }
 
-  // static WIF decodeWif(String string, [int? version]) {
-  //   return _decodeWifRaw(Codec.decodeBase58(string), version);
-  // }
+  /// Decodes a Wallet Import Format string back into its parts.
+  ///
+  /// [decodeBase58] verifies and strips the Base58Check checksum, so a
+  /// mistyped character throws a [FormatException] instead of yielding a
+  /// different private key. Pass [version] to also require a network.
+  static WIF decodeWif(String string, [int? version]) {
+    return _decodeWifRaw(Codec.decodeBase58(string), version);
+  }
 
   /// Encodes private-key metadata as Wallet Import Format.
+  ///
+  /// WIF is Base58Check: the version byte, the private key and the optional
+  /// compression flag are followed by a four-byte checksum. Without it a
+  /// mistyped character cannot be detected, so [encodeBase58Checksum] is
+  /// required here rather than [encodeBase58].
   static String encodeWif(WIF wif) {
-    return Codec.encodeBase58(
+    return Codec.encodeBase58Checksum(
         _encodeWifRaw(wif.version, wif.privateKey, wif.compressed));
   }
 }
