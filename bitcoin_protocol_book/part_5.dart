@@ -134,30 +134,32 @@ void chapter36P2wsh() {
   );
 }
 
-/// 37장에서 정한 세 가지 스크립트 경로 조건이다.
+/// 37장에서 정한 탭트리다.
 ///
-/// 예비키 단독 복구, 아이와 아내의 공동 복구, 2035년 이후 아이의 상속 순으로
-/// 탭 트리에 들어간다.
-List<Policy> familyPolicies(
+/// 예비키 복구를 한쪽 가지에 혼자 두고, 가족 복구와 장기 상속을 다른 쪽 가지에서
+/// 한 번 더 묶는다. `{A,{B,C}}` 모양이며 이 모양이 탭 머클 루트를 결정한다.
+/// 자주 쓰지 않는 조건일수록 깊은 곳에 두면 컨트롤 블록이 길어진다.
+TapTree familyTapTree(
     ({KeyStore me, KeyStore wife, KeyStore recover, KeyStore child}) keys) {
-  return [
-    SingleSignaturePolicy(keys.recover),
-    MultisignaturePolicy([keys.child, keys.wife], 2),
-    InheritancePolicy(keys.child, inheritanceLocktime),
-  ];
+  return TapBranch(
+    TapLeaf(SingleSignaturePolicy(keys.recover)),
+    TapBranch(
+      TapLeaf(MultisignaturePolicy([keys.child, keys.wife], 2)),
+      TapLeaf(InheritancePolicy(keys.child, inheritanceLocktime)),
+    ),
+  );
 }
 
 /// 37장의 지갑. 내부 공개키는 나 하나뿐이다.
 TaprootVault scriptPathVault() {
   final keys = taprootKeyStores();
-  return TaprootVault.fromKeyStoreList([keys.me], familyPolicies(keys));
+  return TaprootVault.fromTapTree([keys.me], familyTapTree(keys));
 }
 
 /// 38·39장의 가족 지갑. 내부 공개키는 나와 아내의 MuSig2 집계 공개키다.
 TaprootVault familyVault() {
   final keys = taprootKeyStores();
-  return TaprootVault.fromKeyStoreList(
-      [keys.me, keys.wife], familyPolicies(keys));
+  return TaprootVault.fromTapTree([keys.me, keys.wife], familyTapTree(keys));
 }
 
 /// 37장 — 복구와 상속 조건을 탭 트리의 스크립트 경로에 넣는다.
@@ -170,10 +172,13 @@ void chapter37Taproot() {
   print('Recover xpub : ${keys.recover.extendedPublicKey}');
   print('Child xpub : ${keys.child.extendedPublicKey}');
 
-  List<Policy> policies = familyPolicies(keys);
-  print('Recover policy : ${policies[0].toScript(0).serialize()}');
-  print('Multisig policy : ${policies[1].toScript(0).serialize()}');
-  print('Inheritance policy : ${policies[2].toScript(0).serialize()}');
+  TapTree tree = familyTapTree(keys);
+  List<Policy> leaves = tree.leaves;
+  print('Recover policy : ${leaves[0].toScript(0).serialize()}');
+  print('Multisig policy : ${leaves[1].toScript(0).serialize()}');
+  print('Inheritance policy : ${leaves[2].toScript(0).serialize()}');
+  print('Tree expression : ${tree.toTreeExpression()}');
+  print('Merkle Root : ${Codec.encodeHex(tree.getMerkleRoot(0))}');
 
   print('Receive Address 0 : ${scriptPathVault().getAddress(0)}');
 }
@@ -189,9 +194,9 @@ void chapter38KeyPath() {
 /// 39장 — 받기 0번의 88,500사토시를 받기 1번과 잔돈 0번으로 나눈다.
 ///
 /// MuSig2의 두 왕복을 `TaprootVault.addPublicNonce`에 맡기지 않고 손으로 편다.
-/// 그 편의 함수는 비밀 논스를 `Random.secure()`로 만들어 안에 감춰 두므로 실행할
-/// 때마다 서명이 달라진다. 여기서는 보조 난수를 고정해 책에 인쇄한 값이 그대로
-/// 다시 나오게 하고, 본문이 설명한 네 단계를 한 줄씩 드러낸다.
+/// 그 편의 함수에도 `auxRand`를 넘기면 값을 고정할 수 있지만, 그러면 b와 R,
+/// 도전값과 부분 서명이 모두 함수 안에 숨는다. 본문이 설명한 네 단계를 한 줄씩
+/// 드러내려고 아래 단계를 직접 부른다.
 void chapter39Schnorr() {
   print('--- Chapter 39 - Schnorr Signature ---');
 
@@ -369,25 +374,15 @@ int compareBytes(Uint8List a, Uint8List b) {
   return a.length - b.length;
 }
 
-
-// tr(
-//    musig([A07D432C/86'/0'/0']xpub6BosKTRL8fh9rBAzdQebnBUnhXNHjYkTrRCna3ajTTx1S7Pw4BvtcrecxNqqxVY4xfCEcGNdq6upmCUYaPahvYsYsDd4ikAHTHK739L6794/<0;1>/*,
-//          [C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*
-//    ),
-//    {
-//      multi_a(2,[632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*,
-//                [C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*)
-//    },
-//    {
-//      and_v(v:after(2051222400),pk([632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*))
-//    },
-//    {
-//      pk([BDCE09C9/86'/0'/0']xpub6Cnp4SUHXwNJLcPCbB1jARRba9xA9SQ3tHJzbX9rwMqkfKq8aQYo71TAxYDgecygFLZXTWqr88o9zLE6KuWsCyouFJUVP74y3dyXVwxenX8/<0;1>/*)
-//    }
-//    )#28enw8d5
-// /0/*,/1/*
-
 //tr(
-//  musig(sorted([A07D432C/86'/0'/0']xpub6BosKTRL8fh9rBAzdQebnBUnhXNHjYkTrRCna3ajTTx1S7Pw4BvtcrecxNqqxVY4xfCEcGNdq6upmCUYaPahvYsYsDd4ikAHTHK739L6794/<0;1>/*,[C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*)),
-//    {multi_a(2,[632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*,[C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*)},
-//    {and_v(v:pk([632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*),after(2051222400))},{pk([BDCE09C9/86'/0'/0']xpub6Cnp4SUHXwNJLcPCbB1jARRba9xA9SQ3tHJzbX9rwMqkfKq8aQYo71TAxYDgecygFLZXTWqr88o9zLE6KuWsCyouFJUVP74y3dyXVwxenX8/<0;1>/*)})#42g0drj3
+//    musig(
+//      [A07D432C/86'/0'/0']xpub6BosKTRL8fh9rBAzdQebnBUnhXNHjYkTrRCna3ajTTx1S7Pw4BvtcrecxNqqxVY4xfCEcGNdq6upmCUYaPahvYsYsDd4ikAHTHK739L6794/<0;1>/*,
+//      [C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*
+//    ),
+//    {pk([BDCE09C9/86'/0'/0']xpub6Cnp4SUHXwNJLcPCbB1jARRba9xA9SQ3tHJzbX9rwMqkfKq8aQYo71TAxYDgecygFLZXTWqr88o9zLE6KuWsCyouFJUVP74y3dyXVwxenX8/<0;1>/*),
+//      {multi_a(2,[632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*,
+//                 [C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*),
+//       and_v(v:after(2051222400),pk([632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*))
+//      }
+//    }
+// )#pfl8undv/0/*,/1/*
