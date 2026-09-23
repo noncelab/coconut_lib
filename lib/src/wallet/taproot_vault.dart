@@ -208,12 +208,8 @@ class TaprootVault extends TaprootWalletBase {
     KeyStore keyStoreFromSeed =
         KeyStore.fromSeed(seed, AddressType.p2tr, accountIndex: accountIndex);
     for (Policy policy in policyList) {
-      if (policy is InheritancePolicy) {
-        if (policy.beneficiaryKeyStore
-            .hasSamePublicIdentity(keyStoreFromSeed)) {
-          policy.beneficiaryKeyStore = keyStoreFromSeed;
-          return;
-        }
+      if (policy.bindKeyStore(keyStoreFromSeed)) {
+        return;
       }
     }
     throw StateError('Seed does not match any beneficiary key store.');
@@ -221,10 +217,8 @@ class TaprootVault extends TaprootWalletBase {
 
   Policy getSpendablePolicy() {
     for (Policy policy in policyList) {
-      if (policy is InheritancePolicy) {
-        if (policy.beneficiaryKeyStore.hasSeed) {
-          return policy;
-        }
+      if (policy.keyStoreList.any((keyStore) => keyStore.hasSeed)) {
+        return policy;
       }
     }
     throw Exception('No spendable policy found.');

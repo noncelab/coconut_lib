@@ -893,27 +893,35 @@ class Transaction {
         }
         continue;
       } else if (utxo.scriptPubKey.isP2tr()) {
-        final Uint8List taprootSignature =
-            Codec.decodeHex(input.witnessList[0]);
-        final int hashType = _taprootHashTypeFromSignature(taprootSignature);
-        bool isKeyPathSpending;
-        if (input.witnessList.length == 1) {
-          isKeyPathSpending = true;
-        } else if (input.witnessList.length == 3) {
-          isKeyPathSpending = false;
-        } else {
+        // Script path: [signature items..., tapscript, control block]. A
+        // k-of-n leaf leaves an empty item for every key that did not sign.
+        final bool isKeyPathSpending = input.witnessList.length == 1;
+        if (!isKeyPathSpending && input.witnessList.length < 3) {
           throw TransactionException(TransactionErrorCode.invalidTransaction,
               'Invalid Taproot transaction.');
         }
+        final int signatureItemCount =
+            isKeyPathSpending ? 1 : input.witnessList.length - 2;
+        final String? signatureHex = input.witnessList
+            .take(signatureItemCount)
+            .where((item) => item.isNotEmpty)
+            .firstOrNull;
+        if (signatureHex == null) {
+          throw TransactionException(TransactionErrorCode.invalidTransaction,
+              'Invalid Taproot transaction.');
+        }
+        final int hashType =
+            _taprootHashTypeFromSignature(Codec.decodeHex(signatureHex));
         if (isKeyPathSpending) {
           sigHash = Codec.decodeHex(
               getTaprootSigHash(inputIndex, utxoList, hashType: hashType));
         } else {
           final Uint8List controlBlockBytes =
-              Codec.decodeHex(input.witnessList[2]);
+              Codec.decodeHex(input.witnessList.last);
           final int controlByte = controlBlockBytes[0];
           final int leafVersion = controlByte & 0xfe;
-          final String tapscriptHex = input.witnessList[1];
+          final String tapscriptHex =
+              input.witnessList[input.witnessList.length - 2];
           final Uint8List scriptBytes = Codec.decodeHex(tapscriptHex);
           final Uint8List scriptLen =
               Codec.encodeVariableInteger(scriptBytes.length);
@@ -1067,8 +1075,15 @@ class Transaction {
         final int merklePathLen = estimateMerklePath(leafCount!);
         final int controlBlockSize = 33 + 32 * merklePathLen;
 
+        // A k-of-n leaf pushes k signatures plus an empty item per non-signer.
+        final int signerCount = _appliedPolicy!.keyStoreList.length;
+        final int signatureCount = _appliedPolicy!.requiredSignature;
+        final int emptyElementCount =
+            signerCount > signatureCount ? signerCount - signatureCount : 0;
         final int sigElementSize =
-            Codec.encodeVariableInteger(64).length + 64; // schnorr sig
+            (Codec.encodeVariableInteger(64).length + 64) * // schnorr sig
+                    signatureCount +
+                emptyElementCount; // empty stack items are a single 0x00 byte
         final int tapscriptElementSize =
             Codec.encodeVariableInteger(tapscriptLen).length + tapscriptLen;
         final int controlBlockElementSize =

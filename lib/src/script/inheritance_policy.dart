@@ -40,6 +40,18 @@ class InheritancePolicy extends Policy {
   }
 
   @override
+  List<KeyStore> get keyStoreList => List.unmodifiable([beneficiaryKeyStore]);
+
+  @override
+  bool bindKeyStore(KeyStore keyStore) {
+    if (!beneficiaryKeyStore.hasSamePublicIdentity(keyStore)) {
+      return false;
+    }
+    beneficiaryKeyStore = keyStore;
+    return true;
+  }
+
+  @override
   Script toScript(int addressIndex, {bool isChange = false}) {
     List<dynamic> cmds = [];
     Uint8List beneficiaryPublicKey = beneficiaryKeyStore

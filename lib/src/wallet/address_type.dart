@@ -331,7 +331,7 @@ class AddressType {
         tapscript.add(0xac); // OP_CHECKSIGADD
       }
       tapscript.add(requiredSignature);
-      tapscript.add(0x87); // OP_NUMEQUAL
+      tapscript.add(0x9c); // OP_NUMEQUAL
     }
 
     // Uint8List merkleRoot = _getTapleafHash(0xc0, Codec.encodeHex(tapscript));

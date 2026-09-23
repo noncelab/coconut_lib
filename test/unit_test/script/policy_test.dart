@@ -52,8 +52,29 @@ void main() {
         expect(() => Policy.fromMiniscript(relative), throwsException);
       });
 
+      test('parses single signature miniscript', () {
+        final SingleSignaturePolicy single =
+            SingleSignaturePolicy(beneficiaryVault.keyStoreList[0]);
+        final Policy p = Policy.fromMiniscript(single.toMiniscript());
+        expect(p, isA<SingleSignaturePolicy>());
+        expect(p.getTapleafHash(0), single.getTapleafHash(0));
+      });
+
+      test('parses multisignature miniscript', () {
+        final MultisignaturePolicy multi = MultisignaturePolicy([
+          WalletFixture.beneficiaryVault(passphrase: 'A').keyStoreList[0],
+          WalletFixture.beneficiaryVault(passphrase: 'B').keyStoreList[0],
+        ], 2);
+        final Policy p = Policy.fromMiniscript(multi.toMiniscript());
+        expect(p, isA<MultisignaturePolicy>());
+        expect((p as MultisignaturePolicy).requiredSignature, 2);
+        expect(p.getTapleafHash(0), multi.getTapleafHash(0));
+      });
+
       test('throws for unsupported miniscript', () {
         expect(() => Policy.fromMiniscript('pk(k)'), throwsException);
+        expect(
+            () => Policy.fromMiniscript('multi_a(2,k1,k2)'), throwsException);
       });
     });
 
@@ -65,6 +86,25 @@ void main() {
         expect(ip.locktime, inheritancePolicy.locktime);
         expect(ip.beneficiaryKeyStore.masterFingerprint,
             inheritancePolicy.beneficiaryKeyStore.masterFingerprint);
+      });
+
+      test('deserializes typed single signature policy JSON', () {
+        final SingleSignaturePolicy single =
+            SingleSignaturePolicy(beneficiaryVault.keyStoreList[0]);
+        final Policy p = Policy.fromJson(single.toJson());
+        expect(p, isA<SingleSignaturePolicy>());
+        expect((p as SingleSignaturePolicy).keyStore.masterFingerprint,
+            single.keyStore.masterFingerprint);
+      });
+
+      test('deserializes typed multisignature policy JSON', () {
+        final MultisignaturePolicy multi = MultisignaturePolicy([
+          WalletFixture.beneficiaryVault(passphrase: 'A').keyStoreList[0],
+          WalletFixture.beneficiaryVault(passphrase: 'B').keyStoreList[0],
+        ], 2);
+        final Policy p = Policy.fromJson(multi.toJson());
+        expect(p, isA<MultisignaturePolicy>());
+        expect((p as MultisignaturePolicy).totalSigner, 2);
       });
 
       test('deserializes legacy JSON with miniscript field only', () {

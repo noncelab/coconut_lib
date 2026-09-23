@@ -22,6 +22,14 @@ class TaprootWallet extends TaprootWalletBase {
         return InheritancePolicy(
             KeyStore.publicOnly(policy.beneficiaryKeyStore), policy.locktime);
       }
+      if (policy is SingleSignaturePolicy) {
+        return SingleSignaturePolicy(KeyStore.publicOnly(policy.keyStore));
+      }
+      if (policy is MultisignaturePolicy) {
+        return MultisignaturePolicy(
+            policy.keyStoreList.map(KeyStore.publicOnly).toList(),
+            policy.requiredSignature);
+      }
       throw ArgumentError('Unsupported Taproot policy type.');
     }).toList(growable: false);
   }

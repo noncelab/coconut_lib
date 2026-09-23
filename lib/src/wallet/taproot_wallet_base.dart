@@ -165,9 +165,7 @@ abstract class TaprootWalletBase extends WalletBase {
     for (PsbtInput psbtInput in psbtObject.inputs) {
       if (psbtInput.tapLeafScript != null) {
         for (Policy policy in _policyList) {
-          if (policy is InheritancePolicy) {
-            targetkeyStoreSet.add(policy.beneficiaryKeyStore);
-          }
+          targetkeyStoreSet.addAll(policy.keyStoreList);
         }
       } else {
         for (KeyStore keyStore in _keyStoreList) {
@@ -242,17 +240,36 @@ abstract class TaprootWalletBase extends WalletBase {
             tapleafHash: tapleafHash,
             keyVersion: 0,
             codesepPos: 0xffffffff);
+        final bool inputNeedsSignature =
+            psbtInput.requiredSignature > psbtInput.signedCount;
+        bool signed = false;
         for (DerivationPath derivationPath in derivationPathList!) {
+          if (psbtInput.requiredSignature <= psbtInput.signedCount) {
+            break;
+          }
           for (Policy policy in _policyList) {
-            if (policy is InheritancePolicy) {
-              if (policy.beneficiaryKeyStore.masterFingerprint ==
-                  derivationPath.masterFingerprint) {
-                policy.beneficiaryKeyStore.addSignatureToPsbtInput(
-                    psbtInput, addressType, derivationPath.path, sigHash);
+            KeyStore? signer;
+            for (KeyStore keyStore in policy.keyStoreList) {
+              // Only this vault's own seed can sign; cosigners sign their copy.
+              if (keyStore.hasSeed &&
+                  keyStore.masterFingerprint ==
+                      derivationPath.masterFingerprint) {
+                signer = keyStore;
                 break;
               }
             }
+            if (signer != null) {
+              signer.addSignatureToPsbtInput(
+                  psbtInput, addressType, derivationPath.path, sigHash);
+              signed = true;
+              break;
+            }
           }
+        }
+        if (inputNeedsSignature && !signed) {
+          throw SigningException(SigningErrorCode.privateKeyUnavailable,
+              'This vault holds no seed for the Taproot script policy.',
+              context: {'inputIndex': inputIndex});
         }
       }
       //Key path spending

@@ -226,8 +226,18 @@ void main() {
             'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',
             1);
         input.setTaprootScriptPathSpendingSignature(
-            'aa' * 64, '51', 'c0${'11' * 32}');
+            ['aa' * 64], '51', 'c0${'11' * 32}');
         expect(input.witnessList.length, 3);
+      });
+
+      test('Set taproot multisig script path witness', () {
+        TransactionInput input = TransactionInput.forPayment(
+            'a770b9c757cd83461de06049e0898740dc112e32b7543b2f2d038d5ce0d201db',
+            1);
+        input.setTaprootScriptPathSpendingSignature(
+            ['aa' * 64, '', 'bb' * 64], '51', 'c0${'11' * 32}');
+        expect(input.witnessList.length, 5);
+        expect(input.witnessList[1], '');
       });
     });
 

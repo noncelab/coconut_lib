@@ -155,8 +155,10 @@ class TransactionInput {
   }
 
   void setTaprootScriptPathSpendingSignature(
-      String signature, String tapScript, String controlBlock) {
-    witnessList = [signature, tapScript, controlBlock];
+      List<String> signatures, String tapScript, String controlBlock) {
+    // A k-of-n leaf pushes one item per key, so the stack holds as many
+    // entries as the tapscript pops — empty items included.
+    witnessList = [...signatures, tapScript, controlBlock];
   }
 
   /// Check if the transaction input has signature.
@@ -286,20 +288,21 @@ class TransactionInput {
   bool _verifyP2trSpend(Uint8List sigHash, TransactionOutput utxo) {
     final Uint8List outputKey =
         Uint8List.fromList((utxo.scriptPubKey.commands[1] as Uint8List));
-    Uint8List signature = Codec.decodeHex(witnessList[0]);
-    if (signature.length == 65) {
-      if (signature.last == 0x00) return false;
-      signature = signature.sublist(0, 64);
-    } else if (signature.length != 64) {
+    if (witnessList.isEmpty) {
       return false;
     }
     if (witnessList.length == 1) {
       // Key path spending
+      final Uint8List? signature = _normalizeSchnorrSignature(witnessList[0]);
+      if (signature == null) return false;
       return Ecc.verifySchnorr(sigHash, outputKey, signature);
-    } else if (witnessList.length == 3) {
-      // Script path spending
-      final String tapscriptHex = witnessList[1];
-      final Uint8List controlBlockBytes = Codec.decodeHex(witnessList[2]);
+    } else if (witnessList.length >= 3) {
+      // Script path spending: [signature items..., tapscript, control block]
+      final String tapscriptHex = witnessList[witnessList.length - 2];
+      final Uint8List controlBlockBytes =
+          Codec.decodeHex(witnessList[witnessList.length - 1]);
+      final List<String> signatureItems =
+          witnessList.sublist(0, witnessList.length - 2);
 
       if (controlBlockBytes.length < 33 ||
           (controlBlockBytes.length - 33) % 32 != 0) {
@@ -347,13 +350,28 @@ class TransactionInput {
         return false;
       }
 
-      // Extract x-only pubkey from tapscript and verify signature.
+      // Extract x-only pubkey(s) from the tapscript and verify the signatures.
       final Uint8List scriptWithLen = Uint8List.fromList(
           [...Codec.encodeVariableInteger(scriptBytes.length), ...scriptBytes]);
-      final List<dynamic> cmds = Script.parseToCommand(scriptWithLen);
-      // InheritancePolicy script shape: <locktime> CLTV DROP <pubkey> CHECKSIG
-      Uint8List pubkey =
-          cmds.whereType<Uint8List>().last; // last pushed data is pubkey
+      final Script tapscript = Script(Script.parseToCommand(scriptWithLen));
+
+      final List<Uint8List>? multisigPublicKeys =
+          MultisignaturePolicy.getPublicKeysFromScript(tapscript);
+      if (multisigPublicKeys != null) {
+        return _verifyTapscriptMultisigSpend(
+            sigHash, tapscript, multisigPublicKeys, signatureItems);
+      }
+
+      // Single-key leaf, e.g. <pubkey> CHECKSIG or <locktime> CLTV DROP
+      // <pubkey> CHECKSIG.
+      if (signatureItems.length != 1) return false;
+      final Uint8List? signature =
+          _normalizeSchnorrSignature(signatureItems.single);
+      if (signature == null) return false;
+
+      Uint8List pubkey = tapscript.commands
+          .whereType<Uint8List>()
+          .last; // last pushed data is pubkey
       // Tapscript expects 32-byte x-only pubkey. Some older fixtures may use
       // 33-byte compressed keys; normalize those to x-only.
       if (pubkey.length == 33 && (pubkey[0] == 0x02 || pubkey[0] == 0x03)) {
@@ -365,6 +383,46 @@ class TransactionInput {
     } else {
       throw Exception('Invalid Taproot Transaction');
     }
+  }
+
+  /// Verify a `multi_a` leaf: the stack holds one item per key in reverse key
+  /// order, and at least the leaf's threshold of them must be valid.
+  bool _verifyTapscriptMultisigSpend(Uint8List sigHash, Script tapscript,
+      List<Uint8List> publicKeys, List<String> signatureItems) {
+    final int? requiredSignature =
+        MultisignaturePolicy.getRequiredSignatureFromScript(tapscript);
+    if (requiredSignature == null ||
+        signatureItems.length != publicKeys.length) {
+      return false;
+    }
+
+    // Stack order is the reverse of script order.
+    final List<String> signatures = signatureItems.reversed.toList();
+    int validCount = 0;
+    for (int i = 0; i < publicKeys.length; i++) {
+      if (signatures[i].isEmpty) {
+        continue;
+      }
+      final Uint8List? signature = _normalizeSchnorrSignature(signatures[i]);
+      if (signature == null ||
+          !Ecc.verifySchnorr(sigHash, publicKeys[i], signature)) {
+        return false;
+      }
+      validCount++;
+    }
+
+    return validCount >= requiredSignature;
+  }
+
+  /// Strip the sighash byte from a 65-byte Schnorr signature, or `null` when
+  /// the encoding is invalid.
+  static Uint8List? _normalizeSchnorrSignature(String signatureHex) {
+    final Uint8List signature = Codec.decodeHex(signatureHex);
+    if (signature.length == 65) {
+      if (signature.last == 0x00) return null;
+      return signature.sublist(0, 64);
+    }
+    return signature.length == 64 ? signature : null;
   }
 
   /// Serialize the transaction input.

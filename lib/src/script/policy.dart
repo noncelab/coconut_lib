@@ -10,6 +10,22 @@ abstract class Policy {
 
   String toJson();
 
+  /// Key stores that can produce signatures for this leaf.
+  ///
+  /// Everything that has to enumerate the signers of a script tree — PSBT
+  /// global xpubs, TAP_BIP32_DERIVATION entries, signing — reads this instead
+  /// of testing for a concrete policy type.
+  List<KeyStore> get keyStoreList => const <KeyStore>[];
+
+  /// Number of signatures this leaf requires.
+  int get requiredSignature => 1;
+
+  /// Swap a public-only signer for the seed-bearing [keyStore] of the same key.
+  ///
+  /// Returns `true` when this policy holds a matching signer. Vaults use it to
+  /// bind a seed after restoring a watch-only policy.
+  bool bindKeyStore(KeyStore keyStore) => false;
+
   Uint8List getTapleafHash(int addressIndex, {bool isChange = false}) {
     int version = 0xc0;
     // TapLeaf hash commits to the *raw* tapscript bytes (no length prefix).
@@ -42,9 +58,42 @@ abstract class Policy {
   static Policy fromMiniscript(String miniscript) {
     if (RegExp(r'^and_v\(v:pk\(.+\),after\(\d+\)\)$').hasMatch(miniscript)) {
       return InheritancePolicy.fromMiniscript(miniscript);
+    } else if (RegExp(r'^pk\(.+\)$').hasMatch(miniscript)) {
+      return SingleSignaturePolicy.fromMiniscript(miniscript);
+    } else if (RegExp(r'^multi_a\(\d+,.+\)$').hasMatch(miniscript)) {
+      return MultisignaturePolicy.fromMiniscript(miniscript);
     } else {
       throw Exception('Unsupported miniscript type.');
     }
+  }
+
+  /// Key origin expression of [keyStore] under the Taproot derivation path.
+  static String _getKeyOriginExpression(KeyStore keyStore) {
+    final KeyStore publicKeyStore = KeyStore.fromExtendedPublicKey(
+        keyStore.extendedPublicKey.serialize(), keyStore.masterFingerprint);
+    return TaprootWallet.fromKeyStoreList([publicKeyStore], [])
+        .getKeyOriginExpression();
+  }
+
+  /// Restore the key store described by a single key origin expression.
+  ///
+  /// Validated before parsing so a malformed fragment raises a
+  /// [FormatException] instead of a null-check error deeper in the parser.
+  static KeyStore _parseKeyOriginExpression(String keyOriginExpression) {
+    final String expression = keyOriginExpression.trim();
+    if (!RegExp(r"^\[[0-9a-fA-F]{8}(?:/\d+[h']?)*\][a-zA-Z0-9]+(?:/.*)?$")
+        .hasMatch(expression)) {
+      throw FormatException(
+          'Invalid key origin expression: $keyOriginExpression');
+    }
+
+    final TaprootWallet wallet =
+        TaprootWallet.fromKeyOriginExpression(expression);
+    if (wallet.keyStoreList.length > 1) {
+      throw const FormatException(
+          'Key origin expression must hold a single key.');
+    }
+    return wallet.keyStoreList[0];
   }
 
   /// Deserialize a policy from a JSON string.
@@ -61,6 +110,10 @@ abstract class Policy {
       switch (type) {
         case 'inheritance':
           return InheritancePolicy.fromJson(jsonStr);
+        case 'singleSignature':
+          return SingleSignaturePolicy.fromJson(jsonStr);
+        case 'multisignature':
+          return MultisignaturePolicy.fromJson(jsonStr);
         default:
           throw FormatException('Unsupported policy type: $type');
       }

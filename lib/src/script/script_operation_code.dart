@@ -27,7 +27,8 @@ class ScriptOperationCode {
     'OP_CHECKSIG': 0xac,
     'OP_CHECKSIGVERIFY': 0xad,
     'OP_CHECKSIGADD': 0xba,
-    'OP_NUMEQUAL': 0x87,
+    'OP_EQUAL': 0x87,
+    'OP_NUMEQUAL': 0x9c,
   };
 
   static int getHex(String opCode) {

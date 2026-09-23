@@ -14,6 +14,10 @@ void main() {
         expect(() => ScriptOperationCode.getHex('OP_CHECKMULTISIGGG'),
             throwsException);
       });
+      test('Numeric and byte comparison opcodes are distinct', () {
+        expect(ScriptOperationCode.getHex('OP_NUMEQUAL'), 0x9c);
+        expect(ScriptOperationCode.getHex('OP_EQUAL'), 0x87);
+      });
     });
     group('getOpCode', () {
       test('Get operation code', () {

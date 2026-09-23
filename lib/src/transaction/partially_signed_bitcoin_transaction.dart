@@ -209,8 +209,7 @@ class Psbt {
             '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
       }
       for (Policy policy in wallet.policyList) {
-        if (policy is InheritancePolicy) {
-          final KeyStore keyStore = policy.beneficiaryKeyStore;
+        for (final KeyStore keyStore in policy.keyStoreList) {
           pubInVaultList.add(
               '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
               '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
@@ -557,13 +556,12 @@ class Psbt {
         policy.toScript(addressIndex, isChange: isChange).rawSerialize() ==
         actualScript);
     if (policyIndex < 0 ||
-        wallet.policyList[policyIndex] is! InheritancePolicy) {
+        wallet.policyList[policyIndex].keyStoreList.isEmpty) {
       throw PsbtException(PsbtErrorCode.policyMismatch,
           'Input uses an unknown Taproot script policy.',
           inputIndex: inputIndex);
     }
-    final InheritancePolicy policy =
-        wallet.policyList[policyIndex] as InheritancePolicy;
+    final Policy policy = wallet.policyList[policyIndex];
     final String expectedControlBlock =
         wallet.getControlBlock(policyIndex, addressIndex, isChange: isChange);
     if (input.controlBlock != expectedControlBlock) {
@@ -574,21 +572,35 @@ class Psbt {
 
     final String leafHash = Codec.encodeHex(
         policy.getTapleafHash(addressIndex, isChange: isChange));
-    final KeyStore keyStore = policy.beneficiaryKeyStore;
-    final String publicKey = keyStore.getPublicKey(addressIndex,
-        isChange: isChange, isXOnly: true, applyTweak: false);
-    if (derivations.length != 1 ||
-        derivations.single.masterFingerprint != keyStore.masterFingerprint ||
-        derivations.single.path != path ||
-        derivations.single.publicKey != publicKey ||
-        derivations.single.leafHashes.length != 1 ||
-        derivations.single.leafHashes.single != leafHash) {
+    // Signers of the leaf, keyed by the x-only public key the PSBT carries.
+    final Map<String, KeyStore> policyKeyStores = <String, KeyStore>{
+      for (final KeyStore keyStore in policy.keyStoreList)
+        keyStore.getPublicKey(addressIndex,
+            isChange: isChange, isXOnly: true, applyTweak: false): keyStore
+    };
+
+    if (derivations.isEmpty ||
+        derivations.length > policyKeyStores.length ||
+        derivations.map((entry) => entry.publicKey).toSet().length !=
+            derivations.length) {
       throw PsbtException(PsbtErrorCode.signerMismatch,
           'Input derivation does not match the Taproot script policy.',
           inputIndex: inputIndex);
     }
+    for (final DerivationPath derivation in derivations) {
+      final KeyStore? keyStore = policyKeyStores[derivation.publicKey];
+      if (keyStore == null ||
+          derivation.masterFingerprint != keyStore.masterFingerprint ||
+          derivation.path != path ||
+          derivation.leafHashes.length != 1 ||
+          derivation.leafHashes.single != leafHash) {
+        throw PsbtException(PsbtErrorCode.signerMismatch,
+            'Input derivation does not match the Taproot script policy.',
+            inputIndex: inputIndex);
+      }
+    }
     for (final Signature signature in input.tapScriptSig ?? <Signature>[]) {
-      if (signature.publicKey != publicKey) {
+      if (!policyKeyStores.containsKey(signature.publicKey)) {
         throw PsbtException(PsbtErrorCode.signerMismatch,
             'Input contains a signature outside the Taproot script policy.',
             inputIndex: inputIndex);
@@ -1021,11 +1033,11 @@ class Psbt {
         globalData[key] = value;
       }
       for (Policy policy in taprootWallet.policyList) {
-        if (policy is InheritancePolicy) {
+        for (KeyStore keyStore in policy.keyStoreList) {
           String key =
-              "${getKeyType(globalKeyType, 'XPUB')}${policy.beneficiaryKeyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}";
+              "${getKeyType(globalKeyType, 'XPUB')}${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}";
           String value =
-              "${policy.beneficiaryKeyStore.masterFingerprint}${Codec.encodeHex(_serializeDerivationPath(wallet.derivationPath))}";
+              "${keyStore.masterFingerprint}${Codec.encodeHex(_serializeDerivationPath(wallet.derivationPath))}";
           globalData[key] = value;
         }
       }
@@ -1118,45 +1130,48 @@ class Psbt {
         if (tx._appliedPolicy != null) {
           // Policy included
           // TAP_BIP32_DERIVATION
-          if (tx._appliedPolicy is InheritancePolicy) {
-            String tapBip32DerivationKeyType =
-                getKeyType(inputKeyType, 'TAP_BIP32_DERIVATION');
-            InheritancePolicy inheritancePolicy =
-                tx._appliedPolicy as InheritancePolicy;
-            KeyStore keyStore = inheritancePolicy.beneficiaryKeyStore;
+          final Policy appliedPolicy = tx._appliedPolicy!;
+          if (appliedPolicy.keyStoreList.isEmpty) {
+            throw PsbtException(
+                PsbtErrorCode.policyMismatch, 'Applied policy has no signer.',
+                inputIndex: i);
+          }
+
+          String tapBip32DerivationKeyType =
+              getKeyType(inputKeyType, 'TAP_BIP32_DERIVATION');
+          String policy = Codec.encodeHex(appliedPolicy.getTapleafHash(
+              tx.utxoList[i].accountIndex,
+              isChange: tx.utxoList[i].isChange));
+          // One entry per signer of the leaf; each commits to the same leaf hash.
+          for (KeyStore keyStore in appliedPolicy.keyStoreList) {
             String publicKey = keyStore.getPublicKey(
                 tx.utxoList[i].accountIndex,
                 isChange: tx.utxoList[i].isChange,
                 isXOnly: false);
             String fingerPrint = keyStore.masterFingerprint;
-            String policy = Codec.encodeHex(inheritancePolicy.getTapleafHash(
-                tx.utxoList[i].accountIndex,
-                isChange: tx.utxoList[i].isChange));
             inputData[tapBip32DerivationKeyType + publicKey.substring(2)] =
                 "01$policy$fingerPrint${Codec.encodeHex(_serializeDerivationPath(tx.utxoList[i].derivationPath))}";
-
-            // TAP_LEAF_SCRIPT
-            String tapLeafScriptType =
-                getKeyType(inputKeyType, 'TAP_LEAF_SCRIPT');
-            final int policyIndex = taprootWallet.policyList.indexWhere(
-                (p) => p.toMiniscript() == inheritancePolicy.toMiniscript());
-            if (policyIndex < 0) {
-              throw PsbtException(PsbtErrorCode.policyMismatch,
-                  'Applied policy was not found in wallet policy list.',
-                  inputIndex: i);
-            }
-            String controlBlock = taprootWallet.getControlBlock(
-                policyIndex, tx.utxoList[i].accountIndex,
-                isChange: tx.utxoList[i].isChange);
-            // PSBT TapLeafScript value must be raw tapscript bytes + leaf version.
-            String leafScript = inheritancePolicy
-                .toScript(tx.utxoList[i].accountIndex,
-                    isChange: tx.utxoList[i].isChange)
-                .rawSerialize();
-            inputData[tapLeafScriptType + controlBlock] = '${leafScript}c0';
-          } else {
-            throw Exception('Only InheritancePolicy is supported');
           }
+
+          // TAP_LEAF_SCRIPT
+          String tapLeafScriptType =
+              getKeyType(inputKeyType, 'TAP_LEAF_SCRIPT');
+          final int policyIndex = taprootWallet.policyList.indexWhere(
+              (p) => p.toMiniscript() == appliedPolicy.toMiniscript());
+          if (policyIndex < 0) {
+            throw PsbtException(PsbtErrorCode.policyMismatch,
+                'Applied policy was not found in wallet policy list.',
+                inputIndex: i);
+          }
+          String controlBlock = taprootWallet.getControlBlock(
+              policyIndex, tx.utxoList[i].accountIndex,
+              isChange: tx.utxoList[i].isChange);
+          // PSBT TapLeafScript value must be raw tapscript bytes + leaf version.
+          String leafScript = appliedPolicy
+              .toScript(tx.utxoList[i].accountIndex,
+                  isChange: tx.utxoList[i].isChange)
+              .rawSerialize();
+          inputData[tapLeafScriptType + controlBlock] = '${leafScript}c0';
         } else {
           // No policy applied
           List<String> publicKeys = [];
@@ -1281,15 +1296,16 @@ class Psbt {
           }
 
           for (final Policy policy in taprootWallet.policyList) {
-            if (policy is! InheritancePolicy) continue;
-            final KeyStore keyStore = policy.beneficiaryKeyStore;
-            final String xOnlyPublicKey = keyStore.getPublicKey(addressIndex,
-                isChange: isChange, isXOnly: true);
-            keyStoresByPublicKey[xOnlyPublicKey] = keyStore;
-            leafHashesByPublicKey
-                .putIfAbsent(xOnlyPublicKey, () => <String>[])
-                .add(Codec.encodeHex(
-                    policy.getTapleafHash(addressIndex, isChange: isChange)));
+            final String leafHash = Codec.encodeHex(
+                policy.getTapleafHash(addressIndex, isChange: isChange));
+            for (final KeyStore keyStore in policy.keyStoreList) {
+              final String xOnlyPublicKey = keyStore.getPublicKey(addressIndex,
+                  isChange: isChange, isXOnly: true);
+              keyStoresByPublicKey[xOnlyPublicKey] = keyStore;
+              leafHashesByPublicKey
+                  .putIfAbsent(xOnlyPublicKey, () => <String>[])
+                  .add(leafHash);
+            }
           }
 
           final String tapBip32DerivationKeyType =
@@ -1557,10 +1573,11 @@ class Psbt {
         if (inputs[i].tapScriptSig != null &&
             inputs[i].tapScriptSig!.isNotEmpty) {
           //Script path spending
-          _validateTaprootSignatureEncoding(
-              inputs[i], inputs[i].tapScriptSig![0].signature);
+          for (final Signature signature in inputs[i].tapScriptSig!) {
+            _validateTaprootSignatureEncoding(inputs[i], signature.signature);
+          }
           signedTransaction.inputs[i].setTaprootScriptPathSpendingSignature(
-              inputs[i].tapScriptSig![0].signature,
+              _buildTapScriptWitness(inputs[i], i),
               // Witness must contain raw tapscript bytes (no length prefix).
               inputs[i].tapLeafScript!.rawSerialize(),
               inputs[i].controlBlock!);
@@ -1668,6 +1685,48 @@ class Psbt {
           Codec.decodeHex(sigHash), Codec.decodeHex(publicKey), signatureBytes);
     }
     return isValid;
+  }
+
+  /// Signature items of a script-path witness, in stack order.
+  ///
+  /// A `multi_a` leaf checks its keys in script order and each check pops one
+  /// item, so the stack is built in reverse key order with an empty item for
+  /// every key that did not sign. Every other leaf spends with one signature.
+  static List<String> _buildTapScriptWitness(PsbtInput input, int inputIndex) {
+    final List<Signature> signatures = input.tapScriptSig ?? <Signature>[];
+    final List<Uint8List>? publicKeys =
+        MultisignaturePolicy.getPublicKeysFromScript(input.tapLeafScript!);
+
+    if (publicKeys == null) {
+      if (signatures.isEmpty) {
+        throw PsbtException(PsbtErrorCode.insufficientSignatures,
+            'Input does not have enough signatures.',
+            inputIndex: inputIndex);
+      }
+      return [signatures.first.signature];
+    }
+
+    final Map<String, String> signatureByPublicKey = <String, String>{
+      for (final Signature signature in signatures)
+        signature.publicKey: signature.signature
+    };
+
+    final List<String> witness = publicKeys
+        .map((publicKey) => signatureByPublicKey[Codec.encodeHex(publicKey)])
+        .map((signature) => signature ?? '')
+        .toList()
+        .reversed
+        .toList();
+
+    final int signedCount =
+        witness.where((signature) => signature.isNotEmpty).length;
+    if (signedCount < input.requiredSignature) {
+      throw PsbtException(PsbtErrorCode.insufficientSignatures,
+          'Input does not have enough signatures.',
+          inputIndex: inputIndex);
+    }
+
+    return witness;
   }
 
   static Uint8List _validateTaprootSignatureEncoding(
@@ -1837,10 +1896,15 @@ class PsbtInput {
   int get requiredSignature {
     if (muSig2ParticipantPubkeys != null) {
       return muSig2ParticipantPubkeys!.length;
-    } else if (witnessScript == null) {
-      return 1;
-    } else {
+    } else if (witnessScript != null) {
       return witnessScript!.getRequiredSignature();
+    } else if (tapLeafScript != null) {
+      // A k-of-n tapscript leaf needs k signatures; every other leaf needs one.
+      return MultisignaturePolicy.getRequiredSignatureFromScript(
+              tapLeafScript!) ??
+          1;
+    } else {
+      return 1;
     }
   }
 

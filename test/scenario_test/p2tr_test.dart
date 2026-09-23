@@ -674,5 +674,107 @@ void main() {
       expect(
           signedTx.inputs[0].witnessList[0].length, 128); // 64-byte schnorr sig
     });
+
+    test('P2TR Script Path spending (2-of-3 multi_a leaf)', () {
+      KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
+          Seed.fromMnemonic(
+              utf8.encode(
+                  'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+              passphrase: utf8.encode(passphrase)),
+          AddressType.p2tr);
+
+      final KeyStore cosignerA = keyStore('cosigner A');
+      final KeyStore cosignerB = keyStore('cosigner B');
+      final KeyStore cosignerC = keyStore('cosigner C');
+
+      final MultisignaturePolicy policy =
+          MultisignaturePolicy([cosignerA, cosignerB, cosignerC], 2);
+      final TaprootVault coordinatorVault =
+          TaprootVault.fromKeyStoreList([keyStore('internal')], [policy]);
+      final TaprootWallet wallet =
+          TaprootWallet.fromDescriptor(coordinatorVault.descriptor);
+
+      // The watch-only wallet restores the leaf from the descriptor.
+      expect(wallet.policyList.single, isA<MultisignaturePolicy>());
+      expect(wallet.policyList.single.requiredSignature, 2);
+      expect(wallet.policyList.single.keyStoreList.length, 3);
+
+      final Utxo utxo = Utxo(
+          '0b5b43a8a09f1021bac4f4357c2808043b409231b42fc0143050ac37668a984b',
+          0,
+          21000,
+          "m/86'/1'/0'/0/0");
+      final Transaction tx = Transaction.forSinglePayment([utxo],
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, wallet);
+      tx.setPolicy(wallet.policyList.single);
+
+      String psbt = Psbt.fromTransaction(tx, wallet).serialize();
+      expect(Psbt.parse(psbt).inputs[0].requiredSignature, 2);
+
+      // Cosigners A and C sign from their own watch-only import; B stays out.
+      for (final KeyStore signer in [cosignerA, cosignerC]) {
+        final TaprootVault vault =
+            TaprootVault.fromDescriptor(coordinatorVault.descriptor);
+        vault.bindSeedToBeneficiaryKeyStore(signer.seed);
+        psbt = vault.addSignatureToPsbt(psbt);
+      }
+      final Psbt signedPsbt = Psbt.parse(psbt);
+      expect(signedPsbt.inputs[0].signedCount, 2);
+
+      final Transaction signedTx =
+          signedPsbt.getSignedTransaction(AddressType.p2tr);
+
+      // Witness: [sigC, <empty for B>, sigA, tapscript, control block].
+      final List<String> witness = signedTx.inputs[0].witnessList;
+      expect(witness.length, 5);
+      expect(witness[0].length, 128); // 64-byte schnorr sig
+      expect(witness[1], isEmpty); // B did not sign
+      expect(witness[2].length, 128);
+      expect(
+          witness[3],
+          policy
+              .toScript(0)
+              .rawSerialize()); // multi_a leaf, not OP_CHECKMULTISIG
+
+      final TransactionOutput spentUtxo = TransactionOutput.forPayment(
+          utxo.amount, coordinatorVault.getAddress(0));
+      expect(signedTx.validateSpend([spentUtxo]), isTrue);
+    });
+
+    test('P2TR multi_a leaf rejects an under-signed witness', () {
+      KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
+          Seed.fromMnemonic(
+              utf8.encode(
+                  'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+              passphrase: utf8.encode(passphrase)),
+          AddressType.p2tr);
+
+      final MultisignaturePolicy policy = MultisignaturePolicy(
+          [keyStore('cosigner A'), keyStore('cosigner B')], 2);
+      final TaprootVault coordinatorVault =
+          TaprootVault.fromKeyStoreList([keyStore('internal')], [policy]);
+      final TaprootWallet wallet =
+          TaprootWallet.fromDescriptor(coordinatorVault.descriptor);
+
+      final Utxo utxo = Utxo(
+          '0b5b43a8a09f1021bac4f4357c2808043b409231b42fc0143050ac37668a984b',
+          0,
+          21000,
+          "m/86'/1'/0'/0/0");
+      final Transaction tx = Transaction.forSinglePayment([utxo],
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, wallet);
+      tx.setPolicy(wallet.policyList.single);
+
+      String psbt = Psbt.fromTransaction(tx, wallet).serialize();
+      final TaprootVault vault =
+          TaprootVault.fromDescriptor(coordinatorVault.descriptor);
+      vault.bindSeedToBeneficiaryKeyStore(keyStore('cosigner A').seed);
+      psbt = vault.addSignatureToPsbt(psbt);
+
+      // One of the two required signatures is present.
+      expect(Psbt.parse(psbt).inputs[0].signedCount, 1);
+      expect(() => Psbt.parse(psbt).getSignedTransaction(AddressType.p2tr),
+          throwsA(isA<PsbtException>()));
+    });
   });
 }
