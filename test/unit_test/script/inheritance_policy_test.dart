@@ -84,6 +84,34 @@ void main() {
         expect(() => InheritancePolicy.fromMiniscript(legacy),
             throwsFormatException);
       });
+
+      test('parses the standard and_v(v:after,pk) spelling too', () {
+        final InheritancePolicy original =
+            InheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 987654321);
+        final String standard = original.toStandardMiniscript();
+
+        final Policy parsed = InheritancePolicy.fromMiniscript(standard);
+        expect(parsed, isA<InheritancePolicy>());
+        expect((parsed as InheritancePolicy).locktime, original.locktime);
+        expect(parsed.beneficiaryKeyStore.masterFingerprint,
+            original.beneficiaryKeyStore.masterFingerprint);
+        // Read either way, written the one way wallets in the field expect.
+        expect(parsed.toMiniscript(), original.toMiniscript());
+        expect(Policy.fromMiniscript(standard), isA<InheritancePolicy>());
+      });
+
+      test('both spellings give the same leaf', () {
+        final InheritancePolicy original =
+            InheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 987654321);
+
+        expect(
+            InheritancePolicy.fromMiniscript(original.toMiniscript())
+                .getTapleafHash(0),
+            InheritancePolicy.fromMiniscript(original.toStandardMiniscript())
+                .getTapleafHash(0));
+      });
     });
 
     group('toMiniscript', () {
@@ -92,6 +120,52 @@ void main() {
             beneficiaryVault.descriptor, 987654321);
         expect(policy.toMiniscript(), contains('after(987654321)'));
         expect(policy.toMiniscript(), isNot(contains('older(')));
+      });
+
+      test('emits the spelling wallets in the field exchange', () {
+        final policy = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 987654321);
+        // Deliberately not the script's own spelling: descriptors already in
+        // circulation carry this one. See toStandardMiniscript.
+        expect(policy.toMiniscript(), startsWith('and_v(v:pk('));
+        expect(policy.toMiniscript(), endsWith(',after(987654321))'));
+      });
+
+      test('toStandardMiniscript spells the timelock first', () {
+        final policy = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 987654321);
+        expect(policy.toStandardMiniscript(),
+            startsWith('and_v(v:after(987654321),'));
+        expect(policy.toStandardMiniscript(), isNot(contains('v:pk(')));
+      });
+
+      test('toStandardMiniscript compiles to the same bytes toScript emits',
+          () {
+        final policy = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 987654321);
+
+        // Compile the miniscript independently, from the fragment rules only,
+        // rather than trusting the library's own script builder.
+        final RegExpMatch m = RegExp(r'^and_v\(v:after\((\d+)\),pk\((.+)\)\)$')
+            .firstMatch(policy.toStandardMiniscript())!;
+        final int locktime = int.parse(m.group(1)!);
+        final Uint8List pubkey =
+            TaprootWallet.fromKeyOriginExpression(m.group(2)!)
+                .keyStoreList[0]
+                .getPublicKeyBytes(0, isXOnly: true);
+
+        final List<int> compiled = [
+          // v:after(N) -> <N> CHECKLOCKTIMEVERIFY DROP
+          4, ...Converter.intToLittleEndianBytes(locktime, 4),
+          ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
+          ScriptOperationCode.getHex('OP_DROP'),
+          // pk(K) -> <K> CHECKSIG
+          32, ...pubkey,
+          ScriptOperationCode.getHex('OP_CHECKSIG'),
+        ];
+
+        expect(policy.toScript(0).rawSerialize(),
+            Codec.encodeHex(Uint8List.fromList(compiled)));
       });
     });
 

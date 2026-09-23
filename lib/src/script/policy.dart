@@ -56,7 +56,10 @@ abstract class Policy {
   }
 
   static Policy fromMiniscript(String miniscript) {
-    if (RegExp(r'^and_v\(v:pk\(.+\),after\(\d+\)\)$').hasMatch(miniscript)) {
+    // The second form is the spelling emitted before the argument order was
+    // corrected; see InheritancePolicy.fromMiniscript.
+    if (RegExp(r'^and_v\(v:after\(\d+\),pk\(.+\)\)$').hasMatch(miniscript) ||
+        RegExp(r'^and_v\(v:pk\(.+\),after\(\d+\)\)$').hasMatch(miniscript)) {
       return InheritancePolicy.fromMiniscript(miniscript);
     } else if (RegExp(r'^pk\(.+\)$').hasMatch(miniscript)) {
       return SingleSignaturePolicy.fromMiniscript(miniscript);

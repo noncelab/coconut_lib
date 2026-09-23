@@ -39,10 +39,11 @@ const int inheritanceLocktime = 2051222400;
 
 void main() {
   NetworkType.setNetworkType(NetworkType.mainnet);
-  // chapter36P2wsh();
-  // chapter37Taproot();
-  // chapter38KeyPath();
+  chapter36P2wsh();
+  chapter37Taproot();
+  chapter38KeyPath();
   chapter39Schnorr();
+  chapter40Descriptor();
 }
 
 // --- 36장 — P2WSH ---------------------------------------------------------
@@ -186,6 +187,11 @@ void chapter38KeyPath() {
 }
 
 /// 39장 — 받기 0번의 88,500사토시를 받기 1번과 잔돈 0번으로 나눈다.
+///
+/// MuSig2의 두 왕복을 `TaprootVault.addPublicNonce`에 맡기지 않고 손으로 편다.
+/// 그 편의 함수는 비밀 논스를 `Random.secure()`로 만들어 안에 감춰 두므로 실행할
+/// 때마다 서명이 달라진다. 여기서는 보조 난수를 고정해 책에 인쇄한 값이 그대로
+/// 다시 나오게 하고, 본문이 설명한 네 단계를 한 줄씩 드러낸다.
 void chapter39Schnorr() {
   print('--- Chapter 39 - Schnorr Signature ---');
 
@@ -213,15 +219,175 @@ void chapter39Schnorr() {
   print('Unsigned Transaction : ${transaction.serialize()}');
   print('TXID : ${transaction.transactionHash}');
 
+  // 1. 서명할 메시지를 정한다.
   String sigHash = transaction.getTaprootSigHash(0, [utxo]);
-  print("SigHash : $sigHash");
-  String myNonce = family.keyStoreList[0].getPublicNonce(
-      sigHash, Codec.encodeHex(family.getAggregatedPublicKey(0)), 0, false);
-  String wifeNonce = family.keyStoreList[1].getPublicNonce(
-      sigHash, Codec.encodeHex(family.getAggregatedPublicKey(0)), 0, false);
+  print('SigHash : $sigHash');
 
-  print("Q : ${Codec.encodeHex(family.getOutputKey(0))}");
+  Uint8List aggregatedPublicKey = family.getAggregatedPublicKey(0);
+  Uint8List merkleRoot = family.getMerkleRoot(0);
+  print('Aggregated Public Key : ${Codec.encodeHex(aggregatedPublicKey)}');
+  print('Merkle Root : ${Codec.encodeHex(merkleRoot)}');
+  print('Q : ${Codec.encodeHex(family.getOutputKey(0))}');
 
-  print("My Public Nonce : $myNonce");
-  print("Wife Public Nonce : $wifeNonce");
+  // 2. 공개 논스를 교환한다.
+  //
+  // 보조 난수는 책의 값을 재현하기 위해 고정한다. 실제 지갑은 서명할 때마다
+  // 새 난수를 써야 한다. 같은 메시지를 이 논스로 거듭 서명하면 부분 서명 식이
+  // 쌓여 개인키가 드러난다.
+  Uint8List myNonce = musig2SecretNonce(
+      family.keyStoreList[0], 'book: my nonce', aggregatedPublicKey, sigHash);
+  Uint8List wifeNonce = musig2SecretNonce(
+      family.keyStoreList[1], 'book: wife nonce', aggregatedPublicKey, sigHash);
+
+  Uint8List myPublicNonce = KeyStore.calculatePublicNonce(myNonce);
+  Uint8List wifePublicNonce = KeyStore.calculatePublicNonce(wifeNonce);
+  print('My Public Nonce : ${Codec.encodeHex(myPublicNonce)}');
+  print('Wife Public Nonce : ${Codec.encodeHex(wifePublicNonce)}');
+
+  Uint8List aggregatedNonce =
+      aggregatePublicNonce(myPublicNonce, wifePublicNonce);
+  print('Aggregated Nonce : ${Codec.encodeHex(aggregatedNonce)}');
+
+  List<Uint8List> publicKeyList = [
+    Codec.decodeHex(family.keyStoreList[0].getPublicKey(0, isXOnly: false)),
+    Codec.decodeHex(family.keyStoreList[1].getPublicKey(0, isXOnly: false))
+  ]..sort(compareBytes);
+
+  SessionContext session = SessionContext(publicKeyList, aggregatedNonce,
+      aggregatedPublicKey, Codec.decodeHex(sigHash),
+      merkleRoot: merkleRoot);
+
+  // 3. 각자 부분 서명 32바이트를 만든다.
+  Uint8List myPartialSignature = Ecc.signSchnorrForMuSig2(
+      myNonce,
+      Codec.decodeHex(family.keyStoreList[0].getPrivateKey(0, isXOnly: false)),
+      session,
+      isFullSignature: false);
+  Uint8List wifePartialSignature = Ecc.signSchnorrForMuSig2(
+      wifeNonce,
+      Codec.decodeHex(family.keyStoreList[1].getPrivateKey(0, isXOnly: false)),
+      session,
+      isFullSignature: false);
+  print('My Partial Signature : ${Codec.encodeHex(myPartialSignature)}');
+  print('Wife Partial Signature : ${Codec.encodeHex(wifePartialSignature)}');
+
+  // 합치기 전에 상대의 부분 서명을 각자 검사할 수 있다.
+  String myPublicKey = family.keyStoreList[0].getPublicKey(0, isXOnly: false);
+  String wifePublicKey = family.keyStoreList[1].getPublicKey(0, isXOnly: false);
+  print('My Partial Signature Valid? : '
+      '${Ecc.verifyMuSig2PartialSignature(myPartialSignature, myPublicNonce, Codec.decodeHex(myPublicKey), session)}');
+  print('Wife Partial Signature Valid? : '
+      '${Ecc.verifyMuSig2PartialSignature(wifePartialSignature, wifePublicNonce, Codec.decodeHex(wifePublicKey), session)}');
+
+  // 4. 두 부분 서명을 더해 64바이트 슈노르 서명 하나로 만든다.
+  Uint8List signature = Ecc.getAggregatedSignatureForMuSig2(session, [
+    Signature(Codec.encodeHex(myPartialSignature), myPublicKey),
+    Signature(Codec.encodeHex(wifePartialSignature), wifePublicKey)
+  ]);
+  print('Schnorr Signature : ${Codec.encodeHex(signature)}');
+  print('  r : ${Codec.encodeHex(signature.sublist(0, 32))}');
+  print('  s : ${Codec.encodeHex(signature.sublist(32, 64))}');
+
+  transaction.inputs[0]
+      .setTaprootKeyPathSpendingSignature(Codec.encodeHex(signature));
+  print('Raw Transaction : ${transaction.serialize()}');
+  print('Valid Signature? : '
+      '${Ecc.verifySchnorr(Codec.decodeHex(sigHash), family.getOutputKey(0), signature)}');
 }
+
+// --- 40장 — 미니스크립트와 BSMS -------------------------------------------
+
+/// 40장 — 가족 지갑의 설계도를 디스크립터와 BSMS로 남긴다.
+///
+/// 디스크립터는 받기 가지와 잔돈 가지를 따로 만든다. BSMS는 각 서명 장치가
+/// 자기 xpub을 담아 보내는 키 레코드와, 조정자가 정책을 결합해 돌려주는
+/// 디스크립터 레코드로 이루어진다.
+void chapter40Descriptor() {
+  print('--- Chapter 40 - Miniscript & BSMS ---');
+
+  TaprootVault family = familyVault();
+  print('Descriptor : ${family.descriptor}');
+
+  // 각 장치가 보내는 BSMS 키 레코드. 한 사람이 장치를 여럿 가질 수 있으므로
+  // 나의 주 키와 예비키는 서로 다른 서명자로 센다.
+  final keys = taprootKeyStores();
+  for (final signer in [
+    ('나의 주 키 장치', myMnemonic),
+    ('나의 예비키 장치', recoverMnemonic),
+    ('아내의 서명 장치', wifeMnemonic),
+    ('아이의 서명 장치', childMnemonic),
+  ]) {
+    TaprootVault vault = TaprootVault.fromSeedList(
+        [Seed.fromMnemonic(utf8.encode(signer.$2))], []);
+    print('--- Signer BSMS : ${signer.$1}');
+    print(vault.getSignerBsms(signer.$1));
+  }
+
+  // 조정자가 네 키 레코드를 정책과 결합해 돌려주는 디스크립터 레코드.
+  print('--- Coordinator BSMS');
+  print(family.getCoordinatorBsms());
+
+  print('Master Fingerprints : '
+      '${[
+    keys.me,
+    keys.recover,
+    keys.wife,
+    keys.child
+  ].map((k) => k.masterFingerprint).join(", ")}');
+}
+
+/// 고정된 보조 난수로 BIP 327의 97바이트 비밀 논스를 만든다.
+///
+/// `KeyStore.getPublicNonce`는 보조 난수를 `Random.secure()`로 만들고 결과를
+/// 내부 맵에 감춰 두지만, 그 아래의 `calculateSecretNonce`는 난수를 인자로 받는다.
+/// 책의 값을 재현하려면 이쪽을 직접 부른다.
+Uint8List musig2SecretNonce(KeyStore keyStore, String label,
+    Uint8List aggregatedPublicKey, String sigHash) {
+  return KeyStore.calculateSecretNonce(
+      Hash.sha256fromByte(utf8.encode(label)),
+      Codec.decodeHex(keyStore.getPrivateKey(0, isXOnly: false)),
+      Codec.decodeHex(keyStore.getPublicKey(0, isXOnly: false)),
+      aggregatedPublicKey,
+      Codec.decodeHex(sigHash),
+      null);
+}
+
+/// 두 사람의 66바이트 공개 논스를 자리끼리 더한다.
+///
+/// 앞 33바이트끼리 더해 R₁을, 뒤 33바이트끼리 더해 R₂를 만든다.
+Uint8List aggregatePublicNonce(Uint8List first, Uint8List second) {
+  Uint8List combine(int from, int to) => Ecc.pointCombine(
+      first.sublist(from, to), second.sublist(from, to), true)!;
+  return Uint8List.fromList([...combine(0, 33), ...combine(33, 66)]);
+}
+
+/// 공개키를 사전순으로 비교한다. MuSig2는 집계 전에 키를 정렬한다.
+int compareBytes(Uint8List a, Uint8List b) {
+  for (int i = 0; i < a.length && i < b.length; i++) {
+    if (a[i] != b[i]) return a[i] - b[i];
+  }
+  return a.length - b.length;
+}
+
+
+// tr(
+//    musig([A07D432C/86'/0'/0']xpub6BosKTRL8fh9rBAzdQebnBUnhXNHjYkTrRCna3ajTTx1S7Pw4BvtcrecxNqqxVY4xfCEcGNdq6upmCUYaPahvYsYsDd4ikAHTHK739L6794/<0;1>/*,
+//          [C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*
+//    ),
+//    {
+//      multi_a(2,[632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*,
+//                [C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*)
+//    },
+//    {
+//      and_v(v:after(2051222400),pk([632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*))
+//    },
+//    {
+//      pk([BDCE09C9/86'/0'/0']xpub6Cnp4SUHXwNJLcPCbB1jARRba9xA9SQ3tHJzbX9rwMqkfKq8aQYo71TAxYDgecygFLZXTWqr88o9zLE6KuWsCyouFJUVP74y3dyXVwxenX8/<0;1>/*)
+//    }
+//    )#28enw8d5
+// /0/*,/1/*
+
+//tr(
+//  musig(sorted([A07D432C/86'/0'/0']xpub6BosKTRL8fh9rBAzdQebnBUnhXNHjYkTrRCna3ajTTx1S7Pw4BvtcrecxNqqxVY4xfCEcGNdq6upmCUYaPahvYsYsDd4ikAHTHK739L6794/<0;1>/*,[C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*)),
+//    {multi_a(2,[632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*,[C55DC47B/86'/0'/0']xpub6C8TGAeFXCL3ffDPJ2Ccr6VuxDcxkodEDRnmdQBbCm5UB89zdWVPUkuJH6Fj7an4Fo1BMKPZEJwUecwA4axeBpNbgxJo8thUEKqU8hfdtAi/<0;1>/*)},
+//    {and_v(v:pk([632C9182/86'/0'/0']xpub6BgV5tckhh4dbYYYrDFnU4MHnnFBuD78NnwJefzozuBbjXwDXPVKsULAeQ68cbUhPLVX1fZcKfHPLLRyP1QiyWmA5uKF2r8PQgoohYgcQgP/<0;1>/*),after(2051222400))},{pk([BDCE09C9/86'/0'/0']xpub6Cnp4SUHXwNJLcPCbB1jARRba9xA9SQ3tHJzbX9rwMqkfKq8aQYo71TAxYDgecygFLZXTWqr88o9zLE6KuWsCyouFJUVP74y3dyXVwxenX8/<0;1>/*)})#42g0drj3

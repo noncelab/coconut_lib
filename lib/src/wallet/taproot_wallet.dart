@@ -8,30 +8,33 @@ part of '../../coconut_lib.dart';
 /// {@category Wallets and Keys}
 class TaprootWallet extends TaprootWalletBase {
   TaprootWallet._(List<KeyStore> keyStoreList, List<Policy> policyList,
-      String derivationPath)
+      String derivationPath, {TapTree? tapTree})
       : super(_validateKeyStores(keyStoreList), _validatePolicies(policyList),
-            derivationPath, false);
+            derivationPath, false,
+            tapTree: tapTree?.mapLeaves(_publicOnlyPolicy));
 
   static List<KeyStore> _validateKeyStores(List<KeyStore> keyStores) {
     return keyStores.map(KeyStore.publicOnly).toList(growable: false);
   }
 
   static List<Policy> _validatePolicies(List<Policy> policies) {
-    return policies.map((policy) {
-      if (policy is InheritancePolicy) {
-        return InheritancePolicy(
-            KeyStore.publicOnly(policy.beneficiaryKeyStore), policy.locktime);
-      }
-      if (policy is SingleSignaturePolicy) {
-        return SingleSignaturePolicy(KeyStore.publicOnly(policy.keyStore));
-      }
-      if (policy is MultisignaturePolicy) {
-        return MultisignaturePolicy(
-            policy.keyStoreList.map(KeyStore.publicOnly).toList(),
-            policy.requiredSignature);
-      }
-      throw ArgumentError('Unsupported Taproot policy type.');
-    }).toList(growable: false);
+    return policies.map(_publicOnlyPolicy).toList(growable: false);
+  }
+
+  static Policy _publicOnlyPolicy(Policy policy) {
+    if (policy is InheritancePolicy) {
+      return InheritancePolicy(
+          KeyStore.publicOnly(policy.beneficiaryKeyStore), policy.locktime);
+    }
+    if (policy is SingleSignaturePolicy) {
+      return SingleSignaturePolicy(KeyStore.publicOnly(policy.keyStore));
+    }
+    if (policy is MultisignaturePolicy) {
+      return MultisignaturePolicy(
+          policy.keyStoreList.map(KeyStore.publicOnly).toList(),
+          policy.requiredSignature);
+    }
+    throw ArgumentError('Unsupported Taproot policy type.');
   }
 
   /// Create a Taproot wallet from a list of keyStores.
@@ -89,16 +92,27 @@ class TaprootWallet extends TaprootWalletBase {
       keyStores.add(keyStore);
     }
 
-    // Parse policies from miniscript list if available
-    List<Policy> policies = [];
-    if (descriptorObject.miniscriptList.isNotEmpty &&
-        descriptorObject.miniscriptList.isNotEmpty) {
-      for (String miniscript in descriptorObject.miniscriptList) {
-        policies.add(Policy.fromMiniscript(miniscript));
-      }
-    }
+    // The descriptor carries the tree with its shape; keep both.
+    final TapTree? tapTree = descriptorObject.tapTree;
 
-    return TaprootWallet._(keyStores, policies, derivationPath);
+    return TaprootWallet._(keyStores, tapTree?.leaves ?? [], derivationPath,
+        tapTree: tapTree);
+  }
+
+  /// Create a Taproot wallet whose script tree has the given shape.
+  ///
+  /// Use this instead of [TaprootWallet.fromKeyStoreList] when the grouping
+  /// matters — `{A,{B,C}}` and `{{A,B},C}` are different addresses. Leaves are
+  /// kept exactly where they are put.
+  factory TaprootWallet.fromTapTree(
+    List<KeyStore> keyStoreList,
+    TapTree tapTree, {
+    int accountIndex = 0,
+  }) {
+    String derivationPath =
+        WalletUtility.getDerivationPath(AddressType.p2tr, accountIndex);
+    return TaprootWallet._(keyStoreList, tapTree.leaves, derivationPath,
+        tapTree: tapTree);
   }
 
   factory TaprootWallet.fromKeyOriginExpression(String keyOriginExpression) {
@@ -156,7 +170,14 @@ class TaprootWallet extends TaprootWalletBase {
       }
     }
 
-    return TaprootWallet._(keyStores, policies, path);
+    final dynamic tapTreeJson = json['tapTree'];
+    if (tapTreeJson != null && tapTreeJson is! String) {
+      throw const FormatException('TaprootWallet tapTree must be a string.');
+    }
+    final TapTree? tapTree =
+        tapTreeJson == null ? null : TapTree.parse(tapTreeJson as String);
+
+    return TaprootWallet._(keyStores, policies, path, tapTree: tapTree);
   }
 
   /// Get Json string of the Taproot wallet.
@@ -164,6 +185,8 @@ class TaprootWallet extends TaprootWalletBase {
     return jsonEncode({
       "keyStores": keyStoreList.map((e) => e.toJson()).toList(),
       "policies": policyList.map((e) => e.toJson()).toList(),
+      // Without this a restored wallet would fall back to the default grouping.
+      if (tapTree != null) "tapTree": tapTree!.toTreeExpression(),
       "addressTypeName": AddressType.p2tr.name,
       "derivationPath": derivationPath,
       "isVault": false,

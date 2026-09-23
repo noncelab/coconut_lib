@@ -309,8 +309,15 @@ class Transaction {
         if (wallet is! TaprootWalletBase) {
           throw ArgumentError('Taproot policy requires TaprootWalletBase');
         }
+        // Depth depends on where the spent leaf sits, not on how many leaves
+        // there are, so read it from the wallet's tree.
+        final int policyIndex = wallet.policyList.indexWhere((policy) =>
+            policy.toMiniscript() == spendablePolicy.toMiniscript());
         return tx.estimateVirtualByte(wallet.addressType,
-            leafCount: wallet.policyList.length);
+            leafCount: wallet.policyList.length,
+            merklePathLength: policyIndex < 0
+                ? null
+                : wallet.getMerklePathLength(policyIndex, 0));
       }
       return tx.estimateVirtualByte(wallet.addressType);
     }
@@ -980,7 +987,10 @@ class Transaction {
 
   /// Estimates signed virtual size for [addressType] and signing policy.
   double estimateVirtualByte(AddressType addressType,
-      {int? requiredSignature, int? totalSigner, int? leafCount}) {
+      {int? requiredSignature,
+      int? totalSigner,
+      int? leafCount,
+      int? merklePathLength}) {
     if (!addressType.isSegwit) {
       return getVirtualByte();
     }
@@ -1048,10 +1058,12 @@ class Transaction {
         final int tapscriptLen =
             Codec.decodeHex(_appliedPolicy!.toScript(0).rawSerialize()).length;
 
-        // This library's taptree construction promotes the last node when the
-        // level has an odd number of nodes (i.e., it is carried to the next
-        // level without hashing). Therefore, a leaf's Merkle path length depends
-        // on which leaf is spent.
+        // Fallback for callers that pass only a leaf count. This library's
+        // default taptree promotes the last node when the level has an odd
+        // number of nodes (i.e., it is carried to the next level without
+        // hashing), so a leaf's Merkle path length depends on which leaf is
+        // spent — and on the tree's shape, which a count cannot convey. Pass
+        // merklePathLength for the exact size.
         //
         // For fee estimation we choose the "last leaf" assumption, which matches
         // common constructions where a designated policy ends up being the last
@@ -1072,7 +1084,8 @@ class Transaction {
           return pathLen;
         }
 
-        final int merklePathLen = estimateMerklePath(leafCount!);
+        final int merklePathLen =
+            merklePathLength ?? estimateMerklePath(leafCount!);
         final int controlBlockSize = 33 + 32 * merklePathLen;
 
         // A k-of-n leaf pushes k signatures plus an empty item per non-signer.

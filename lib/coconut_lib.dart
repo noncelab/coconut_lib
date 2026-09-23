@@ -46,6 +46,7 @@ part 'src/transaction/transaction.dart';
 part 'src/transaction/transaction_input.dart';
 part 'src/transaction/transaction_output.dart';
 part 'src/script/multisignature_script.dart';
+part 'src/script/tap_tree.dart';
 part 'src/script/inheritance_policy.dart';
 part 'src/script/single_signature_policy.dart';
 part 'src/script/multisignature_policy.dart';

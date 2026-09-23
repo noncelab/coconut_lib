@@ -7,12 +7,19 @@ class Descriptor {
   String _scriptType;
   List<String> _keyOriginExpressionList = [];
   List<String> _miniscriptList = [];
+  String? _treeExpression;
   late int _requiredSignatures;
   AddressType _addressType;
 
   /// @nodoc
+  ///
+  /// [treeExpression] is the BIP-386 `TREE` exactly as it should be written.
+  /// Without it the leaves in [miniscriptList] are grouped the way
+  /// [TapTree.fromPolicies] groups them.
   Descriptor(this._scriptType, this._keyOriginExpressionList, this._addressType,
-      {List<String>? miniscriptList, int? requiredSignatures}) {
+      {List<String>? miniscriptList,
+      String? treeExpression,
+      int? requiredSignatures}) {
     if (requiredSignatures == null) {
       if (_addressType.isSingleSignature) {
         _requiredSignatures = 1;
@@ -27,6 +34,8 @@ class Descriptor {
     if (miniscriptList != null) {
       _miniscriptList = miniscriptList;
     }
+    _treeExpression =
+        treeExpression ?? TapTree.canonicalTreeExpression(_miniscriptList);
     if (_addressType.isMultisignature) {
       final List<KeyStore> keyStores = <KeyStore>[];
       for (int i = 0; i < _keyOriginExpressionList.length; i++) {
@@ -50,6 +59,15 @@ class Descriptor {
   int get totalSigner => _keyOriginExpressionList.length;
 
   List<String> get miniscriptList => _miniscriptList;
+
+  /// BIP-386 `TREE` expression, or null when the descriptor has no scripts.
+  String? get treeExpression => _treeExpression;
+
+  /// Script tree described by this descriptor, leaves parsed into policies.
+  TapTree? get tapTree {
+    final String? expression = _treeExpression;
+    return expression == null ? null : TapTree.parse(expression);
+  }
 
   /// Create a descriptor for a single signature.
   factory Descriptor.forSingleSignature(
@@ -83,35 +101,24 @@ class Descriptor {
   }
 
   /// Create a descriptor for taproot.
-  factory Descriptor.forTaproot(
-      AddressType addressType,
-      List<KeyStore> keyStoreList,
-      List<Policy> policyList,
-      String derivationPath) {
+  ///
+  /// [tapTree] carries the script tree with its shape; pass null for a
+  /// key-path-only wallet.
+  factory Descriptor.forTaproot(AddressType addressType,
+      List<KeyStore> keyStoreList, TapTree? tapTree, String derivationPath) {
     //tr(internal_key, script_tree)
     //internal_key: xpub/0/* or musig(xpub1/*,xpub2/*)
-    //script_tree: {and_v(v:pk(beneficiary),older(52560))}, {and_v(v:pk(heir),after(900000))}
-    //ex: tr(musig([aaaa/86h/0h/0h]xpub1/0/*,[bbbb/86h/0h/0h]xpub2/0/*),{and_v(v:pk([cccc/86h/0h/0h]xpub3/0/*),older(52560))})
-    List<String> keyOriginList = [];
-    for (KeyStore keyStore in keyStoreList) {
-      keyOriginList.add(getKeyOriginExpression(keyStore, derivationPath));
-    }
-    List<String> miniscriptList = [];
-    for (Policy policy in policyList) {
-      miniscriptList.add(policy.toMiniscript());
-    }
-
-    late Descriptor descriptor;
-
-    descriptor = Descriptor(
+    //script_tree: {and_v(v:after(900000),pk(heir)),and_v(v:older(52560),pk(backup))}
+    //ex: tr(musig([aaaa/86h/0h/0h]xpub1/0/*,[bbbb/86h/0h/0h]xpub2/0/*),and_v(v:older(52560),pk([cccc/86h/0h/0h]xpub3/0/*)))
+    return Descriptor(
         addressType.scriptType,
         keyStoreList
             .map((e) => getKeyOriginExpression(e, derivationPath))
             .toList(),
         addressType,
-        miniscriptList: policyList.map((e) => e.toMiniscript()).toList());
-
-    return descriptor;
+        miniscriptList:
+            tapTree?.leaves.map((e) => e.toMiniscript()).toList() ?? [],
+        treeExpression: tapTree?.toTreeExpression());
   }
 
   /// Parse the descriptor.
@@ -187,11 +194,16 @@ class Descriptor {
 
       // Parse internal key (single key or musig)
       if (internalKeyPart.startsWith('musig(')) {
-        // Extract keys from musig(sorted(key1, key2, ...))
-        RegExpMatch? musigMatch =
-            RegExp(r'musig\(sorted\((.+)\)\)').firstMatch(internalKeyPart);
+        // BIP-390 spells this musig(KEY,...): KeyAgg sorts the participants, so
+        // the ordering is part of the spec and never appears in the notation.
+        // Descriptors this library wrote before that carry a sorted() wrapper,
+        // so both forms are accepted.
+        final RegExpMatch? legacyMatch =
+            RegExp(r'^musig\(sorted\((.+)\)\)$').firstMatch(internalKeyPart);
+        final RegExpMatch? musigMatch = legacyMatch ??
+            RegExp(r'^musig\((.+)\)$').firstMatch(internalKeyPart);
         if (musigMatch == null) {
-          throw Exception('Only sorted musig is supported.');
+          throw const FormatException('Invalid musig key expression.');
         }
         pubKeyContent =
             musigMatch.group(1)!.split(',').map((e) => e.trim()).toList();
@@ -202,23 +214,47 @@ class Descriptor {
         require = 1;
       }
 
-      // Parse miniscript list from remaining parts
-      for (int i = 1; i < topLevelParts.length; i++) {
-        String miniscriptPart = topLevelParts[i];
-        if (miniscriptPart == "{}") {
-          continue;
+      // BIP-386 allows a single TREE after the key: tr(KEY,TREE), where TREE
+      // is a script or {TREE,TREE}. Keep it verbatim — the grouping is what
+      // decides the merkle root, and so the address.
+      String? treeExpression;
+      if (topLevelParts.length == 2) {
+        String treePart = topLevelParts[1];
+        // Earlier versions wrapped a lone leaf in braces, which BIP-386
+        // reserves for branches; unwrap it.
+        if (treePart.startsWith('{') &&
+            treePart.endsWith('}') &&
+            TapTree._topLevelCommaIndex(
+                    treePart.substring(1, treePart.length - 1)) <
+                0) {
+          treePart = treePart.substring(1, treePart.length - 1);
         }
-        // Remove surrounding braces { }
-        if (miniscriptPart.startsWith('{') && miniscriptPart.endsWith('}')) {
-          miniscriptList
-              .add(miniscriptPart.substring(1, miniscriptPart.length - 1));
-        } else {
-          throw FormatException('Invalid miniscript format: $miniscriptPart');
+        if (treePart.isNotEmpty) {
+          treeExpression = treePart;
+          miniscriptList = TapTree.flattenTreeExpression(treePart);
         }
+      } else if (topLevelParts.length > 2) {
+        // Written by versions that listed leaves side by side and so lost the
+        // tree shape. Read as the shape this library would have built.
+        for (int i = 1; i < topLevelParts.length; i++) {
+          String miniscriptPart = topLevelParts[i];
+          if (miniscriptPart == "{}") {
+            continue;
+          }
+          if (miniscriptPart.startsWith('{') && miniscriptPart.endsWith('}')) {
+            miniscriptList
+                .add(miniscriptPart.substring(1, miniscriptPart.length - 1));
+          } else {
+            throw FormatException('Invalid miniscript format: $miniscriptPart');
+          }
+        }
+        treeExpression = TapTree.canonicalTreeExpression(miniscriptList);
       }
 
       return Descriptor(scriptType, pubKeyContent, addressType,
-          miniscriptList: miniscriptList, requiredSignatures: require);
+          miniscriptList: miniscriptList,
+          treeExpression: treeExpression,
+          requiredSignatures: require);
     } else {
       throw Exception('Unsupported script type.');
     }
@@ -263,14 +299,17 @@ class Descriptor {
       if (_keyOriginExpressionList.length == 1) {
         keyOriginExpression = _keyOriginExpressionList[0];
       } else {
-        keyOriginExpression =
-            "musig(sorted(${_keyOriginExpressionList.join(',')}))";
+        // BIP-390 key expression: the spec mandates KeyAgg's sort, so no
+        // sorted() wrapper is written.
+        keyOriginExpression = "musig(${_keyOriginExpressionList.join(',')})";
       }
-      if (_miniscriptList.isEmpty) {
-        body = "tr($keyOriginExpression)";
-      } else {
-        body = "tr($keyOriginExpression,{${_miniscriptList.join('},{')}})";
-      }
+      final String? treeExpression = _treeExpression;
+      // BIP-386 TREE is `SCRIPT | {TREE,TREE}`: braces mark a branch, so a
+      // lone leaf is written as the script itself and the nesting of a bigger
+      // tree is written out in full.
+      body = treeExpression == null
+          ? "tr($keyOriginExpression)"
+          : "tr($keyOriginExpression,$treeExpression)";
     } else if (_addressType.isSingleSignature) {
       body = "$_scriptType(${_keyOriginExpressionList[0]})";
     } else if (_addressType == AddressType.p2wsh) {

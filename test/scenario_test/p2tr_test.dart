@@ -741,6 +741,81 @@ void main() {
       expect(signedTx.validateSpend([spentUtxo]), isTrue);
     });
 
+    test('P2TR Script Path spending through a {A,{B,C}} tree', () {
+      KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
+          Seed.fromMnemonic(
+              utf8.encode(
+                  'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+              passphrase: utf8.encode(passphrase)),
+          AddressType.p2tr);
+
+      const int locktime = 1767225600;
+      final Policy policyA = InheritancePolicy(keyStore('heir A'), locktime);
+      final Policy policyB =
+          InheritancePolicy(keyStore('heir B'), locktime + 1);
+      final Policy policyC =
+          InheritancePolicy(keyStore('heir C'), locktime + 2);
+
+      // A alone on one side, B and C paired on the other.
+      final TaprootVault vault = TaprootVault.fromTapTree(
+          [keyStore('owner')],
+          TapBranch(
+              TapLeaf(policyA), TapBranch(TapLeaf(policyB), TapLeaf(policyC))));
+
+      // The same leaves in a flat list get the default grouping, {{A,B},C},
+      // which is a different commitment and so a different address.
+      final TaprootVault defaultGrouping = TaprootVault.fromKeyStoreList(
+          [keyStore('owner')], [policyA, policyB, policyC]);
+      expect(vault.getAddress(0), isNot(defaultGrouping.getAddress(0)));
+
+      // The descriptor writes the nesting, so a watch-only import agrees.
+      expect(vault.descriptor,
+          contains(',${vault.tapTree!.toTreeExpression()})#'));
+      final TaprootWallet wallet =
+          TaprootWallet.fromDescriptor(vault.descriptor);
+      expect(wallet.getAddress(0), vault.getAddress(0));
+      expect(wallet.tapTree!.toTreeExpression(),
+          vault.tapTree!.toTreeExpression());
+
+      // C sits two levels down, so its control block carries two siblings.
+      expect(wallet.getMerklePathLength(0, 0), 1);
+      expect(wallet.getMerklePathLength(2, 0), 2);
+
+      final Transaction prevTx = Transaction.withInputsAndOutputs(
+        [
+          TransactionInput.forPayment(
+            '0000000000000000000000000000000000000000000000000000000000000000',
+            0,
+          )
+        ],
+        [TransactionOutput.forPayment(21000, vault.getAddress(0))],
+        AddressType.p2tr,
+      );
+      final Utxo utxo =
+          Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/0");
+
+      final Transaction tx = Transaction.forSinglePayment([utxo],
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, wallet);
+      tx.setPolicy(wallet.policyList[2]);
+
+      final Psbt unsignedPsbt = Psbt.fromTransaction(tx, wallet);
+      expect(unsignedPsbt.inputs[0].tapLeafScript, isNotNull);
+
+      final TaprootVault heirVault =
+          TaprootVault.fromDescriptor(vault.descriptor);
+      heirVault.bindSeedToBeneficiaryKeyStore(keyStore('heir C').seed);
+
+      final Transaction signedTx =
+          Psbt.parse(heirVault.addSignatureToPsbt(unsignedPsbt.serialize()))
+              .getSignedTransaction(AddressType.p2tr);
+
+      expect(signedTx.inputs[0].witnessList.length, 3);
+      expect(Codec.decodeHex(signedTx.inputs[0].witnessList[2]).length,
+          33 + 32 * 2);
+      expect(validateScriptPath(prevTx.serialize(), signedTx.serialize(), 0),
+          isTrue);
+    });
+
     test('P2TR multi_a leaf rejects an under-signed witness', () {
       KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
           Seed.fromMnemonic(

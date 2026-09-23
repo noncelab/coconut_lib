@@ -4,6 +4,7 @@ abstract class TaprootWalletBase extends WalletBase {
   final List<KeyStore> _keyStoreList;
   final List<Policy> _policyList;
   final bool _isVault;
+  TapTree? _tapTree;
 
   /// Get the list of keyStores.
   List<KeyStore> get keyStoreList => List.unmodifiable(_keyStoreList);
@@ -14,11 +15,26 @@ abstract class TaprootWalletBase extends WalletBase {
   /// Get the list of miniscripts.
   List<Policy> get policyList => List.unmodifiable(_policyList);
 
+  /// Script tree committed to by this wallet, or null when there is none.
+  ///
+  /// The shape decides the merkle root and so the address. It comes from
+  /// [tapTree] when the caller supplied one — a descriptor, say — and
+  /// otherwise from [TapTree.fromPolicies].
+  TapTree? get tapTree => _tapTree;
+
   /// @nodoc
+  ///
+  /// [tapTree] fixes how the policies are grouped. Supply it whenever the
+  /// shape was specified elsewhere: its leaves are taken in their given order
+  /// and are never re-sorted, because the position of a leaf is part of what
+  /// the tree means.
   TaprootWalletBase(List<KeyStore> keyStoreList, List<Policy> policyList,
-      String derivationPath, this._isVault)
+      String derivationPath, this._isVault,
+      {TapTree? tapTree})
       : _keyStoreList = List<KeyStore>.of(keyStoreList),
-        _policyList = List<Policy>.of(policyList),
+        _policyList =
+            tapTree != null ? tapTree.leaves : List<Policy>.of(policyList),
+        _tapTree = tapTree,
         super(AddressType.p2tr, derivationPath) {
     if (!_addressType.isTaproot) {
       throw StateError('Taproot wallet must use a Taproot address type.');
@@ -55,8 +71,9 @@ abstract class TaprootWalletBase extends WalletBase {
     }
 
     // Deterministic policy order: TapLeaf hash at receive index 0 (lexicographic).
-    // Tie-break with miniscript when hashes match.
-    if (_policyList.length > 1) {
+    // Tie-break with miniscript when hashes match. Only for a bare policy list:
+    // an explicit tree already fixes both order and grouping.
+    if (_tapTree == null && _policyList.length > 1) {
       _policyList.sort((a, b) {
         final cmp = _lexicographicCompare(
           a.getTapleafHash(0, isChange: false),
@@ -66,9 +83,10 @@ abstract class TaprootWalletBase extends WalletBase {
         return a.toMiniscript().compareTo(b.toMiniscript());
       });
     }
+    _tapTree ??= TapTree.fromPolicies(_policyList);
 
-    _descriptor = Descriptor.forTaproot(_addressType, _keyStoreList,
-        _policyList, _derivationPath.replaceAll("m/", ""));
+    _descriptor = Descriptor.forTaproot(_addressType, _keyStoreList, _tapTree,
+        _derivationPath.replaceAll("m/", ""));
   }
 
   /// Get the internal key of the given index.
@@ -405,14 +423,26 @@ abstract class TaprootWalletBase extends WalletBase {
   }
 
   Uint8List getMerkleRoot(int addressIndex, {bool isChange = false}) {
-    if (_policyList.isEmpty) {
+    final TapTree? tree = _tapTree;
+    if (tree == null) {
       return Uint8List(0);
     }
-    List<Uint8List> leafHashes = [];
-    for (Policy policy in _policyList) {
-      leafHashes.add(policy.getTapleafHash(addressIndex, isChange: isChange));
+    return tree.getMerkleRoot(addressIndex, isChange: isChange);
+  }
+
+  /// Number of siblings between the given policy's leaf and the merkle root.
+  ///
+  /// Each one costs 32 bytes in the control block, so fee estimation reads the
+  /// real depth instead of guessing from the leaf count.
+  int getMerklePathLength(int policyIndex, int addressIndex,
+      {bool isChange = false}) {
+    final TapTree? tree = _tapTree;
+    if (tree == null) {
+      throw StateError('No script policies found.');
     }
-    return _calculateMerkleRoot(leafHashes);
+    return tree
+        .getMerklePath(policyIndex, addressIndex, isChange: isChange)
+        .length;
   }
 
   String getControlBlock(int policyIndex, int addressIndex,
@@ -428,12 +458,9 @@ abstract class TaprootWalletBase extends WalletBase {
     final Uint8List internalKeyXOnly =
         getInternalKey(addressIndex, isChange: isChange);
 
-    final List<Uint8List> leafHashes = _policyList
-        .map(
-            (policy) => policy.getTapleafHash(addressIndex, isChange: isChange))
-        .toList();
-
-    final Uint8List merkleRoot = _calculateMerkleRoot(leafHashes);
+    final TapTree tree = _tapTree!;
+    final Uint8List merkleRoot =
+        tree.getMerkleRoot(addressIndex, isChange: isChange);
     final Uint8List tweak =
         Hash.hashTapTweak('TapTweak', internalKeyXOnly, merkleRoot);
     final Uint8List outputKey =
@@ -442,10 +469,8 @@ abstract class TaprootWalletBase extends WalletBase {
     final int parityBit = outputKey[0] == 0x03 ? 1 : 0;
     final int controlByte = 0xc0 | parityBit;
 
-    final List<Uint8List> merklePath = _buildTaprootMerklePath(
-      leafHashes,
-      policyIndex,
-    );
+    final List<Uint8List> merklePath =
+        tree.getMerklePath(policyIndex, addressIndex, isChange: isChange);
 
     final List<int> controlBlockBytes = [
       controlByte,
@@ -454,96 +479,6 @@ abstract class TaprootWalletBase extends WalletBase {
     ];
 
     return Codec.encodeHex(Uint8List.fromList(controlBlockBytes));
-  }
-
-  static List<Uint8List> _buildTaprootMerklePath(
-      List<Uint8List> leafHashes, int targetIndex) {
-    if (leafHashes.isEmpty) {
-      return [];
-    }
-    if (leafHashes.length == 1) {
-      return [];
-    }
-
-    List<Uint8List> level =
-        leafHashes.map((e) => Uint8List.fromList(e)).toList();
-    int index = targetIndex;
-    final List<Uint8List> path = [];
-
-    while (level.length > 1) {
-      final List<Uint8List> next = [];
-      int nextIndex = -1;
-
-      for (int i = 0; i < level.length; i += 2) {
-        if (i + 1 >= level.length) {
-          // Odd node: promote to next level unchanged.
-          next.add(level[i]);
-          if (index == i) {
-            nextIndex = next.length - 1;
-          }
-          continue;
-        }
-
-        final Uint8List left = level[i];
-        final Uint8List right = level[i + 1];
-        if (index == i) {
-          path.add(Uint8List.fromList(right));
-          nextIndex = next.length;
-        } else if (index == i + 1) {
-          path.add(Uint8List.fromList(left));
-          nextIndex = next.length;
-        }
-        next.add(_tapBranchHash(left, right));
-      }
-
-      if (nextIndex < 0) {
-        throw StateError('Failed to build Taproot merkle path.');
-      }
-
-      level = next;
-      index = nextIndex;
-    }
-
-    return path;
-  }
-
-  static Uint8List _calculateMerkleRoot(List<Uint8List> leafHashes) {
-    // 단일 leaf인 경우 해당 leaf hash를 반환
-    if (leafHashes.length == 1) {
-      return leafHashes[0];
-    }
-
-    // Merkle tree 구성
-    List<Uint8List> currentLevel =
-        leafHashes.map((e) => Uint8List.fromList(e)).toList();
-
-    while (currentLevel.length > 1) {
-      final List<Uint8List> nextLevel = [];
-
-      for (int i = 0; i < currentLevel.length; i += 2) {
-        if (i + 1 == currentLevel.length) {
-          // 홀수 개인 경우 마지막 요소를 그대로 전달
-          nextLevel.add(currentLevel[i]);
-          continue;
-        }
-
-        final left = currentLevel[i];
-        final right = currentLevel[i + 1];
-        nextLevel.add(_tapBranchHash(left, right));
-      }
-
-      currentLevel = nextLevel;
-    }
-
-    return currentLevel.first;
-  }
-
-  static Uint8List _tapBranchHash(Uint8List a, Uint8List b) {
-    final compare = _lexicographicCompare(a, b);
-    final first = compare <= 0 ? a : b;
-    final second = compare <= 0 ? b : a;
-
-    return Hash.taggedHash('TapBranch', _concat(first, second));
   }
 
   static int _lexicographicCompare(Uint8List a, Uint8List b) {
@@ -555,12 +490,5 @@ abstract class TaprootWalletBase extends WalletBase {
     }
     if (a.length == b.length) return 0;
     return a.length < b.length ? -1 : 1;
-  }
-
-  static Uint8List _concat(Uint8List a, Uint8List b) {
-    final out = Uint8List(a.length + b.length);
-    out.setRange(0, a.length, a);
-    out.setRange(a.length, a.length + b.length, b);
-    return out;
   }
 }

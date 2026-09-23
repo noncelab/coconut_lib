@@ -5,8 +5,9 @@ part of '../../coconut_lib.dart';
 /// {@category Wallets and Keys}
 class TaprootVault extends TaprootWalletBase {
   TaprootVault._(List<KeyStore> keyStoreList, List<Policy> policyList,
-      String derivationPath)
-      : super(keyStoreList, policyList, derivationPath, true);
+      String derivationPath,
+      {TapTree? tapTree})
+      : super(keyStoreList, policyList, derivationPath, true, tapTree: tapTree);
 
   /// Create a Taproot vault from a list of keyStores.
   factory TaprootVault.fromKeyStoreList(
@@ -59,7 +60,14 @@ class TaprootVault extends TaprootWalletBase {
   }
 
   /// Add public nonce to the PSBT.
-  String addPublicNonce(String psbt, {String extraInput = ''}) {
+  /// Add this vault's MuSig2 public nonces to [psbt].
+  ///
+  /// [auxRand] replaces the fresh randomness seeding every nonce derived here.
+  /// Leave it unset outside of tests and deterministic-vector checks: reusing
+  /// the same value across signatures over different messages reveals the
+  /// private key.
+  String addPublicNonce(String psbt,
+      {String extraInput = '', Uint8List? auxRand}) {
     if (addressType != AddressType.p2tr) {
       throw Exception("Only p2tr needs public nonce.");
     }
@@ -98,7 +106,7 @@ class TaprootVault extends TaprootWalletBase {
             keyStore.hasPublicKeyInPsbt(psbt);
             keyStore.addPublicNonceToPsbtInput(
                 psbtInput, derivationPath.path, sigHash,
-                extraInput: extraInput);
+                extraInput: extraInput, auxRand: auxRand);
           }
         }
       }
@@ -111,6 +119,8 @@ class TaprootVault extends TaprootWalletBase {
     return jsonEncode({
       "keyStores": keyStoreList.map((e) => e.toJson()).toList(),
       "policies": policyList.map((e) => e.toJson()).toList(),
+      // Without this a restored vault would fall back to the default grouping.
+      if (tapTree != null) "tapTree": tapTree!.toTreeExpression(),
       "addressTypeName": AddressType.p2tr.name,
       "derivationPath": derivationPath,
       "isVault": true,
@@ -153,7 +163,14 @@ class TaprootVault extends TaprootWalletBase {
       }
     }
 
-    return TaprootVault._(keyStores, policies, path);
+    final dynamic tapTreeJson = json['tapTree'];
+    if (tapTreeJson != null && tapTreeJson is! String) {
+      throw const FormatException('TaprootVault tapTree must be a string.');
+    }
+    final TapTree? tapTree =
+        tapTreeJson == null ? null : TapTree.parse(tapTreeJson as String);
+
+    return TaprootVault._(keyStores, policies, path, tapTree: tapTree);
   }
 
   static TaprootVault fromDescriptor(String descriptor) {
@@ -180,16 +197,27 @@ class TaprootVault extends TaprootWalletBase {
       keyStores.add(keyStore);
     }
 
-    // Parse policies from miniscript list if available
-    List<Policy> policies = [];
-    if (descriptorObject.miniscriptList.isNotEmpty &&
-        descriptorObject.miniscriptList.isNotEmpty) {
-      for (String miniscript in descriptorObject.miniscriptList) {
-        policies.add(Policy.fromMiniscript(miniscript));
-      }
-    }
+    // The descriptor carries the tree with its shape; keep both.
+    final TapTree? tapTree = descriptorObject.tapTree;
 
-    return TaprootVault._(keyStores, policies, derivationPath);
+    return TaprootVault._(keyStores, tapTree?.leaves ?? [], derivationPath,
+        tapTree: tapTree);
+  }
+
+  /// Create a Taproot vault whose script tree has the given shape.
+  ///
+  /// Use this instead of [TaprootVault.fromKeyStoreList] when the grouping
+  /// matters — `{A,{B,C}}` and `{{A,B},C}` are different addresses. Leaves are
+  /// kept exactly where they are put.
+  factory TaprootVault.fromTapTree(
+    List<KeyStore> keyStoreList,
+    TapTree tapTree, {
+    int accountIndex = 0,
+  }) {
+    String derivationPath =
+        WalletUtility.getDerivationPath(AddressType.p2tr, accountIndex);
+    return TaprootVault._(keyStoreList, tapTree.leaves, derivationPath,
+        tapTree: tapTree);
   }
 
   void bindSeedToKeyStore(Seed seed, {int accountIndex = 0}) {

@@ -470,11 +470,25 @@ void main() {
             1,
             beneficiaryVault,
             policy: beneficiaryVault.getSpendablePolicy());
+        // Passing only a leaf count keeps the old approximation, which assumes
+        // the spent leaf is the promoted one.
         expect(
             tx.estimateVirtualByte(AddressType.p2tr,
                 leafCount: parentVault.policyList.length),
             169.25);
-        expect(tx.outputs[1].amount, 830);
+
+        // Building the transaction reads the real depth from the tree instead.
+        // This leaf sits one level deeper, so its control block carries one
+        // more sibling: +32 witness bytes, +8 vbytes, 8 sats less change.
+        final int policyIndex = beneficiaryVault.policyList.indexWhere((p) =>
+            p.toMiniscript() ==
+            beneficiaryVault.getSpendablePolicy().toMiniscript());
+        expect(beneficiaryVault.getMerklePathLength(policyIndex, 1), 2);
+        expect(
+            tx.estimateVirtualByte(AddressType.p2tr,
+                leafCount: parentVault.policyList.length, merklePathLength: 2),
+            177.25);
+        expect(tx.outputs[1].amount, 822);
       });
     });
     group('estimateFee', () {

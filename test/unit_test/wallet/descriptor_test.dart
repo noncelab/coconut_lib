@@ -4,6 +4,8 @@ library;
 import 'package:coconut_lib/coconut_lib.dart';
 import 'package:test/test.dart';
 
+import '../../fixtures/test_fixtures.dart';
+
 void main() {
   group('Descriptor', () {
     group('Descriptor.forSingleSignature', () {
@@ -124,11 +126,24 @@ void main() {
         expect(descriptor.scriptType, 'tr');
       });
       test('Parse musig2 descriptor', () {
+        // BIP-390 key expression: KeyAgg's sort is mandated by the spec, so no
+        // sorted() wrapper appears.
         String desc =
-            'tr(musig(sorted([e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*,[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*,[476ec2dc/48h/0h/0h/2h]xpub6ERySjYpfyoWiREzdy5hZFjzkPWQK5GzUiPppcqdYm1qqbi5H8tpUeX93LG1MzQLn4Dj5iMwydhnFLqWvHHJk2ZHiKD9gYZh6YbVR1VQT1V/<0;1>/*)))#nqypzxsf';
+            'tr(musig([e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*,[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*,[476ec2dc/48h/0h/0h/2h]xpub6ERySjYpfyoWiREzdy5hZFjzkPWQK5GzUiPppcqdYm1qqbi5H8tpUeX93LG1MzQLn4Dj5iMwydhnFLqWvHHJk2ZHiKD9gYZh6YbVR1VQT1V/<0;1>/*))#cclrhm9w';
         Descriptor descriptor = Descriptor.parse(desc, ignoreChecksum: true);
         expect(descriptor.serialize(), desc);
         expect(descriptor, isA<Descriptor>());
+      });
+      test('Parse legacy sorted musig2 descriptor', () {
+        // Written by versions before the wrapper was dropped; still parsed, but
+        // re-serialized in the standard form.
+        String legacyDesc =
+            'tr(musig(sorted([e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*,[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*,[476ec2dc/48h/0h/0h/2h]xpub6ERySjYpfyoWiREzdy5hZFjzkPWQK5GzUiPppcqdYm1qqbi5H8tpUeX93LG1MzQLn4Dj5iMwydhnFLqWvHHJk2ZHiKD9gYZh6YbVR1VQT1V/<0;1>/*)))#nqypzxsf';
+        Descriptor descriptor =
+            Descriptor.parse(legacyDesc, ignoreChecksum: true);
+        expect(descriptor.serialize(),
+            'tr(musig([e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*,[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*,[476ec2dc/48h/0h/0h/2h]xpub6ERySjYpfyoWiREzdy5hZFjzkPWQK5GzUiPppcqdYm1qqbi5H8tpUeX93LG1MzQLn4Dj5iMwydhnFLqWvHHJk2ZHiKD9gYZh6YbVR1VQT1V/<0;1>/*))#cclrhm9w');
+        expect(descriptor.totalSigner, 3);
       });
       test('Checksum error exception', () {
         const bip84Descriptor =
@@ -170,6 +185,55 @@ void main() {
             'tpubDDbAxgGSifNq7nDVLi3LfzeqF1GXhx4BM3HwxcdJVqhPLxSjMida9WyJZeV95teMpW4tMA4KFYtcSc7srHjz7uFkx4RQ4T15baqyqBdYTgm');
       });
     });
+    group('taproot tree expression', () {
+      // BIP-386: TREE is `SCRIPT | {TREE,TREE}`, so braces mark a branch and a
+      // lone leaf is written bare.
+      setUp(() {
+        // Other groups in this file switch networks; pin ours.
+        NetworkType.setNetworkType(NetworkType.regtest);
+      });
+
+      String singleLeafDescriptorOf(TaprootVault vault) => vault.descriptor;
+
+      test('writes a single leaf without braces', () {
+        final TaprootVault vault = TaprootVault.fromKeyStoreList([
+          KeyStoreFixture.common(AddressType.p2tr)
+        ], [
+          InheritancePolicy.fromDescriptorAndLocktime(
+              WalletFixture.beneficiaryVault(passphrase: 'A').descriptor,
+              1767225600)
+        ]);
+
+        final String descriptor = singleLeafDescriptorOf(vault);
+        expect(descriptor, contains(',and_v(v:pk('));
+        expect(descriptor, isNot(contains(',{')));
+      });
+
+      test('still parses a single leaf wrapped in braces', () {
+        final TaprootVault vault = TaprootVault.fromKeyStoreList([
+          KeyStoreFixture.common(AddressType.p2tr)
+        ], [
+          InheritancePolicy.fromDescriptorAndLocktime(
+              WalletFixture.beneficiaryVault(passphrase: 'A').descriptor,
+              1767225600)
+        ]);
+        final String descriptor = singleLeafDescriptorOf(vault);
+
+        // Rewrite tr(KEY,LEAF) as the tr(KEY,{LEAF}) earlier versions emitted.
+        final String body = descriptor.split('#')[0];
+        final int comma = body.indexOf(',');
+        final String legacyBody = 'tr(${body.substring(3, comma)},'
+            '{${body.substring(comma + 1, body.length - 1)}})';
+        final String legacy = '$legacyBody#${Checksum.getChecksum(legacyBody)}';
+
+        final TaprootWallet restored = TaprootWallet.fromDescriptor(legacy);
+        expect(restored.getAddress(0), vault.getAddress(0));
+        expect(restored.policyList.single, isA<InheritancePolicy>());
+        // Re-serialized in the standard form.
+        expect(restored.descriptor, descriptor);
+      });
+    });
+
     group('serialize', () {
       test('Serialize p2wpkh', () {
         const bip84Descriptor =
@@ -198,7 +262,7 @@ void main() {
       });
       test('Serialize musig2 descriptor', () {
         String desc =
-            'tr(musig(sorted([e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*,[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*,[476ec2dc/48h/0h/0h/2h]xpub6ERySjYpfyoWiREzdy5hZFjzkPWQK5GzUiPppcqdYm1qqbi5H8tpUeX93LG1MzQLn4Dj5iMwydhnFLqWvHHJk2ZHiKD9gYZh6YbVR1VQT1V/<0;1>/*)))#nqypzxsf';
+            'tr(musig([e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*,[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*,[476ec2dc/48h/0h/0h/2h]xpub6ERySjYpfyoWiREzdy5hZFjzkPWQK5GzUiPppcqdYm1qqbi5H8tpUeX93LG1MzQLn4Dj5iMwydhnFLqWvHHJk2ZHiKD9gYZh6YbVR1VQT1V/<0;1>/*))#cclrhm9w';
         List<String> pubList = [
           '[e50bd392/48h/0h/0h/2h]xpub6FPPhpChFv7pQE7D19ZNGoFcCUzmMdwEMwqGFshE7SCfBiN5YqpejTKkshCS3sawXF98w7j5YeaYmnVdcMuX4wLr2pwiUaccvb4WsF1w5Kz/<0;1>/*',
           '[906222f7/48h/0h/0h/2h]xpub6EgRoGnrQpGy55qdvYXqCspbx3M4zwEJqqMY4Gvf8wTd927pAoiknQBWvLpk6gh1tWJErqgW6S4QDJykGedZ7ngV2TbRG25wUEpnCox9dKA/<0;1>/*',

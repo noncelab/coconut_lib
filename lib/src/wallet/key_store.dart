@@ -270,7 +270,9 @@ class KeyStore {
     }
   }
 
-  String addPublicNonceToPsbt(String psbt) {
+  /// [auxRand] is forwarded to [getSecretNonce]; see the warning there before
+  /// supplying it.
+  String addPublicNonceToPsbt(String psbt, {Uint8List? auxRand}) {
     if (!hasSeed) {
       throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
@@ -301,16 +303,19 @@ class KeyStore {
           hashType: psbtInput.taprootSighashType);
       for (DerivationPath derivationPath in psbtInput.tapBip32Derivation!) {
         if (masterFingerprint == derivationPath.masterFingerprint) {
-          addPublicNonceToPsbtInput(psbtInput, derivationPath.path, sigHash);
+          addPublicNonceToPsbtInput(psbtInput, derivationPath.path, sigHash,
+              auxRand: auxRand);
         }
       }
     }
     return psbtObject.serialize();
   }
 
+  /// [auxRand] is forwarded to [getSecretNonce]; see the warning there before
+  /// supplying it.
   void addPublicNonceToPsbtInput(
       PsbtInput psbtInput, String derivationPath, String sigHash,
-      {String extraInput = ''}) {
+      {String extraInput = '', Uint8List? auxRand}) {
     if (!hasSeed) {
       throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
@@ -323,7 +328,7 @@ class KeyStore {
         getPublicKey(accountIndex, isChange: isChange, isXOnly: false);
     String publicNonce = getPublicNonce(
         sigHash, psbtInput.muSig2AggregatedPublicKey!, accountIndex, isChange,
-        extraInput: Codec.decodeHex(extraInput));
+        extraInput: Codec.decodeHex(extraInput), auxRand: auxRand);
     psbtInput.addMuSig2PubNonce(
         publicKey, psbtInput.muSig2AggregatedPublicKey!, sigHash, publicNonce);
   }
@@ -562,9 +567,19 @@ class KeyStore {
     }
   }
 
+  /// Derive this signer's MuSig2 secret nonce.
+  ///
+  /// [auxRand] replaces the 32 bytes of fresh randomness that seed the nonce.
+  /// Leave it unset outside of tests and deterministic-vector checks: reusing
+  /// the same value for two signatures over different messages reveals the
+  /// private key.
   Uint8List getSecretNonce(String sigHash, String aggregatedPublicKey,
       int accountIndex, bool isChange,
-      {Uint8List? extraInput}) {
+      {Uint8List? extraInput, Uint8List? auxRand}) {
+    if (auxRand != null && auxRand.length != 32) {
+      throw ArgumentError.value(
+          auxRand.length, 'auxRand', 'auxRand must be 32 bytes');
+    }
     Uint8List secretKey = Codec.decodeHex(
         getPrivateKey(accountIndex, isChange: isChange, isXOnly: false));
     Uint8List publicKey = Codec.decodeHex(
@@ -572,8 +587,9 @@ class KeyStore {
     Uint8List aggPubkey = Codec.decodeHex(aggregatedPublicKey);
     Uint8List message = Codec.decodeHex(sigHash);
     final Random secureRandom = Random.secure();
-    final Uint8List rand = Uint8List.fromList(
-        List<int>.generate(32, (_) => secureRandom.nextInt(256)));
+    final Uint8List rand = auxRand ??
+        Uint8List.fromList(
+            List<int>.generate(32, (_) => secureRandom.nextInt(256)));
     Uint8List secretNonce = calculateSecretNonce(
         rand, secretKey, publicKey, aggPubkey, message, extraInput,
         isDeterministic: false);
@@ -632,12 +648,17 @@ class KeyStore {
     return secretNonce;
   }
 
+  /// Derive and store this signer's MuSig2 nonce pair, returning the public
+  /// half.
+  ///
+  /// [auxRand] is forwarded to [getSecretNonce]; see the warning there before
+  /// supplying it.
   String getPublicNonce(String sigHash, String aggregatedPublicKey,
       int accountIndex, bool isChange,
-      {Uint8List? extraInput}) {
+      {Uint8List? extraInput, Uint8List? auxRand}) {
     Uint8List secretNonce = getSecretNonce(
         sigHash, aggregatedPublicKey, accountIndex, isChange,
-        extraInput: extraInput);
+        extraInput: extraInput, auxRand: auxRand);
     Uint8List publicNonce = calculatePublicNonce(secretNonce);
     final String publicKey =
         getPublicKey(accountIndex, isChange: isChange, isXOnly: false);
