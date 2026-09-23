@@ -85,20 +85,20 @@ void main() {
             throwsFormatException);
       });
 
-      test('parses the standard and_v(v:after,pk) spelling too', () {
+      test('still parses the legacy and_v(v:pk,after) spelling', () {
         final InheritancePolicy original =
             InheritancePolicy.fromDescriptorAndLocktime(
                 beneficiaryVault.descriptor, 987654321);
-        final String standard = original.toStandardMiniscript();
+        final String legacy = _legacySpellingOf(original);
 
-        final Policy parsed = InheritancePolicy.fromMiniscript(standard);
+        final Policy parsed = InheritancePolicy.fromMiniscript(legacy);
         expect(parsed, isA<InheritancePolicy>());
         expect((parsed as InheritancePolicy).locktime, original.locktime);
         expect(parsed.beneficiaryKeyStore.masterFingerprint,
             original.beneficiaryKeyStore.masterFingerprint);
-        // Read either way, written the one way wallets in the field expect.
+        // Read either way, written the standard way.
         expect(parsed.toMiniscript(), original.toMiniscript());
-        expect(Policy.fromMiniscript(standard), isA<InheritancePolicy>());
+        expect(Policy.fromMiniscript(legacy), isA<InheritancePolicy>());
       });
 
       test('both spellings give the same leaf', () {
@@ -109,7 +109,7 @@ void main() {
         expect(
             InheritancePolicy.fromMiniscript(original.toMiniscript())
                 .getTapleafHash(0),
-            InheritancePolicy.fromMiniscript(original.toStandardMiniscript())
+            InheritancePolicy.fromMiniscript(_legacySpellingOf(original))
                 .getTapleafHash(0));
       });
     });
@@ -122,32 +122,24 @@ void main() {
         expect(policy.toMiniscript(), isNot(contains('older(')));
       });
 
-      test('emits the spelling wallets in the field exchange', () {
+      test('spells the timelock before the key, matching toScript', () {
         final policy = InheritancePolicy.fromDescriptorAndLocktime(
             beneficiaryVault.descriptor, 987654321);
-        // Deliberately not the script's own spelling: descriptors already in
-        // circulation carry this one. See toStandardMiniscript.
-        expect(policy.toMiniscript(), startsWith('and_v(v:pk('));
-        expect(policy.toMiniscript(), endsWith(',after(987654321))'));
+        // and_v(v:after(N),pk(K)) compiles to <N> CLTV DROP <K> CHECKSIG.
+        // The reverse spelling is a different script, so a wallet reading the
+        // descriptor would derive a different leaf and a different address.
+        expect(policy.toMiniscript(), startsWith('and_v(v:after(987654321),'));
+        expect(policy.toMiniscript(), isNot(contains('v:pk(')));
       });
 
-      test('toStandardMiniscript spells the timelock first', () {
-        final policy = InheritancePolicy.fromDescriptorAndLocktime(
-            beneficiaryVault.descriptor, 987654321);
-        expect(policy.toStandardMiniscript(),
-            startsWith('and_v(v:after(987654321),'));
-        expect(policy.toStandardMiniscript(), isNot(contains('v:pk(')));
-      });
-
-      test('toStandardMiniscript compiles to the same bytes toScript emits',
-          () {
+      test('compiles to the same bytes toScript emits', () {
         final policy = InheritancePolicy.fromDescriptorAndLocktime(
             beneficiaryVault.descriptor, 987654321);
 
         // Compile the miniscript independently, from the fragment rules only,
         // rather than trusting the library's own script builder.
         final RegExpMatch m = RegExp(r'^and_v\(v:after\((\d+)\),pk\((.+)\)\)$')
-            .firstMatch(policy.toStandardMiniscript())!;
+            .firstMatch(policy.toMiniscript())!;
         final int locktime = int.parse(m.group(1)!);
         final Uint8List pubkey =
             TaprootWallet.fromKeyOriginExpression(m.group(2)!)
@@ -205,4 +197,11 @@ void main() {
       });
     });
   });
+}
+
+/// The spelling earlier versions emitted, rebuilt from the standard one.
+String _legacySpellingOf(InheritancePolicy policy) {
+  final RegExpMatch match = RegExp(r'^and_v\(v:after\((\d+)\),pk\((.+)\)\)$')
+      .firstMatch(policy.toMiniscript())!;
+  return 'and_v(v:pk(${match.group(2)}),after(${match.group(1)}))';
 }

@@ -205,7 +205,7 @@ void main() {
         ]);
 
         final String descriptor = singleLeafDescriptorOf(vault);
-        expect(descriptor, contains(',and_v(v:pk('));
+        expect(descriptor, contains(',and_v(v:after(1767225600),'));
         expect(descriptor, isNot(contains(',{')));
       });
 

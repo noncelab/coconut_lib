@@ -6,6 +6,10 @@
   unchanged; only the descriptor string and its checksum differ, so stored
   descriptors and any `sha256(descriptor)` identifier computed from them must be
   refreshed.
+  - Inheritance policies are written as `and_v(v:after(N),pk(K))`, matching the
+    script they compile to. The previous `and_v(v:pk(K),after(N))` described a
+    different script (`<K> CHECKSIGVERIFY <N> CLTV`), so a wallet deriving from
+    the descriptor reached a different address than this library did.
   - MuSig2 key expressions are written as `musig(KEY,...)` per BIP-390; the
     non-standard `sorted()` wrapper is gone. Sorting is unchanged — KeyAgg
     already sorts, as the spec mandates.
@@ -23,13 +27,6 @@
 
 ### Added
 
-- `InheritancePolicy.toStandardMiniscript`, the leaf as standard miniscript
-  (`and_v(v:after(N),pk(K))`) — what `toScript` actually builds.
-  `toMiniscript` keeps emitting `and_v(v:pk(K),after(N))`, the spelling wallets
-  in the field already exchange, and both spellings are now parsed. The two
-  describe different scripts, so a wallet deriving from the emitted descriptor
-  still reaches a different address than this library does; moving the output
-  is a one-line change once those wallets can take it.
 - `TapTree` (`TapLeaf`, `TapBranch`) holds a Taproot script tree with its
   shape, and `TaprootVault.fromTapTree` / `TaprootWallet.fromTapTree` build a
   wallet from one. Grouping decides the merkle root, so `{A,{B,C}}` and

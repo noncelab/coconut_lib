@@ -67,27 +67,16 @@ class InheritancePolicy extends Policy {
     return Script(cmds);
   }
 
-  /// The spelling written into descriptors and policy JSON.
-  ///
-  /// This is `and_v(v:pk(K),after(N))`, which is NOT what [toScript] builds —
-  /// see [toStandardMiniscript] for the spelling that is. It is kept because
-  /// wallets already in the field exchange descriptors in this form, and
-  /// switching the output would break them. Both spellings are read back by
-  /// [fromMiniscript], so the output can be moved to the standard one once
-  /// those wallets are ready.
-  @override
-  String toMiniscript() {
-    return 'and_v(v:pk(${_keyOriginExpression()}),after($locktime))';
-  }
-
-  /// The leaf as standard miniscript: what [toScript] actually builds.
+  /// The leaf as standard miniscript, matching what [toScript] builds.
   ///
   /// `and_v(v:after(N),pk(K))` compiles to `<N> CLTV DROP <K> CHECKSIG`, the
-  /// script this policy commits to. The reverse spelling that [toMiniscript]
-  /// emits compiles to `<K> CHECKSIGVERIFY <N> CLTV` — a different script, a
-  /// different leaf hash, and so a different address for anyone deriving from
-  /// the descriptor rather than from this library.
-  String toStandardMiniscript() {
+  /// script this policy commits to. The reverse spelling,
+  /// `and_v(v:pk(K),after(N))`, compiles to `<K> CHECKSIGVERIFY <N> CLTV` — a
+  /// different script, a different leaf hash, and so a different address for
+  /// anyone deriving from the descriptor. Earlier versions emitted it, so
+  /// [fromMiniscript] still reads it.
+  @override
+  String toMiniscript() {
     return 'and_v(v:after($locktime),pk(${_keyOriginExpression()}))';
   }
 
@@ -126,24 +115,22 @@ class InheritancePolicy extends Policy {
   }
 
   static Policy fromMiniscript(String miniscript) {
-    /// Standard spelling, matching [toScript] — see [toStandardMiniscript].
-    final RegExp _miniscriptPattern =
+    final RegExp miniscriptPattern =
         RegExp(r'^and_v\(v:after\((\d+)\),pk\((.+)\)\)$');
 
-    /// The spelling [toMiniscript] emits, and what wallets in the field send.
-    final RegExp _legacyMiniscriptPattern =
+    final RegExp legacyMiniscriptPattern =
         RegExp(r'^and_v\(v:pk\((.+)\),after\((\d+)\)\)$');
 
     late final String pubkeyHex;
     late final int locktime;
 
-    final RegExpMatch? match = _miniscriptPattern.firstMatch(miniscript);
+    final RegExpMatch? match = miniscriptPattern.firstMatch(miniscript);
     if (match != null) {
       locktime = int.parse(match.group(1)!);
       pubkeyHex = match.group(2)!;
     } else {
       final RegExpMatch? legacyMatch =
-          _legacyMiniscriptPattern.firstMatch(miniscript);
+          legacyMiniscriptPattern.firstMatch(miniscript);
       if (legacyMatch == null) {
         throw FormatException('Unsupported inheritance miniscript.');
       }
