@@ -58,16 +58,19 @@ class Hash {
   }
 
   /// Derives a 64-byte BIP39 seed using PBKDF2-HMAC-SHA512.
+  ///
+  /// [secret] is hashed as given. BIP-39 feeds PBKDF2 the NFKD UTF-8 bytes of
+  /// the mnemonic, so decoding to a String and taking its UTF-16 code units
+  /// would truncate every non-ASCII word to its low byte — '가' (ea b0 80)
+  /// would arrive as a single 0x00. ASCII is unaffected either way, which is
+  /// why the English wordlist never showed it.
   static Uint8List pbkdf2(Uint8List secret, Uint8List salt) {
     PBKDF2KeyDerivator derivator =
         PBKDF2KeyDerivator(HMac(SHA512Digest(), 128));
 
     derivator.reset();
     derivator.init(Pbkdf2Parameters(salt, 2048, 64));
-    // var array =
-    //     derivator.process(Uint8List.fromList(utf8.decode(secret).codeUnits));
-    // return array.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join('');
-    return derivator.process(Uint8List.fromList(utf8.decode(secret).codeUnits));
+    return derivator.process(secret);
   }
 
   /// Computes the BIP340 tagged hash of [data] under [tag].

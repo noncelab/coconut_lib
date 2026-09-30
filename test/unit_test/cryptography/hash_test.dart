@@ -273,6 +273,32 @@ void main() {
             Codec.decodeHex(
                 '91be23564f09fc855c82ce84a223ebe7d63d8b49d69372593a0d9ed39e143c83e1ab2f722a5ddb969feefc88403f7e2afe1afb8b2f0e6b20add0fb7b28368807'));
       });
+
+      test('hashes non-ASCII secret bytes as given', () {
+        // BIP-39 feeds PBKDF2 the UTF-8 bytes of the mnemonic. These are the
+        // first two words of the Korean wordlist: 13 bytes that must all reach
+        // the derivation.
+        final Uint8List secret = Uint8List.fromList(utf8.encode('가격 가끔'));
+        expect(secret.length, 13);
+
+        expect(
+            Codec.encodeHex(Hash.pbkdf2(secret, utf8.encode('mnemonic'))),
+            'ec3d79c418b0b18d67056815ca034243c52b3e9826a6e80215d6b8f83131507b'
+            '232420442c38afecdc721ff0726eb97241fcc34533c8524fa4a7df7d2fc36a9d');
+      });
+
+      test('does not fold the secret through UTF-16 code units', () {
+        // Decoding the bytes to a String and taking codeUnits truncates each
+        // Hangul syllable to its low byte, turning 13 bytes into 5. Guard
+        // against that path coming back.
+        final Uint8List secret = Uint8List.fromList(utf8.encode('가격 가끔'));
+        final Uint8List truncated =
+            Uint8List.fromList(utf8.decode(secret).codeUnits);
+
+        expect(truncated.length, 5);
+        expect(Hash.pbkdf2(secret, utf8.encode('mnemonic')),
+            isNot(Hash.pbkdf2(truncated, utf8.encode('mnemonic'))));
+      });
     });
     group('taggedHash', () {
       test('Get tagged hash', () {
