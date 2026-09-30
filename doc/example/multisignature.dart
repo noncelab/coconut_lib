@@ -19,7 +19,8 @@ void main() {
   final signerC = _signer('C');
 
   // The coordinator initially owns signer A's seed and imports public BSMS
-  // records for the other participants.
+  // records for the other participants. The 2 is the threshold: any two of the
+  // three key stores can spend.
   final coordinatorVault = MultisignatureVault.fromKeyStoreList([
     KeyStore.fromSeed(signerA.keyStore.seed, AddressType.p2wsh),
     KeyStore.fromSignerBsms(
@@ -43,12 +44,19 @@ void main() {
   final transaction = Transaction.forSinglePayment([utxo], wallet.getAddress(1),
       "${wallet.derivationPath}/1/0", 2000, 2, wallet);
 
+  // Each vault signs with the one seed it holds, so the PSBT passes between
+  // them until the threshold is met.
   final unsignedPsbt = Psbt.fromTransaction(transaction, wallet).serialize();
   final onceSignedPsbt = coordinatorVault.addSignatureToPsbt(unsignedPsbt);
   final fullySignedPsbt = signerBVault.addSignatureToPsbt(onceSignedPsbt);
   final signedTransaction =
       Psbt.parse(fullySignedPsbt).getSignedTransaction(wallet.addressType);
 
+  // The prevout the UTXO paid to, rebuilt so the signatures can be checked.
+  final spentOutput =
+      TransactionOutput.forPayment(utxo.amount, wallet.getAddress(0));
+
   print('2-of-3 address: ${wallet.getAddress(0)}');
   print('Signed transaction: ${signedTransaction.serialize()}');
+  print('Valid signatures: ${signedTransaction.validateEcdsa(0, spentOutput)}');
 }

@@ -5,7 +5,7 @@
 // Satoshis. Every chapter of part 1 has a matching function below, and the
 // numbers printed here are the exact numbers printed in the book.
 //
-//   dart run src/part_1.dart
+//   dart run doc/bitcoin_protocol_book/part_1.dart
 //
 // Each chapter function is self-contained: it rebuilds what it needs from the
 // coin flips below instead of sharing local variables with its neighbours.

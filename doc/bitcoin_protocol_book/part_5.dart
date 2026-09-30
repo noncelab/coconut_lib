@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
 // Journey of 100k Sats — Part 5
 //
-// Worked examples from the book 『비트코인 프로토콜 — 10만 사토시의 여정』.
-// Every chapter of part 5 has a matching function below, and the numbers
+// Worked examples from the book Bitcoin Protocol — The Journey of 100,000
+// Satoshis. Every chapter of part 5 has a matching function below, and the numbers
 // printed here are the exact numbers printed in the book.
 //
-//   dart run src/part_5.dart
+//   dart run doc/bitcoin_protocol_book/part_5.dart
 //
 // Each chapter function is self-contained: it rebuilds the wallets it needs
 // from the mnemonics below instead of sharing local variables with its
@@ -23,7 +23,7 @@ import 'dart:typed_data';
 
 import 'package:coconut_lib/coconut_lib.dart';
 
-// --- 등장인물 -------------------------------------------------------------
+// --- The cast ---------------------------------------------------------------
 
 const String myMnemonic =
     'ozone drill grab fiber curtain grace pudding thank cruise elder eight picnic';
@@ -34,7 +34,7 @@ const String recoverMnemonic =
 const String childMnemonic =
     'public furnace safe inherit carbon scheme fashion fantasy animal enemy slender cake';
 
-/// 2035년 1월 1일 00:00 UTC. 37장의 상속 조건이 열리는 시각이다.
+/// 2035-01-01 00:00 UTC, the moment chapter 37's inheritance branch opens.
 const int inheritanceLocktime = 2051222400;
 
 void main() {
@@ -46,9 +46,9 @@ void main() {
   chapter40Descriptor();
 }
 
-// --- 36장 — P2WSH ---------------------------------------------------------
+// --- Chapter 36 — P2WSH -------------------------------------------------------
 
-/// 나와 아내의 2-of-2 P2WSH 공동 지갑에서 10만 사토시를 지출한다.
+/// Spends 100,000 sats from the 2-of-2 P2WSH wallet I share with my wife.
 void chapter36P2wsh() {
   print('--- Chapter 36 - P2WSH ---');
 
@@ -57,9 +57,10 @@ void chapter36P2wsh() {
   SingleSignatureVault wifeWallet =
       SingleSignatureVault.fromMnemonic(utf8.encode(wifeMnemonic));
 
-  String myBsmsSigner = myWallet.getSignerBsms(AddressType.p2wsh, '나의 공동 지갑 키');
-  String wifeBsmsSigner =
-      wifeWallet.getSignerBsms(AddressType.p2wsh, '아내의 공동 지갑 키');
+  String myBsmsSigner =
+      myWallet.getSignerBsms(AddressType.p2wsh, 'My shared wallet key');
+  String wifeBsmsSigner = wifeWallet.getSignerBsms(
+      AddressType.p2wsh, "My wife's shared wallet key");
 
   MultisignatureVault p2wshWallet = MultisignatureVault.fromKeyStoreList([
     KeyStore.fromSignerBsms(myBsmsSigner),
@@ -114,12 +115,12 @@ void chapter36P2wsh() {
   print('Valid Signature? : ${transaction.validateEcdsa(0, utxo)}');
 }
 
-// --- 37~39장 — 탭루트 -----------------------------------------------------
+// --- Chapters 37-39 — Taproot -------------------------------------------------
 
-/// 탭루트 계정에서 네 사람의 키스토어를 꺼낸다.
+/// The four key stores of the Taproot account.
 ///
-/// 37~39장이 모두 같은 네 개의 키에서 출발하므로, 각 장 함수는 이름이 겹치는
-/// 지역 변수를 두는 대신 여기서 한 번에 받아 간다.
+/// Chapters 37 to 39 all start from these same four keys, so each chapter takes
+/// them from here instead of keeping its own local variables.
 ({KeyStore me, KeyStore wife, KeyStore recover, KeyStore child})
     taprootKeyStores() {
   KeyStore keyStoreOf(String mnemonic) =>
@@ -134,11 +135,12 @@ void chapter36P2wsh() {
   );
 }
 
-/// 37장에서 정한 탭트리다.
+/// The tap tree chapter 37 settles on.
 ///
-/// 예비키 복구를 한쪽 가지에 혼자 두고, 가족 복구와 장기 상속을 다른 쪽 가지에서
-/// 한 번 더 묶는다. `{A,{B,C}}` 모양이며 이 모양이 탭 머클 루트를 결정한다.
-/// 자주 쓰지 않는 조건일수록 깊은 곳에 두면 컨트롤 블록이 길어진다.
+/// Backup recovery sits alone on one branch; family recovery and the long
+/// inheritance share the other. The shape is `{A,{B,C}}`, and the shape decides
+/// the tap merkle root. A leaf placed deeper carries a longer control block, so
+/// the rarely used conditions are the ones put out of the way.
 TapTree familyTapTree(
     ({KeyStore me, KeyStore wife, KeyStore recover, KeyStore child}) keys) {
   return TapBranch(
@@ -150,19 +152,21 @@ TapTree familyTapTree(
   );
 }
 
-/// 37장의 지갑. 내부 공개키는 나 하나뿐이다.
+/// Chapter 37's wallet. The internal key is mine alone.
 TaprootVault scriptPathVault() {
   final keys = taprootKeyStores();
   return TaprootVault.fromTapTree([keys.me], familyTapTree(keys));
 }
 
-/// 38·39장의 가족 지갑. 내부 공개키는 나와 아내의 MuSig2 집계 공개키다.
+/// The family wallet of chapters 38 and 39. The internal key is the MuSig2
+/// aggregate of my key and my wife's.
 TaprootVault familyVault() {
   final keys = taprootKeyStores();
   return TaprootVault.fromTapTree([keys.me, keys.wife], familyTapTree(keys));
 }
 
-/// 37장 — 복구와 상속 조건을 탭 트리의 스크립트 경로에 넣는다.
+/// Chapter 37 — puts the recovery and inheritance conditions on the tap tree's
+/// script paths.
 void chapter37Taproot() {
   print('--- Chapter 37 - Taproot ---');
 
@@ -183,7 +187,7 @@ void chapter37Taproot() {
   print('Receive Address 0 : ${scriptPathVault().getAddress(0)}');
 }
 
-/// 38장 — 나와 아내의 공개키를 집계해 키 경로로 쓴다.
+/// Chapter 38 — aggregates my public key with my wife's and spends the key path.
 void chapter38KeyPath() {
   print('--- Chapter 38 - Key Path & MuSig2 ---');
 
@@ -191,12 +195,14 @@ void chapter38KeyPath() {
   print('Receive Address 0 : ${family.getAddress(0)}');
 }
 
-/// 39장 — 받기 0번의 88,500사토시를 받기 1번과 잔돈 0번으로 나눈다.
+/// Chapter 39 — splits the 88,500 sats on receive 0 between receive 1 and
+/// change 0.
 ///
-/// MuSig2의 두 왕복을 `TaprootVault.addPublicNonce`에 맡기지 않고 손으로 편다.
-/// 그 편의 함수에도 `auxRand`를 넘기면 값을 고정할 수 있지만, 그러면 b와 R,
-/// 도전값과 부분 서명이 모두 함수 안에 숨는다. 본문이 설명한 네 단계를 한 줄씩
-/// 드러내려고 아래 단계를 직접 부른다.
+/// MuSig2's two rounds are unrolled by hand rather than left to
+/// `TaprootVault.addPublicNonce`. That convenience method takes an `auxRand`
+/// too, so the values could be pinned through it, but then b and R, the
+/// challenge and the partial signatures all stay hidden inside it. The four
+/// steps the book walks through are called out one by one below.
 void chapter39Schnorr() {
   print('--- Chapter 39 - Schnorr Signature ---');
 
@@ -207,7 +213,8 @@ void chapter39Schnorr() {
   print('Receive Address 1 : $receiveAddress1');
   print('Change Address 0 : $changeAddress0');
 
-  // 38장에서 가족 지갑의 받기 0번 주소로 88,500사토시를 보낸 트랜잭션이다.
+  // The chapter 38 transaction that paid 88,500 sats to the family wallet's
+  // receive address 0.
   const String previousTxId =
       '886f3585b614c2b1fede845e60d63f802d94897467956ae825ab9fe7f166b5c6';
 
@@ -224,7 +231,7 @@ void chapter39Schnorr() {
   print('Unsigned Transaction : ${transaction.serialize()}');
   print('TXID : ${transaction.transactionHash}');
 
-  // 1. 서명할 메시지를 정한다.
+  // 1. Settle on the message to sign.
   String sigHash = transaction.getTaprootSigHash(0, [utxo]);
   print('SigHash : $sigHash');
 
@@ -234,11 +241,12 @@ void chapter39Schnorr() {
   print('Merkle Root : ${Codec.encodeHex(merkleRoot)}');
   print('Q : ${Codec.encodeHex(family.getOutputKey(0))}');
 
-  // 2. 공개 논스를 교환한다.
+  // 2. Exchange the public nonces.
   //
-  // 보조 난수는 책의 값을 재현하기 위해 고정한다. 실제 지갑은 서명할 때마다
-  // 새 난수를 써야 한다. 같은 메시지를 이 논스로 거듭 서명하면 부분 서명 식이
-  // 쌓여 개인키가 드러난다.
+  // The auxiliary randomness is pinned so the book's values come out again. A
+  // real wallet draws fresh randomness for every signature: signing more than
+  // once with the same nonce stacks up partial-signature equations until the
+  // private key falls out.
   Uint8List myNonce = musig2SecretNonce(
       family.keyStoreList[0], 'book: my nonce', aggregatedPublicKey, sigHash);
   Uint8List wifeNonce = musig2SecretNonce(
@@ -262,7 +270,7 @@ void chapter39Schnorr() {
       aggregatedPublicKey, Codec.decodeHex(sigHash),
       merkleRoot: merkleRoot);
 
-  // 3. 각자 부분 서명 32바이트를 만든다.
+  // 3. Each side produces its 32-byte partial signature.
   Uint8List myPartialSignature = Ecc.signSchnorrForMuSig2(
       myNonce,
       Codec.decodeHex(family.keyStoreList[0].getPrivateKey(0, isXOnly: false)),
@@ -276,7 +284,7 @@ void chapter39Schnorr() {
   print('My Partial Signature : ${Codec.encodeHex(myPartialSignature)}');
   print('Wife Partial Signature : ${Codec.encodeHex(wifePartialSignature)}');
 
-  // 합치기 전에 상대의 부분 서명을 각자 검사할 수 있다.
+  // Before combining, each side can check the other's partial signature.
   String myPublicKey = family.keyStoreList[0].getPublicKey(0, isXOnly: false);
   String wifePublicKey = family.keyStoreList[1].getPublicKey(0, isXOnly: false);
   print('My Partial Signature Valid? : '
@@ -284,7 +292,7 @@ void chapter39Schnorr() {
   print('Wife Partial Signature Valid? : '
       '${Ecc.verifyMuSig2PartialSignature(wifePartialSignature, wifePublicNonce, Codec.decodeHex(wifePublicKey), session)}');
 
-  // 4. 두 부분 서명을 더해 64바이트 슈노르 서명 하나로 만든다.
+  // 4. Add the two partial signatures into one 64-byte Schnorr signature.
   Uint8List signature = Ecc.getAggregatedSignatureForMuSig2(session, [
     Signature(Codec.encodeHex(myPartialSignature), myPublicKey),
     Signature(Codec.encodeHex(wifePartialSignature), wifePublicKey)
@@ -300,27 +308,29 @@ void chapter39Schnorr() {
       '${Ecc.verifySchnorr(Codec.decodeHex(sigHash), family.getOutputKey(0), signature)}');
 }
 
-// --- 40장 — 미니스크립트와 BSMS -------------------------------------------
+// --- Chapter 40 — Miniscript and BSMS -------------------------------------------
 
-/// 40장 — 가족 지갑의 설계도를 디스크립터와 BSMS로 남긴다.
+/// Chapter 40 — writes the family wallet's blueprint down as a descriptor and
+/// as BSMS records.
 ///
-/// 디스크립터는 받기 가지와 잔돈 가지를 따로 만든다. BSMS는 각 서명 장치가
-/// 자기 xpub을 담아 보내는 키 레코드와, 조정자가 정책을 결합해 돌려주는
-/// 디스크립터 레코드로 이루어진다.
+/// The descriptor covers the receive branch and the change branch. BSMS has two
+/// halves: a key record each signing device sends with its own xpub, and the
+/// descriptor record the coordinator sends back once it has combined them with
+/// the policy.
 void chapter40Descriptor() {
   print('--- Chapter 40 - Miniscript & BSMS ---');
 
   TaprootVault family = familyVault();
   print('Descriptor : ${family.descriptor}');
 
-  // 각 장치가 보내는 BSMS 키 레코드. 한 사람이 장치를 여럿 가질 수 있으므로
-  // 나의 주 키와 예비키는 서로 다른 서명자로 센다.
+  // The key record each device sends. One person can hold several devices, so
+  // my main key and my backup key count as separate signers.
   final keys = taprootKeyStores();
   for (final signer in [
-    ('나의 주 키 장치', myMnemonic),
-    ('나의 예비키 장치', recoverMnemonic),
-    ('아내의 서명 장치', wifeMnemonic),
-    ('아이의 서명 장치', childMnemonic),
+    ('My main key device', myMnemonic),
+    ('My backup key device', recoverMnemonic),
+    ("My wife's signing device", wifeMnemonic),
+    ("My child's signing device", childMnemonic),
   ]) {
     TaprootVault vault = TaprootVault.fromSeedList(
         [Seed.fromMnemonic(utf8.encode(signer.$2))], []);
@@ -328,7 +338,8 @@ void chapter40Descriptor() {
     print(vault.getSignerBsms(signer.$1));
   }
 
-  // 조정자가 네 키 레코드를 정책과 결합해 돌려주는 디스크립터 레코드.
+  // The descriptor record the coordinator returns, the four key records
+  // combined with the policy.
   print('--- Coordinator BSMS');
   print(family.getCoordinatorBsms());
 
@@ -341,11 +352,11 @@ void chapter40Descriptor() {
   ].map((k) => k.masterFingerprint).join(", ")}');
 }
 
-/// 고정된 보조 난수로 BIP 327의 97바이트 비밀 논스를 만든다.
+/// Builds BIP-327's 97-byte secret nonce from pinned auxiliary randomness.
 ///
-/// `KeyStore.getPublicNonce`는 보조 난수를 `Random.secure()`로 만들고 결과를
-/// 내부 맵에 감춰 두지만, 그 아래의 `calculateSecretNonce`는 난수를 인자로 받는다.
-/// 책의 값을 재현하려면 이쪽을 직접 부른다.
+/// `KeyStore.getPublicNonce` draws that randomness with `Random.secure()` and
+/// keeps the result in an internal map, but `calculateSecretNonce` underneath
+/// takes it as an argument. Reproducing the book's values calls that directly.
 Uint8List musig2SecretNonce(KeyStore keyStore, String label,
     Uint8List aggregatedPublicKey, String sigHash) {
   return KeyStore.calculateSecretNonce(
@@ -357,16 +368,17 @@ Uint8List musig2SecretNonce(KeyStore keyStore, String label,
       null);
 }
 
-/// 두 사람의 66바이트 공개 논스를 자리끼리 더한다.
+/// Adds two 66-byte public nonces half by half.
 ///
-/// 앞 33바이트끼리 더해 R₁을, 뒤 33바이트끼리 더해 R₂를 만든다.
+/// The leading 33 bytes combine into R₁, the trailing 33 into R₂.
 Uint8List aggregatePublicNonce(Uint8List first, Uint8List second) {
   Uint8List combine(int from, int to) => Ecc.pointCombine(
       first.sublist(from, to), second.sublist(from, to), true)!;
   return Uint8List.fromList([...combine(0, 33), ...combine(33, 66)]);
 }
 
-/// 공개키를 사전순으로 비교한다. MuSig2는 집계 전에 키를 정렬한다.
+/// Compares public keys lexicographically. MuSig2 sorts the keys before it
+/// aggregates them.
 int compareBytes(Uint8List a, Uint8List b) {
   for (int i = 0; i < a.length && i < b.length; i++) {
     if (a[i] != b[i]) return a[i] - b[i];

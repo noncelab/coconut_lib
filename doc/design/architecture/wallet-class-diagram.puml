@@ -24,8 +24,11 @@ abstract class MultisignatureWalletBase {
 abstract class TaprootWalletBase {
   +keyStoreList: List<KeyStore>
   +policyList: List<Policy>
+  +tapTree: TapTree?
   +getInternalKey(index, isChange): Uint8List
   +getMerkleRoot(index, isChange): Uint8List
+  +getControlBlock(policyIndex, index, isChange): String
+  +getMerklePathLength(policyIndex, index, isChange): int
 }
 
 class SingleSignatureWallet <<watch-only>>
@@ -47,8 +50,27 @@ class Seed
 class HDWallet
 class ExtendedPublicKey
 class Descriptor
-abstract class Policy
-class InheritancePolicy
+abstract class Policy {
+  +keyStoreList: List<KeyStore>
+  +requiredSignature: int
+  +toScript(index, isChange): Script
+  +toMiniscript(): String
+  +bindKeyStore(keyStore): bool
+}
+class SingleSignaturePolicy
+class MultisignaturePolicy
+class InheritancePolicy {
+  +locktime: int
+}
+
+abstract class TapTree {
+  +leaves: List<Policy>
+  +getMerkleRoot(index, isChange): Uint8List
+  +getMerklePath(leafIndex, index, isChange): List<Uint8List>
+  +toTreeExpression(): String
+}
+class TapLeaf
+class TapBranch
 
 WalletBase <|-- SingleSignatureWalletBase
 WalletBase <|-- MultisignatureWalletBase
@@ -59,13 +81,22 @@ MultisignatureWalletBase <|-- MultisignatureWallet
 MultisignatureWalletBase <|-- MultisignatureVault
 TaprootWalletBase <|-- TaprootWallet
 TaprootWalletBase <|-- TaprootVault
+Policy <|-- SingleSignaturePolicy
+Policy <|-- MultisignaturePolicy
 Policy <|-- InheritancePolicy
+TapTree <|-- TapLeaf
+TapTree <|-- TapBranch
 
 WalletBase *-- Descriptor
 SingleSignatureWalletBase o-- "1" KeyStore
 MultisignatureWalletBase o-- "1..*" KeyStore
 TaprootWalletBase o-- "1..*" KeyStore
 TaprootWalletBase o-- "0..*" Policy
+TaprootWalletBase o-- "0..1" TapTree
+TapLeaf o-- "1" Policy
+TapBranch o-- "2" TapTree
+SingleSignaturePolicy o-- "1" KeyStore
+MultisignaturePolicy o-- "1..*" KeyStore
 InheritancePolicy o-- "beneficiary" KeyStore
 KeyStore o-- HDWallet
 KeyStore o-- ExtendedPublicKey
@@ -76,5 +107,10 @@ note right of SingleSignatureWallet
 end note
 note right of SingleSignatureVault
   Vault variants may own seed-bearing key stores.
+end note
+note bottom of TapBranch
+  The tree shape is part of the commitment:
+  regrouping the same leaves changes the
+  merkle root, and so the address.
 end note
 @enduml

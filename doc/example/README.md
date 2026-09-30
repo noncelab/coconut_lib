@@ -12,6 +12,7 @@ From the repository root:
 dart run doc/example/single_signature.dart
 dart run doc/example/multisignature.dart
 dart run doc/example/taproot_script_path.dart
+dart run doc/example/taproot_policies.dart
 ```
 
 ## Contents
@@ -22,3 +23,8 @@ dart run doc/example/taproot_script_path.dart
   signers for a 2-of-3 P2WSH transaction.
 - `taproot_script_path.dart`: demonstrates Taproot MuSig2 key-path signing and
   inheritance-policy script-path signing.
+- `taproot_policies.dart`: gives a Taproot script tree a shape of its own with
+  `TapTree`, and spends through a 2-of-2 `MultisignaturePolicy` leaf.
+
+Each example ends by verifying the transaction it built, so a broken signature
+shows up as `false` rather than as plausible-looking hex.

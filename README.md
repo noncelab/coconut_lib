@@ -34,8 +34,10 @@ library.
 ## Architecture
 
 - [wallet](https://github.com/noncelab/coconut_lib/blob/main/lib/src/wallet): Provides a cryptography-based key management method. Create two apps instancing the Wallet and Vault classes.
+
 [![Wallet Architecture Overview](doc/design/generated/wallet_overview.png)](https://github.com/noncelab/coconut_lib/blob/main/doc/design/README.md)
 - [transaction](https://github.com/noncelab/coconut_lib/blob/main/lib/src/transaction): Provides code related to Bitcoin scripts and transactions. Also use PSBT(BIP-0174) to communicate vaults and wallets.
+
 [![Transaction Class Diagram](doc/design/generated/transaction_model.png)](https://github.com/noncelab/coconut_lib/blob/main/doc/design/README.md)
 
 > For more development information, visit the [coconut_lib docs](https://pub.dev/documentation/coconut_lib/latest/coconut_lib/coconut_lib-library.html).
@@ -94,9 +96,17 @@ void main() {
   final signedTransaction =
       Psbt.parse(signedPsbt).getSignedTransaction(wallet.addressType);
 
+  // 6. Check the signature against the output the UTXO paid to.
+  final spentOutput =
+      TransactionOutput.forPayment(utxo.amount, wallet.getAddress(0));
+
   print('Signed transaction: ${signedTransaction.serialize()}');
+  print('Valid signature: ${signedTransaction.validateEcdsa(0, spentOutput)}');
 }
 ```
+
+Runnable examples covering multisig, Taproot script paths, and hand-built
+script trees live in [doc/example](https://github.com/noncelab/coconut_lib/blob/main/doc/example/README.md).
 
 ## BIP Support
 
@@ -143,6 +153,7 @@ also not supported.
 - [BIP-383](https://github.com/bitcoin/bips/blob/master/bip-0383.mediawiki): Multisig Output Script Descriptors
 - [BIP-386](https://github.com/bitcoin/bips/blob/master/bip-0386.mediawiki): Taproot Output Script Descriptors
 - [BIP-389](https://github.com/bitcoin/bips/blob/master/bip-0389.mediawiki): Multipath Descriptor Key Expressions
+- [BIP-390](https://github.com/bitcoin/bips/blob/master/bip-0390.mediawiki): musig() Key Expression for Output Script Descriptors
 
 ## Tests
 
