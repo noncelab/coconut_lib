@@ -148,9 +148,9 @@ class Psbt {
   /// Multisignature inputs are also checked against the complete vault policy.
   bool matchesVault(WalletBase wallet) {
     if (wallet is SingleSignatureVault) {
-      // 글로벌 xpub(PSBT_GLOBAL_XPUB)이 있는 경우에만 공개키/MFP/path 비교를 수행한다.
-      // 글로벌 xpub이 없는 경우(예: BlueWallet 싱글시그 PSBT)에는 input의
-      // BIP32_DERIVATION 기반 검증을 validateSingleSignaturePolicy에 위임한다.
+      // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
+      // Without it, ownership rests on the per-input BIP32_DERIVATION checks
+      // in validateSingleSignaturePolicy below.
       if (globalExtendedPublicKeyList.isNotEmpty) {
         if (globalExtendedPublicKeyList.length != 1) {
           return false;
@@ -179,9 +179,9 @@ class Psbt {
         return false;
       }
     } else if (wallet is MultisignatureVault) {
-      // 글로벌 xpub(PSBT_GLOBAL_XPUB)이 있는 경우에만 공개키 비교를 수행한다.
-      // 글로벌 xpub이 없는 경우(예: BlueWallet 멀티시그 PSBT)에는 input의
-      // BIP32_DERIVATION 기반 검증을 validateMultisignaturePolicy에 위임한다.
+      // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
+      // Without it, ownership rests on the per-input BIP32_DERIVATION checks
+      // in validateMultisignaturePolicy below.
       if (globalExtendedPublicKeyList.isNotEmpty) {
         if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
           return false;
