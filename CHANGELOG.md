@@ -1,3 +1,9 @@
+## 1.1.3
+
+- Accept single signature and multisignature PSBTs that omit PSBT_GLOBAL_XPUB,
+  such as those exported by BlueWallet
+- Keep validating PSBT_GLOBAL_XPUB when it is present
+
 ## 1.1.2
 
 - Fix WIF encoding to use Base58Check, and restore WIF decoding
