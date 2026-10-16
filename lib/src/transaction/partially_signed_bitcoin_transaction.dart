@@ -148,20 +148,25 @@ class Psbt {
   /// Multisignature inputs are also checked against the complete vault policy.
   bool matchesVault(WalletBase wallet) {
     if (wallet is SingleSignatureVault) {
-      if (globalExtendedPublicKeyList.length != 1) {
-        return false;
-      }
-      KeyStore keyStore = wallet.keyStore;
-      if (keyStore.extendedPublicKey.serializeForPsbt(toXpub: true) !=
-          globalExtendedPublicKeyList.first.publicKey) {
-        return false;
-      }
-      if (globalExtendedPublicKeyList.first.masterFingerprint !=
-          keyStore.masterFingerprint) {
-        return false;
-      }
-      if (globalExtendedPublicKeyList.first.path != wallet.derivationPath) {
-        return false;
+      // 글로벌 xpub(PSBT_GLOBAL_XPUB)이 있는 경우에만 공개키/MFP/path 비교를 수행한다.
+      // 글로벌 xpub이 없는 경우(예: BlueWallet 싱글시그 PSBT)에는 input의
+      // BIP32_DERIVATION 기반 검증을 validateSingleSignaturePolicy에 위임한다.
+      if (globalExtendedPublicKeyList.isNotEmpty) {
+        if (globalExtendedPublicKeyList.length != 1) {
+          return false;
+        }
+        KeyStore keyStore = wallet.keyStore;
+        if (keyStore.extendedPublicKey.serializeForPsbt(toXpub: true) !=
+            globalExtendedPublicKeyList.first.publicKey) {
+          return false;
+        }
+        if (globalExtendedPublicKeyList.first.masterFingerprint !=
+            keyStore.masterFingerprint) {
+          return false;
+        }
+        if (globalExtendedPublicKeyList.first.path != wallet.derivationPath) {
+          return false;
+        }
       }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
@@ -174,22 +179,27 @@ class Psbt {
         return false;
       }
     } else if (wallet is MultisignatureVault) {
-      if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
-        return false;
-      }
-      List<String> pubInVaultList = [];
-      for (KeyStore keyStore in wallet.keyStoreList) {
-        pubInVaultList
-            .add(keyStore.extendedPublicKey.serializeForPsbt(toXpub: true));
-      }
-      List<String> pubInPsbtList = [];
-      for (DerivationPath derivationPath in globalExtendedPublicKeyList) {
-        pubInPsbtList.add(derivationPath.publicKey);
-      }
-      pubInPsbtList.sort();
-      pubInVaultList.sort();
-      if (pubInVaultList.join('') != pubInPsbtList.join('')) {
-        return false;
+      // 글로벌 xpub(PSBT_GLOBAL_XPUB)이 있는 경우에만 공개키 비교를 수행한다.
+      // 글로벌 xpub이 없는 경우(예: BlueWallet 멀티시그 PSBT)에는 input의
+      // BIP32_DERIVATION 기반 검증을 validateMultisignaturePolicy에 위임한다.
+      if (globalExtendedPublicKeyList.isNotEmpty) {
+        if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
+          return false;
+        }
+        List<String> pubInVaultList = [];
+        for (KeyStore keyStore in wallet.keyStoreList) {
+          pubInVaultList
+              .add(keyStore.extendedPublicKey.serializeForPsbt(toXpub: true));
+        }
+        List<String> pubInPsbtList = [];
+        for (DerivationPath derivationPath in globalExtendedPublicKeyList) {
+          pubInPsbtList.add(derivationPath.publicKey);
+        }
+        pubInPsbtList.sort();
+        pubInVaultList.sort();
+        if (pubInVaultList.join('') != pubInPsbtList.join('')) {
+          return false;
+        }
       }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
