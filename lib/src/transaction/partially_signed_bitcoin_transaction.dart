@@ -148,20 +148,25 @@ class Psbt {
   /// Multisignature inputs are also checked against the complete vault policy.
   bool matchesVault(WalletBase wallet) {
     if (wallet is SingleSignatureVault) {
-      if (globalExtendedPublicKeyList.length != 1) {
-        return false;
-      }
-      KeyStore keyStore = wallet.keyStore;
-      if (keyStore.extendedPublicKey.serializeForPsbt(toXpub: true) !=
-          globalExtendedPublicKeyList.first.publicKey) {
-        return false;
-      }
-      if (globalExtendedPublicKeyList.first.masterFingerprint !=
-          keyStore.masterFingerprint) {
-        return false;
-      }
-      if (globalExtendedPublicKeyList.first.path != wallet.derivationPath) {
-        return false;
+      // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
+      // Without it, ownership rests on the per-input BIP32_DERIVATION checks
+      // in validateSingleSignaturePolicy below.
+      if (globalExtendedPublicKeyList.isNotEmpty) {
+        if (globalExtendedPublicKeyList.length != 1) {
+          return false;
+        }
+        KeyStore keyStore = wallet.keyStore;
+        if (keyStore.extendedPublicKey.serializeForPsbt(toXpub: true) !=
+            globalExtendedPublicKeyList.first.publicKey) {
+          return false;
+        }
+        if (globalExtendedPublicKeyList.first.masterFingerprint !=
+            keyStore.masterFingerprint) {
+          return false;
+        }
+        if (globalExtendedPublicKeyList.first.path != wallet.derivationPath) {
+          return false;
+        }
       }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
@@ -174,22 +179,27 @@ class Psbt {
         return false;
       }
     } else if (wallet is MultisignatureVault) {
-      if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
-        return false;
-      }
-      List<String> pubInVaultList = [];
-      for (KeyStore keyStore in wallet.keyStoreList) {
-        pubInVaultList
-            .add(keyStore.extendedPublicKey.serializeForPsbt(toXpub: true));
-      }
-      List<String> pubInPsbtList = [];
-      for (DerivationPath derivationPath in globalExtendedPublicKeyList) {
-        pubInPsbtList.add(derivationPath.publicKey);
-      }
-      pubInPsbtList.sort();
-      pubInVaultList.sort();
-      if (pubInVaultList.join('') != pubInPsbtList.join('')) {
-        return false;
+      // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
+      // Without it, ownership rests on the per-input BIP32_DERIVATION checks
+      // in validateMultisignaturePolicy below.
+      if (globalExtendedPublicKeyList.isNotEmpty) {
+        if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
+          return false;
+        }
+        List<String> pubInVaultList = [];
+        for (KeyStore keyStore in wallet.keyStoreList) {
+          pubInVaultList
+              .add(keyStore.extendedPublicKey.serializeForPsbt(toXpub: true));
+        }
+        List<String> pubInPsbtList = [];
+        for (DerivationPath derivationPath in globalExtendedPublicKeyList) {
+          pubInPsbtList.add(derivationPath.publicKey);
+        }
+        pubInPsbtList.sort();
+        pubInVaultList.sort();
+        if (pubInVaultList.join('') != pubInPsbtList.join('')) {
+          return false;
+        }
       }
       if (isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {

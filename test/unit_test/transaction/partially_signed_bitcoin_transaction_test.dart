@@ -148,6 +148,97 @@ void main() {
         expect(PsbtFixture.p2wshUnsigned().matchesVault(targetVault1), false);
         expect(PsbtFixture.p2wshUnsigned().matchesVault(targetVault2), false);
       });
+      test('Accepts a single signature psbt without global xpubs', () {
+        // PSBT_GLOBAL_XPUB is optional; BlueWallet and others leave it out.
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final Psbt psbt = _withoutGlobalXpubs(PsbtFixture.p2wpkhUnsigned());
+
+        expect(psbt.globalExtendedPublicKeyList, isEmpty);
+        expect(psbt.matchesVault(vault), true);
+      });
+
+      test('Rejects another vault when global xpubs are absent', () {
+        // Ownership then rests entirely on the per-input derivation checks,
+        // which re-derive keys and scripts from the vault itself.
+        final Psbt psbt = _withoutGlobalXpubs(PsbtFixture.p2wpkhUnsigned());
+
+        expect(psbt.matchesVault(WalletFixture.p2wpkhVault(passphrase: 'Z')),
+            false);
+      });
+
+      test('Accepts a multisignature psbt without global xpubs', () {
+        final MultisignatureVault vault = WalletFixture.p2wshVault();
+        final Psbt psbt = _withoutGlobalXpubs(PsbtFixture.p2wshUnsigned());
+
+        expect(psbt.globalExtendedPublicKeyList, isEmpty);
+        expect(psbt.matchesVault(vault), true);
+      });
+
+      test('Rejects another multisignature vault without global xpubs', () {
+        final Psbt psbt = _withoutGlobalXpubs(PsbtFixture.p2wshUnsigned());
+        final List<KeyStore> keyStores = ['A', 'B', 'C']
+            .map((passphrase) => KeyStore.fromSeed(
+                WalletFixture.p2wpkhVault(passphrase: passphrase).keyStore.seed,
+                AddressType.p2wsh))
+            .toList();
+
+        // Same signers, different threshold, and a smaller signer set.
+        expect(
+            psbt.matchesVault(
+                MultisignatureVault.fromKeyStoreList(keyStores, 3)),
+            false);
+        expect(
+            psbt.matchesVault(MultisignatureVault.fromKeyStoreList(
+                keyStores.sublist(0, 2), 2)),
+            false);
+      });
+
+      test('Still rejects a psbt whose global xpubs do not match', () {
+        // The checks are skipped only when the field is absent, never when it
+        // is present and wrong.
+        final Psbt psbt = PsbtFixture.p2wpkhUnsigned();
+
+        expect(psbt.globalExtendedPublicKeyList, isNotEmpty);
+        expect(psbt.matchesVault(WalletFixture.p2wpkhVault(passphrase: 'Z')),
+            false);
+      });
+
+      test('Taproot still requires global xpubs', () {
+        // Deliberate asymmetry: only the single signature and multisignature
+        // branches fall back to per-input checks. Coconut always writes the
+        // field for Taproot policy wallets, so nothing needs the fallback.
+        final TaprootVault vault = WalletFixture.p2trPolicyVault();
+        final Utxo utxo = Utxo(
+            '3a371051041b93e19c268a5080a2a98c01e4f281621d39791faeeff61e9208c0',
+            1,
+            21000,
+            "m/86'/1'/0'/0/0");
+        final Transaction tx = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, vault);
+        final Psbt psbt = Psbt.fromTransaction(tx, vault);
+
+        expect(psbt.matchesVault(vault), true);
+        expect(_withoutGlobalXpubs(psbt).matchesVault(vault), false);
+      });
+
+      test('Rejects a foreign witness utxo when global xpubs are absent', () {
+        // The derivation still names this vault's fingerprint, path and public
+        // key, so the signer check passes. Only the witness UTXO is swapped for
+        // a foreign script, which leaves the scriptPubKey comparison in
+        // validateSingleSignaturePolicy as the one thing standing in the way.
+        final SingleSignatureVault vault = WalletFixture.p2wpkhVault();
+        final SingleSignatureVault attacker =
+            WalletFixture.p2wpkhVault(passphrase: 'attacker');
+        final Psbt psbt = _withForeignWitnessUtxo(
+            _withoutGlobalXpubs(PsbtFixture.p2wpkhUnsigned()),
+            attacker.getAddress(0));
+
+        expect(psbt.globalExtendedPublicKeyList, isEmpty);
+        expect(psbt.inputs[0].bip32Derivation!.single.masterFingerprint,
+            vault.keyStore.masterFingerprint);
+        expect(psbt.matchesVault(vault), false);
+      });
+
       test('Check if psbt is for taproot vault', () {
         KeyStore keyStore1 = KeyStore.fromSeed(
             Seed.fromMnemonic(
@@ -896,4 +987,26 @@ void main() {
       });
     });
   });
+}
+
+/// The same PSBT with every PSBT_GLOBAL_XPUB record removed.
+///
+/// Also drops the coconut identifier, so the result looks like a PSBT from a
+/// wallet that never wrote either field.
+Psbt _withoutGlobalXpubs(Psbt psbt) {
+  final Map<String, dynamic> keyMap = psbt.toKeyMap();
+  keyMap['global'].removeWhere((String key, dynamic _) =>
+      key.startsWith('01') || key.startsWith('fc07636f636f6e757401'));
+  return Psbt.parse(Psbt(keyMap).serialize());
+}
+
+/// The same PSBT with input 0's witness UTXO replaced by one paying [address].
+///
+/// Everything else, the derivation metadata included, is left alone.
+Psbt _withForeignWitnessUtxo(Psbt psbt, String address) {
+  final Map<String, dynamic> keyMap = psbt.toKeyMap();
+  final int amount = psbt.inputs[0].witnessUtxo!.amount;
+  keyMap['inputs'][0]['01'] =
+      TransactionOutput.forPayment(amount, address).serialize();
+  return Psbt.parse(Psbt(keyMap).serialize());
 }
