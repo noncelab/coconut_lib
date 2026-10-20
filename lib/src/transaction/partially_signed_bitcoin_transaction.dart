@@ -201,10 +201,10 @@ class Psbt {
           return false;
         }
       }
-      if (isFromCoconut == true &&
-          (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
-        return false;
-      }
+      // if (isFromCoconut == true &&
+      //     (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
+      //   return false;
+      // }
       try {
         validateMultisignaturePolicy(wallet);
         return true;
