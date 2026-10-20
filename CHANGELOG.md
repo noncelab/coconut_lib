@@ -27,6 +27,20 @@
   Miniscript.serializeForScript
 - Add OP_VERIFY
 
+Upgrading from 1.1.3:
+
+- A vault funded before this release holds the `CLTV DROP` leaf. Restoring it
+  from stored JSON (`Policy.fromJson`, `TaprootVault.fromJson`,
+  `TaprootWallet.fromJson`) keeps its address. Rebuilding it from
+  `InheritancePolicy(...)` or `InheritancePolicy.fromDescriptorAndLocktime`
+  derives the new address instead, so use `LegacyInheritancePolicy` or
+  `InheritancePolicy.toLegacy()` there
+- Descriptors written by 1.1.3 and earlier spell the leaf like the new one, so
+  they read as the new leaf; restore such vaults from JSON, or build them with
+  `LegacyInheritancePolicy`
+- `InheritancePolicy` addresses change for every locktime, not only below 2^23,
+  because the leaf now ends in `VERIFY` instead of `DROP`
+
 ## 1.1.3
 
 - Accept single signature and multisignature PSBTs that omit PSBT_GLOBAL_XPUB,
