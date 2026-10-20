@@ -104,17 +104,85 @@ sealed class TapTree {
     ];
   }
 
+  /// [parse] for a tree stored beside the policies it was built from.
+  ///
+  /// Trees stored before [LegacyInheritancePolicy] spell every inheritance leaf
+  /// `and_v(v:after(N),pk(K))`, though the leaf was committed with `CLTV DROP`.
+  /// The expression cannot tell the two apart, so such a leaf takes the stored
+  /// policy for the same beneficiary and locktime, which does.
+  static TapTree parseStored(
+      String treeExpression, List<Policy> storedPolicies) {
+    return _parse(treeExpression, (String leaf) {
+      try {
+        return Policy.fromMiniscript(leaf);
+      } on RangeError {
+        // `after(0)` is no standard leaf; only a stored legacy leaf holds it.
+        final Policy? stored = _storedInheritanceLeaf(leaf, storedPolicies);
+        if (stored == null) {
+          rethrow;
+        }
+        return stored;
+      }
+    }).mapLeaves((Policy leaf) {
+      if (leaf is! InheritancePolicy || leaf is LegacyInheritancePolicy) {
+        return leaf;
+      }
+      return _storedInheritancePolicy(
+              leaf.locktime, leaf.beneficiaryKeyStore, storedPolicies) ??
+          leaf;
+    });
+  }
+
+  /// The stored inheritance policy for [locktime] and [beneficiary], if any.
+  static Policy? _storedInheritancePolicy(
+      int locktime, KeyStore beneficiary, List<Policy> storedPolicies) {
+    for (final Policy stored in storedPolicies) {
+      if (stored is InheritancePolicy &&
+          stored.locktime == locktime &&
+          stored.beneficiaryKeyStore.hasSamePublicIdentity(beneficiary)) {
+        return stored;
+      }
+    }
+    return null;
+  }
+
+  /// [_storedInheritancePolicy] for a leaf written as miniscript.
+  static Policy? _storedInheritanceLeaf(
+      String leafExpression, List<Policy> storedPolicies) {
+    final RegExpMatch? standard =
+        RegExp(r'^and_v\(v:after\((\d+)\),pk\((.+)\)\)$')
+            .firstMatch(leafExpression);
+    final RegExpMatch? reversed =
+        RegExp(r'^and_v\(v:pk\((.+)\),after\((\d+)\)\)$')
+            .firstMatch(leafExpression);
+    final int? locktime = standard != null
+        ? int.parse(standard.group(1)!)
+        : reversed != null
+            ? int.parse(reversed.group(2)!)
+            : null;
+    final String? key = standard?.group(2) ?? reversed?.group(1);
+    if (locktime == null || key == null) {
+      return null;
+    }
+    return _storedInheritancePolicy(
+        locktime, Policy._parseKeyOriginExpression(key), storedPolicies);
+  }
+
   /// Parse a BIP-386 `TREE` expression.
   ///
   /// Leaf scripts are read with [Policy.fromMiniscript].
-  static TapTree parse(String treeExpression) {
+  static TapTree parse(String treeExpression) =>
+      _parse(treeExpression, Policy.fromMiniscript);
+
+  static TapTree _parse(
+      String treeExpression, Policy Function(String leafExpression) readLeaf) {
     final String expression = treeExpression.trim();
     if (expression.isEmpty) {
       throw const FormatException('Empty tap tree expression.');
     }
 
     if (!expression.startsWith('{')) {
-      return TapLeaf(Policy.fromMiniscript(expression));
+      return TapLeaf(readLeaf(expression));
     }
     if (!expression.endsWith('}')) {
       throw FormatException('Unbalanced tap tree expression: $treeExpression');
@@ -128,8 +196,8 @@ sealed class TapTree {
     }
 
     return TapBranch(
-      TapTree.parse(inner.substring(0, split)),
-      TapTree.parse(inner.substring(split + 1)),
+      _parse(inner.substring(0, split), readLeaf),
+      _parse(inner.substring(split + 1), readLeaf),
     );
   }
 

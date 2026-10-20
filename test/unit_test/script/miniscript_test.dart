@@ -125,22 +125,22 @@ void main() {
             policy.toScript(0).rawSerialize().toLowerCase());
       });
 
-      test('after compiles to CLTV drop pattern', () {
+      test('after compiles to CLTV VERIFY pattern', () {
         final String fromMiniscript = Miniscript.after(42).serializeForScript();
         final String expected = Script(<dynamic>[
           Converter.intToLittleEndianBytes(42, 4),
           ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
         ]).rawSerialize();
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
       });
 
-      test('older compiles to CSV drop pattern', () {
+      test('older compiles to CSV VERIFY pattern', () {
         final String fromMiniscript = Miniscript.older(9).serializeForScript();
         final String expected = Script(<dynamic>[
           Converter.intToLittleEndianBytes(9, 4),
           ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
         ]).rawSerialize();
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
       });
@@ -154,7 +154,7 @@ void main() {
         final String expected = Script(<dynamic>[
           Converter.intToLittleEndianBytes(7, 4),
           ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
           Codec.decodeHex(pkHex),
           ScriptOperationCode.getHex('OP_CHECKSIG'),
         ]).rawSerialize();
@@ -176,7 +176,7 @@ void main() {
           ScriptOperationCode.getHex('OP_CHECKSIGVERIFY'),
           Converter.intToLittleEndianBytes(7, 4),
           ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
         ]).rawSerialize();
         expect(fromMiniscript.toLowerCase(), expected.toLowerCase());
       });

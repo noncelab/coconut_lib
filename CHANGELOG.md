@@ -1,3 +1,46 @@
+## 1.1.4
+
+- Build the InheritancePolicy leaf as `<N> CLTV VERIFY <K> CHECKSIG`, which is
+  what miniscript `and_v(v:after(N),pk(K))` compiles to (BIP-379); earlier
+  versions built `<N> CLTV DROP <K> CHECKSIG`. The two leaves behave alike for
+  N >= 1 but commit to different leaf hashes, so new inheritance vaults derive
+  different addresses than they did before
+- Push the InheritancePolicy locktime as a minimal script number, as a
+  miniscript compiler does: `OP_1`..`OP_16` for 1..16, otherwise the fewest
+  bytes. It was always four bytes, which gave another leaf and address for any
+  locktime below 2^23, such as a block height; Unix timestamps are unchanged
+- Reject InheritancePolicy locktime 0 and keep the BIP-379 range
+  1 <= N < 2^31: `<0> CLTV VERIFY` can never be spent
+- Add LegacyInheritancePolicy for the `CLTV DROP` leaf, so vaults funded under
+  it keep deriving their address and keep spending, including locktime 0 and
+  the four-byte locktime push. Its miniscript spelling is
+  `and_v(after_drop(N),pk(K))`: no standard miniscript compiles to `DROP`, so
+  other tools reject the descriptor instead of deriving a different address.
+  InheritancePolicy.toLegacy() converts an existing policy
+- Read inheritance policies stored by earlier versions as the legacy leaf: JSON
+  with `type: inheritance` and no `scriptForm` is a `CLTV DROP` leaf, in
+  policies, vaults and wallets, with or without a stored tapTree. Policies
+  written now carry `scriptForm: verify`
+- Add TapTree.parseStored, which resolves a stored tree's inheritance leaves
+  against the policies saved beside it
+- Compile miniscript `after` and `older` to `VERIFY` instead of `DROP` in
+  Miniscript.serializeForScript
+- Add OP_VERIFY
+
+Upgrading from 1.1.3:
+
+- A vault funded before this release holds the `CLTV DROP` leaf. Restoring it
+  from stored JSON (`Policy.fromJson`, `TaprootVault.fromJson`,
+  `TaprootWallet.fromJson`) keeps its address. Rebuilding it from
+  `InheritancePolicy(...)` or `InheritancePolicy.fromDescriptorAndLocktime`
+  derives the new address instead, so use `LegacyInheritancePolicy` or
+  `InheritancePolicy.toLegacy()` there
+- Descriptors written by 1.1.3 and earlier spell the leaf like the new one, so
+  they read as the new leaf; restore such vaults from JSON, or build them with
+  `LegacyInheritancePolicy`
+- `InheritancePolicy` addresses change for every locktime, not only below 2^23,
+  because the leaf now ends in `VERIFY` instead of `DROP`
+
 ## 1.1.3
 
 - Accept single signature and multisignature PSBTs that omit PSBT_GLOBAL_XPUB,

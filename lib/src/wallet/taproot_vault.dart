@@ -167,8 +167,9 @@ class TaprootVault extends TaprootWalletBase {
     if (tapTreeJson != null && tapTreeJson is! String) {
       throw const FormatException('TaprootVault tapTree must be a string.');
     }
-    final TapTree? tapTree =
-        tapTreeJson == null ? null : TapTree.parse(tapTreeJson as String);
+    final TapTree? tapTree = tapTreeJson == null
+        ? null
+        : TapTree.parseStored(tapTreeJson as String, policies);
 
     return TaprootVault._(keyStores, policies, path, tapTree: tapTree);
   }

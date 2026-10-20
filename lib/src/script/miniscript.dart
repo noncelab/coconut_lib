@@ -223,7 +223,7 @@ class Miniscript {
         return <dynamic>[
           nBytes,
           ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
         ];
 
       case MiniscriptOperation.older:
@@ -236,7 +236,7 @@ class Miniscript {
         return <dynamic>[
           nBytes,
           ScriptOperationCode.getHex('OP_CHECKSEQUENCEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
         ];
 
       case MiniscriptOperation.and_v:
@@ -246,7 +246,7 @@ class Miniscript {
         final left = children[0];
         final right = children[1];
 
-        // inheritance 패턴: and_v(v:pk, after) → timelock + DROP + pubkey + CHECKSIG
+        // inheritance 패턴: and_v(v:pk, after) → timelock + VERIFY + pubkey + CHECKSIG
         if (left.op == MiniscriptOperation.v &&
             left.children.length == 1 &&
             left.children[0].op == MiniscriptOperation.pk &&
@@ -268,7 +268,7 @@ class Miniscript {
           return <dynamic>[
             nBytes,
             ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-            ScriptOperationCode.getHex('OP_DROP'),
+            ScriptOperationCode.getHex('OP_VERIFY'),
             pkBytes,
             ScriptOperationCode.getHex('OP_CHECKSIG'),
           ];

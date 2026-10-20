@@ -134,7 +134,7 @@ void main() {
       final Uint8List scriptWithLen = Uint8List.fromList(
           [...Codec.encodeVariableInteger(scriptBytes.length), ...scriptBytes]);
       final List<dynamic> cmds = Script.parseToCommand(scriptWithLen);
-      // InheritancePolicy script shape: <locktime> CLTV DROP <pubkey> CHECKSIG
+      // Inheritance script shape: <locktime> CLTV DROP|VERIFY <pubkey> CHECKSIG
       Uint8List pubkey =
           cmds.whereType<Uint8List>().last; // last pushed data is pubkey
       // Tapscript expects 32-byte x-only pubkey. Some older fixtures may use
@@ -500,13 +500,13 @@ void main() {
                   'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
               passphrase: utf8.encode('B')),
           AddressType.p2tr);
-      Policy policy1 = InheritancePolicy.fromDescriptorAndLocktime(
+      Policy policy1 = LegacyInheritancePolicy.fromDescriptorAndLocktime(
           WalletFixture.beneficiaryVault(passphrase: 'A').descriptor,
           1767225600);
-      Policy policy2 = InheritancePolicy.fromDescriptorAndLocktime(
+      Policy policy2 = LegacyInheritancePolicy.fromDescriptorAndLocktime(
           WalletFixture.beneficiaryVault(passphrase: 'B').descriptor,
           1767225600);
-      Policy policy3 = InheritancePolicy.fromDescriptorAndLocktime(
+      Policy policy3 = LegacyInheritancePolicy.fromDescriptorAndLocktime(
           WalletFixture.beneficiaryVault(passphrase: 'C').descriptor,
           1767225600);
       TaprootVault dadSingleVault =
@@ -579,13 +579,13 @@ void main() {
                   'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
               passphrase: utf8.encode('B')),
           AddressType.p2tr);
-      Policy policy1 = InheritancePolicy.fromDescriptorAndLocktime(
+      Policy policy1 = LegacyInheritancePolicy.fromDescriptorAndLocktime(
           WalletFixture.beneficiaryVault(passphrase: 'P1').descriptor,
           1767225600);
-      Policy policy2 = InheritancePolicy.fromDescriptorAndLocktime(
+      Policy policy2 = LegacyInheritancePolicy.fromDescriptorAndLocktime(
           WalletFixture.beneficiaryVault(passphrase: 'P2').descriptor,
           1767225600);
-      Policy policy3 = InheritancePolicy.fromDescriptorAndLocktime(
+      Policy policy3 = LegacyInheritancePolicy.fromDescriptorAndLocktime(
           WalletFixture.beneficiaryVault(passphrase: 'P3').descriptor,
           1767225600);
       TaprootVault dadSingleVault =
@@ -750,11 +750,15 @@ void main() {
           AddressType.p2tr);
 
       const int locktime = 1767225600;
+      // The default grouping of three leaves is {{x,y},z} with the leaf
+      // hashes in order, so it equals {A,{B,C}} whenever A hashes highest.
+      // These locktimes keep A off that spot, which is what lets the test
+      // tell the two shapes apart.
       final Policy policyA = InheritancePolicy(keyStore('heir A'), locktime);
       final Policy policyB =
-          InheritancePolicy(keyStore('heir B'), locktime + 1);
+          InheritancePolicy(keyStore('heir B'), locktime + 2);
       final Policy policyC =
-          InheritancePolicy(keyStore('heir C'), locktime + 2);
+          InheritancePolicy(keyStore('heir C'), locktime + 1);
 
       // A alone on one side, B and C paired on the other.
       final TaprootVault vault = TaprootVault.fromTapTree(
@@ -810,8 +814,157 @@ void main() {
               .getSignedTransaction(AddressType.p2tr);
 
       expect(signedTx.inputs[0].witnessList.length, 3);
+      // The standard leaf is <N> CLTV VERIFY (0x69) <K> CHECKSIG.
+      expect(Codec.decodeHex(signedTx.inputs[0].witnessList[1])[5], 0xb1);
+      expect(Codec.decodeHex(signedTx.inputs[0].witnessList[1])[6], 0x69);
       expect(Codec.decodeHex(signedTx.inputs[0].witnessList[2]).length,
           33 + 32 * 2);
+      expect(validateScriptPath(prevTx.serialize(), signedTx.serialize(), 0),
+          isTrue);
+    });
+
+    test('P2TR Script Path spending (block height and OP_N locktimes)', () {
+      KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
+          Seed.fromMnemonic(
+              utf8.encode(
+                  'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+              passphrase: utf8.encode(passphrase)),
+          AddressType.p2tr);
+
+      // Pushed as OP_10, a three-byte number, and a four-byte number.
+      const Map<int, String> expectedPush = {
+        10: '5ab169',
+        900000: '03a0bb0db169',
+        8388608: '0400008000b169',
+      };
+
+      for (final MapEntry<int, String> entry in expectedPush.entries) {
+        final int locktime = entry.key;
+        final KeyStore owner = keyStore('owner');
+        final KeyStore heir = keyStore('heir');
+        final TaprootVault vault = TaprootVault.fromKeyStoreList(
+            [owner], [InheritancePolicy(heir, locktime)]);
+
+        final TaprootWallet wallet =
+            TaprootWallet.fromDescriptor(vault.descriptor);
+        expect(wallet.getAddress(0), vault.getAddress(0),
+            reason: 'locktime $locktime');
+
+        final Transaction prevTx = Transaction.withInputsAndOutputs(
+          [
+            TransactionInput.forPayment(
+              '0000000000000000000000000000000000000000000000000000000000000000',
+              0,
+            )
+          ],
+          [TransactionOutput.forPayment(21000, vault.getAddress(0))],
+          AddressType.p2tr,
+        );
+        final Utxo utxo =
+            Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/0");
+        final Transaction tx = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, wallet);
+        tx.setPolicy(wallet.policyList[0]);
+
+        final Psbt unsignedPsbt = Psbt.fromTransaction(tx, wallet);
+        expect(unsignedPsbt.matchesVault(vault), true);
+
+        final TaprootVault heirVault =
+            TaprootVault.fromDescriptor(vault.descriptor);
+        heirVault.bindSeedToBeneficiaryKeyStore(heir.seed);
+        final Transaction signedTx =
+            Psbt.parse(heirVault.addSignatureToPsbt(unsignedPsbt.serialize()))
+                .getSignedTransaction(AddressType.p2tr);
+
+        expect(signedTx.inputs[0].witnessList[1], startsWith(entry.value),
+            reason: 'locktime $locktime');
+        expect(validateScriptPath(prevTx.serialize(), signedTx.serialize(), 0),
+            isTrue,
+            reason: 'locktime $locktime');
+      }
+    });
+
+    test('P2TR Script Path spending (legacy OP_DROP inheritance leaf)', () {
+      KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
+          Seed.fromMnemonic(
+              utf8.encode(
+                  'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+              passphrase: utf8.encode(passphrase)),
+          AddressType.p2tr);
+
+      const int locktime = 1767225600;
+      final KeyStore owner = keyStore('owner');
+      final KeyStore heir = keyStore('heir');
+
+      final TaprootVault legacyVault = TaprootVault.fromKeyStoreList(
+          [owner], [LegacyInheritancePolicy(heir, locktime)]);
+      final TaprootVault standardVault = TaprootVault.fromKeyStoreList(
+          [owner], [InheritancePolicy(heir, locktime)]);
+
+      // CLTV DROP and CLTV VERIFY commit to different leaves, so the same
+      // owner, heir and locktime land on different addresses.
+      expect(legacyVault.getAddress(0), isNot(standardVault.getAddress(0)));
+
+      // The descriptor says the leaf is legacy, so a watch-only import
+      // derives the funded address instead of the standard one.
+      expect(legacyVault.descriptor, contains('after_drop($locktime)'));
+      expect(standardVault.descriptor, isNot(contains('after_drop')));
+      final TaprootWallet wallet =
+          TaprootWallet.fromDescriptor(legacyVault.descriptor);
+      expect(wallet.policyList[0], isA<LegacyInheritancePolicy>());
+      expect(wallet.getAddress(0), legacyVault.getAddress(0));
+      expect(wallet.getAddress(5), legacyVault.getAddress(5));
+      expect(wallet.getAddress(0, isChange: true),
+          legacyVault.getAddress(0, isChange: true));
+
+      // So does a JSON round trip.
+      final TaprootVault restored = TaprootVault.fromJson(legacyVault.toJson());
+      expect(restored.policyList[0], isA<LegacyInheritancePolicy>());
+      expect(restored.getAddress(0), legacyVault.getAddress(0));
+
+      final Transaction prevTx = Transaction.withInputsAndOutputs(
+        [
+          TransactionInput.forPayment(
+            '0000000000000000000000000000000000000000000000000000000000000000',
+            0,
+          )
+        ],
+        [TransactionOutput.forPayment(21000, legacyVault.getAddress(0))],
+        AddressType.p2tr,
+      );
+      final Utxo utxo =
+          Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/0");
+
+      final Transaction tx = Transaction.forSinglePayment([utxo],
+          UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, wallet);
+      tx.setPolicy(wallet.policyList[0]);
+
+      final Psbt unsignedPsbt = Psbt.fromTransaction(tx, wallet);
+      expect(unsignedPsbt.inputs[0].tapLeafScript, isNotNull);
+      // The PSBT carries the legacy script itself: CLTV, then OP_DROP (0x75).
+      final List<int> leaf =
+          Codec.decodeHex(unsignedPsbt.inputs[0].tapLeafScript!.rawSerialize());
+      expect(leaf[5], 0xb1);
+      expect(leaf[6], 0x75);
+      expect(unsignedPsbt.matchesVault(legacyVault), true);
+      expect(unsignedPsbt.matchesVault(restored), true);
+      // The standard leaf is a different script, so its vault does not match.
+      expect(unsignedPsbt.matchesVault(standardVault), false);
+
+      final TaprootVault heirVault =
+          TaprootVault.fromDescriptor(legacyVault.descriptor);
+      heirVault.bindSeedToBeneficiaryKeyStore(heir.seed);
+
+      TaprootVault tempVault = TaprootVault.fromJson(heirVault.toJson());
+      expect(heirVault.getAddress(0), tempVault.getAddress(0));
+
+      final Transaction signedTx =
+          Psbt.parse(heirVault.addSignatureToPsbt(unsignedPsbt.serialize()))
+              .getSignedTransaction(AddressType.p2tr);
+
+      expect(signedTx.inputs[0].witnessList.length, 3);
+      expect(signedTx.inputs[0].witnessList[0].length, 128);
+      expect(Codec.decodeHex(signedTx.inputs[0].witnessList[1])[6], 0x75);
       expect(validateScriptPath(prevTx.serialize(), signedTx.serialize(), 0),
           isTrue);
     });

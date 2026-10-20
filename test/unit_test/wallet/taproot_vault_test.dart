@@ -315,7 +315,7 @@ void main() {
 }
 
 /// Inheritance leaf with a stable key and locktime, named A, B, C, ...
-Policy _leaf(String name) => InheritancePolicy(
+Policy _leaf(String name) => LegacyInheritancePolicy(
     KeyStoreFixture.common(AddressType.p2tr, passphrase: 'leaf $name'),
     1767225600);
 
