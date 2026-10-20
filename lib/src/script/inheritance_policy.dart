@@ -51,6 +51,8 @@ class InheritancePolicy extends Policy {
     return true;
   }
 
+  /// `<N> CLTV VERIFY <K> CHECKSIG`, what miniscript `and_v(v:after(N),pk(K))`
+  /// compiles to (BIP-379).
   @override
   Script toScript(int addressIndex, {bool isChange = false}) {
     List<dynamic> cmds = [];
@@ -60,17 +62,24 @@ class InheritancePolicy extends Policy {
     Uint8List locktimeBytes = Converter.intToLittleEndianBytes(locktime, 4);
     cmds.add(locktimeBytes);
     cmds.add(ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'));
-    cmds.add(ScriptOperationCode.getHex('OP_DROP'));
+    cmds.add(ScriptOperationCode.getHex('OP_VERIFY'));
     cmds.add(beneficiaryPublicKey);
     cmds.add(ScriptOperationCode.getHex('OP_CHECKSIG'));
 
     return Script(cmds);
   }
 
+  /// The same beneficiary and locktime as a [LegacyInheritancePolicy].
+  ///
+  /// For vaults funded before the leaf switched from `CLTV DROP` to
+  /// `CLTV VERIFY`: only the legacy leaf derives their address.
+  LegacyInheritancePolicy toLegacy() =>
+      LegacyInheritancePolicy(beneficiaryKeyStore, locktime);
+
   /// The leaf as standard miniscript, matching what [toScript] builds.
   ///
-  /// `and_v(v:after(N),pk(K))` compiles to `<N> CLTV DROP <K> CHECKSIG`, the
-  /// script this policy commits to. The reverse spelling,
+  /// `and_v(v:after(N),pk(K))` compiles to `<N> CLTV VERIFY <K> CHECKSIG`, the
+  /// script [toScript] builds. The reverse spelling,
   /// `and_v(v:pk(K),after(N))`, compiles to `<K> CHECKSIGVERIFY <N> CLTV` — a
   /// different script, a different leaf hash, and so a different address for
   /// anyone deriving from the descriptor. Earlier versions emitted it, so
@@ -92,6 +101,9 @@ class InheritancePolicy extends Policy {
   String toJson() {
     return jsonEncode({
       'type': 'inheritance',
+      // Absent in JSON stored before the leaf became CLTV VERIFY; such JSON
+      // describes a CLTV DROP leaf, see [Policy.fromJson].
+      'scriptForm': 'verify',
       'locktime': locktime,
       // Keep the same JSON convention as the rest of the library:
       // nested objects are stored as JSON strings.

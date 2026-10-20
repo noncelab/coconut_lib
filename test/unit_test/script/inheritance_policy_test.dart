@@ -125,7 +125,7 @@ void main() {
       test('spells the timelock before the key, matching toScript', () {
         final policy = InheritancePolicy.fromDescriptorAndLocktime(
             beneficiaryVault.descriptor, 987654321);
-        // and_v(v:after(N),pk(K)) compiles to <N> CLTV DROP <K> CHECKSIG.
+        // and_v(v:after(N),pk(K)) compiles to <N> CLTV VERIFY <K> CHECKSIG.
         // The reverse spelling is a different script, so a wallet reading the
         // descriptor would derive a different leaf and a different address.
         expect(policy.toMiniscript(), startsWith('and_v(v:after(987654321),'));
@@ -147,10 +147,10 @@ void main() {
                 .getPublicKeyBytes(0, isXOnly: true);
 
         final List<int> compiled = [
-          // v:after(N) -> <N> CHECKLOCKTIMEVERIFY DROP
+          // v:after(N) -> <N> CHECKLOCKTIMEVERIFY VERIFY
           4, ...Converter.intToLittleEndianBytes(locktime, 4),
           ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'),
-          ScriptOperationCode.getHex('OP_DROP'),
+          ScriptOperationCode.getHex('OP_VERIFY'),
           // pk(K) -> <K> CHECKSIG
           32, ...pubkey,
           ScriptOperationCode.getHex('OP_CHECKSIG'),
@@ -162,17 +162,151 @@ void main() {
     });
 
     group('toScript', () {
-      test('encodes CLTV + DROP + x-only pubkey + CHECKSIG', () {
+      test('encodes CLTV + VERIFY + x-only pubkey + CHECKSIG', () {
         final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
             beneficiaryVault.descriptor, 1000);
         final Script s = p.toScript(0);
         expect(s.commands.length, 5);
         expect(s.commands[1],
             ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'));
-        expect(s.commands[2], ScriptOperationCode.getHex('OP_DROP'));
+        expect(s.commands[2], ScriptOperationCode.getHex('OP_VERIFY'));
         expect(s.commands[3], isA<Uint8List>());
         expect((s.commands[3] as Uint8List).length, 32);
         expect(s.commands[4], ScriptOperationCode.getHex('OP_CHECKSIG'));
+      });
+    });
+
+    group('toLegacy().toScript', () {
+      test('encodes CLTV + DROP + x-only pubkey + CHECKSIG', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1000);
+        final Script s = p.toLegacy().toScript(0);
+        expect(s.commands.length, 5);
+        expect(s.commands[1],
+            ScriptOperationCode.getHex('OP_CHECKLOCKTIMEVERIFY'));
+        expect(s.commands[2], ScriptOperationCode.getHex('OP_DROP'));
+        expect(s.commands[3], (p.toScript(0).commands[3] as Uint8List));
+        expect(s.commands[4], ScriptOperationCode.getHex('OP_CHECKSIG'));
+      });
+
+      test('differs from toScript only in the cleanup opcode', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1000);
+        final String standard = p.toScript(0).rawSerialize();
+        final String legacy = p.toLegacy().toScript(0).rawSerialize();
+        expect(legacy, isNot(standard));
+        expect(legacy.replaceFirst('75', '69'), standard);
+      });
+    });
+
+    group('toScript / toLegacy().toScript bytes', () {
+      List<int> expectedLeaf(int locktime, Uint8List pubkey, int cleanupOp) => [
+            4, ...Converter.intToLittleEndianBytes(locktime, 4), // <N>
+            0xb1, // OP_CHECKLOCKTIMEVERIFY
+            cleanupOp,
+            32, ...pubkey, // <K>
+            0xac, // OP_CHECKSIG
+          ];
+
+      test('toScript emits CLTV VERIFY (0x69) as raw bytes', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1767225600);
+        final Uint8List pubkey = beneficiaryVault.keyStoreList[0]
+            .getPublicKeyBytes(0, isXOnly: true);
+
+        expect(
+            p.toScript(0).rawSerialize(),
+            Codec.encodeHex(
+                Uint8List.fromList(expectedLeaf(1767225600, pubkey, 0x69))));
+      });
+
+      test('toLegacy().toScript emits CLTV DROP (0x75) as raw bytes', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1767225600);
+        final Uint8List pubkey = beneficiaryVault.keyStoreList[0]
+            .getPublicKeyBytes(0, isXOnly: true);
+
+        expect(
+            p.toLegacy().toScript(0).rawSerialize(),
+            Codec.encodeHex(
+                Uint8List.fromList(expectedLeaf(1767225600, pubkey, 0x75))));
+      });
+
+      test('both follow address index and change branch', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1000);
+
+        for (final bool isChange in [false, true]) {
+          for (final int index in [0, 1, 7]) {
+            final Uint8List pubkey = beneficiaryVault.keyStoreList[0]
+                .getPublicKeyBytes(index, isChange: isChange, isXOnly: true);
+            expect(
+                p.toScript(index, isChange: isChange).rawSerialize(),
+                Codec.encodeHex(
+                    Uint8List.fromList(expectedLeaf(1000, pubkey, 0x69))));
+            expect(
+                p.toLegacy().toScript(index, isChange: isChange).rawSerialize(),
+                Codec.encodeHex(
+                    Uint8List.fromList(expectedLeaf(1000, pubkey, 0x75))));
+          }
+        }
+      });
+
+      test('differ only in the cleanup opcode, for any locktime', () {
+        for (final int locktime in [0, 1, 1000, 1767225600, 0x7fffffff]) {
+          final InheritancePolicy p =
+              InheritancePolicy(beneficiaryVault.keyStoreList[0], locktime);
+          final List<int> standard =
+              Codec.decodeHex(p.toScript(0).rawSerialize());
+          final List<int> legacy =
+              Codec.decodeHex(p.toLegacy().toScript(0).rawSerialize());
+
+          expect(legacy.length, standard.length);
+          final List<int> diff = [
+            for (int i = 0; i < standard.length; i++)
+              if (standard[i] != legacy[i]) i
+          ];
+          expect(diff, [6]); // 1 + 4 (push N) + 1 (CLTV) -> cleanup opcode
+          expect(standard[6], 0x69);
+          expect(legacy[6], 0x75);
+        }
+      });
+
+      test('toMiniscript describes the standard script, not the legacy one',
+          () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1000);
+
+        final InheritancePolicy restored =
+            InheritancePolicy.fromMiniscript(p.toMiniscript())
+                as InheritancePolicy;
+        expect(
+            restored.toScript(0).rawSerialize(), p.toScript(0).rawSerialize());
+        expect(restored.toScript(0).rawSerialize(),
+            isNot(p.toLegacy().toScript(0).rawSerialize()));
+      });
+    });
+
+    group('tapleaf hash', () {
+      Uint8List leafHash(String rawScriptHex) {
+        final Uint8List script = Codec.decodeHex(rawScriptHex);
+        return Hash.taggedHash(
+            'TapLeaf', Uint8List.fromList([0xc0, script.length, ...script]));
+      }
+
+      test('getTapleafHash commits to the toScript (VERIFY) leaf', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1000);
+
+        expect(p.getTapleafHash(0), leafHash(p.toScript(0).rawSerialize()));
+      });
+
+      test('the legacy leaf hashes to a different tapleaf', () {
+        final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault.descriptor, 1000);
+
+        expect(leafHash(p.toLegacy().toScript(0).rawSerialize()),
+            isNot(p.getTapleafHash(0)));
       });
     });
 

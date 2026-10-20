@@ -104,6 +104,30 @@ sealed class TapTree {
     ];
   }
 
+  /// [parse] for a tree stored beside the policies it was built from.
+  ///
+  /// Trees stored before [LegacyInheritancePolicy] spell every inheritance leaf
+  /// `and_v(v:after(N),pk(K))`, though the leaf was committed with `CLTV DROP`.
+  /// The expression cannot tell the two apart, so such a leaf takes the stored
+  /// policy for the same beneficiary and locktime, which does.
+  static TapTree parseStored(
+      String treeExpression, List<Policy> storedPolicies) {
+    return parse(treeExpression).mapLeaves((Policy leaf) {
+      if (leaf is! InheritancePolicy || leaf is LegacyInheritancePolicy) {
+        return leaf;
+      }
+      for (final Policy stored in storedPolicies) {
+        if (stored is InheritancePolicy &&
+            stored.locktime == leaf.locktime &&
+            stored.beneficiaryKeyStore
+                .hasSamePublicIdentity(leaf.beneficiaryKeyStore)) {
+          return stored;
+        }
+      }
+      return leaf;
+    });
+  }
+
   /// Parse a BIP-386 `TREE` expression.
   ///
   /// Leaf scripts are read with [Policy.fromMiniscript].

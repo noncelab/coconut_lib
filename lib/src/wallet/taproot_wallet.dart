@@ -22,6 +22,12 @@ class TaprootWallet extends TaprootWalletBase {
   }
 
   static Policy _publicOnlyPolicy(Policy policy) {
+    // Before InheritancePolicy: rebuilding a legacy leaf as the standard one
+    // would derive a different address.
+    if (policy is LegacyInheritancePolicy) {
+      return LegacyInheritancePolicy(
+          KeyStore.publicOnly(policy.beneficiaryKeyStore), policy.locktime);
+    }
     if (policy is InheritancePolicy) {
       return InheritancePolicy(
           KeyStore.publicOnly(policy.beneficiaryKeyStore), policy.locktime);
@@ -174,8 +180,9 @@ class TaprootWallet extends TaprootWalletBase {
     if (tapTreeJson != null && tapTreeJson is! String) {
       throw const FormatException('TaprootWallet tapTree must be a string.');
     }
-    final TapTree? tapTree =
-        tapTreeJson == null ? null : TapTree.parse(tapTreeJson as String);
+    final TapTree? tapTree = tapTreeJson == null
+        ? null
+        : TapTree.parseStored(tapTreeJson as String, policies);
 
     return TaprootWallet._(keyStores, policies, path, tapTree: tapTree);
   }

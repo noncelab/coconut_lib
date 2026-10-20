@@ -37,6 +37,19 @@ abstract final class WalletFixture {
     final keyStoreB = KeyStore.fromSeed(
         SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
     final policies = ['A', 'B', 'C']
+        .map((passphrase) => LegacyInheritancePolicy.fromDescriptorAndLocktime(
+            beneficiaryVault(passphrase: passphrase).descriptor, 1767225600))
+        .toList();
+    return TaprootVault.fromKeyStoreList([keyStoreA, keyStoreB], policies);
+  }
+
+  /// [p2trPolicyVault] with the miniscript-standard `CLTV VERIFY` leaves.
+  static TaprootVault p2trStandardPolicyVault() {
+    final keyStoreA = KeyStore.fromSeed(
+        SeedFixture.common(passphrase: 'A'), AddressType.p2tr);
+    final keyStoreB = KeyStore.fromSeed(
+        SeedFixture.common(passphrase: 'B'), AddressType.p2tr);
+    final policies = ['A', 'B', 'C']
         .map((passphrase) => InheritancePolicy.fromDescriptorAndLocktime(
             beneficiaryVault(passphrase: passphrase).descriptor, 1767225600))
         .toList();

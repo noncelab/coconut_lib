@@ -58,7 +58,10 @@ abstract class Policy {
   static Policy fromMiniscript(String miniscript) {
     // The second form is the spelling emitted before the argument order was
     // corrected; see InheritancePolicy.fromMiniscript.
-    if (RegExp(r'^and_v\(v:after\(\d+\),pk\(.+\)\)$').hasMatch(miniscript) ||
+    if (RegExp(r'^and_v\(after_drop\(\d+\),pk\(.+\)\)$').hasMatch(miniscript)) {
+      return LegacyInheritancePolicy.fromMiniscript(miniscript);
+    } else if (RegExp(r'^and_v\(v:after\(\d+\),pk\(.+\)\)$')
+            .hasMatch(miniscript) ||
         RegExp(r'^and_v\(v:pk\(.+\),after\(\d+\)\)$').hasMatch(miniscript)) {
       return InheritancePolicy.fromMiniscript(miniscript);
     } else if (RegExp(r'^pk\(.+\)$').hasMatch(miniscript)) {
@@ -112,7 +115,15 @@ abstract class Policy {
     if (type != null) {
       switch (type) {
         case 'inheritance':
-          return InheritancePolicy.fromJson(jsonStr);
+          // Every inheritance policy stored before `scriptForm` existed was
+          // built with CLTV DROP, so a missing field means the legacy leaf and
+          // its address must not change.
+          if (map['scriptForm'] == 'verify') {
+            return InheritancePolicy.fromJson(jsonStr);
+          }
+          return LegacyInheritancePolicy.fromJson(jsonStr);
+        case 'legacyInheritance':
+          return LegacyInheritancePolicy.fromJson(jsonStr);
         case 'singleSignature':
           return SingleSignaturePolicy.fromJson(jsonStr);
         case 'multisignature':

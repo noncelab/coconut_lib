@@ -23,6 +23,7 @@ class ScriptOperationCode {
     'OP_CHECKMULTISIG': 0xae,
     'OP_CHECKLOCKTIMEVERIFY': 0xb1,
     'OP_CHECKSEQUENCEVERIFY': 0xb2,
+    'OP_VERIFY': 0x69,
     'OP_DROP': 0x75,
     'OP_CHECKSIG': 0xac,
     'OP_CHECKSIGVERIFY': 0xad,

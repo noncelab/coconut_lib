@@ -74,22 +74,52 @@ void main() {
 
     group('fromDescriptor', () {
       test('parses taproot descriptor with miniscripts', () {
-        final TaprootVault vault = WalletFixture.p2trPolicyVault();
+        final TaprootVault vault = WalletFixture.p2trStandardPolicyVault();
         expect(vault.descriptor, contains('after('));
+        expect(vault.descriptor, isNot(contains('after_drop(')));
         final TaprootWallet wallet =
             TaprootWallet.fromDescriptor(vault.descriptor);
         expect(wallet.keyStoreList.length, vault.keyStoreList.length);
         expect(wallet.policyList.length, greaterThan(0));
+        expect(wallet.policyList, everyElement(isA<InheritancePolicy>()));
+        expect(wallet.policyList,
+            everyElement(isNot(isA<LegacyInheritancePolicy>())));
+        expect(wallet.getAddress(0), vault.getAddress(0));
+      });
+
+      test('parses a legacy descriptor and keeps the OP_DROP leaves', () {
+        final TaprootVault vault = WalletFixture.p2trPolicyVault();
+        expect(vault.descriptor, contains('after_drop('));
+        final TaprootWallet wallet =
+            TaprootWallet.fromDescriptor(vault.descriptor);
+        expect(wallet.policyList, everyElement(isA<LegacyInheritancePolicy>()));
+        expect(wallet.getAddress(0), vault.getAddress(0));
+        expect(wallet.getAddress(0),
+            isNot(WalletFixture.p2trStandardPolicyVault().getAddress(0)));
       });
 
       test('rejects descriptor using relative older as inheritance policy', () {
-        final TaprootVault vault = WalletFixture.p2trPolicyVault();
+        final TaprootVault vault = WalletFixture.p2trStandardPolicyVault();
         final String canonicalBody = vault.descriptor.split('#').first;
         final String legacyBody = canonicalBody.replaceAll('after(', 'older(');
+        expect(legacyBody, isNot(canonicalBody));
         final String legacyDescriptor =
             '$legacyBody#${Checksum.getChecksum(legacyBody)}';
 
         expect(() => TaprootWallet.fromDescriptor(legacyDescriptor),
+            throwsException);
+      });
+
+      test('rejects a legacy descriptor using relative older', () {
+        final TaprootVault vault = WalletFixture.p2trPolicyVault();
+        final String canonicalBody = vault.descriptor.split('#').first;
+        final String olderBody =
+            canonicalBody.replaceAll('after_drop(', 'older(');
+        expect(olderBody, isNot(canonicalBody));
+        final String olderDescriptor =
+            '$olderBody#${Checksum.getChecksum(olderBody)}';
+
+        expect(() => TaprootWallet.fromDescriptor(olderDescriptor),
             throwsException);
       });
 
