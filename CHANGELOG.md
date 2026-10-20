@@ -1,3 +1,25 @@
+## 1.1.4
+
+- Build the InheritancePolicy leaf as `<N> CLTV VERIFY <K> CHECKSIG`, which is
+  what miniscript `and_v(v:after(N),pk(K))` compiles to (BIP-379); earlier
+  versions built `<N> CLTV DROP <K> CHECKSIG`. The two leaves behave alike for
+  N >= 1 but commit to different leaf hashes, so new inheritance vaults derive
+  different addresses than they did before
+- Add LegacyInheritancePolicy for the `CLTV DROP` leaf, so vaults funded under
+  it keep deriving their address and keep spending. Its miniscript spelling is
+  `and_v(after_drop(N),pk(K))`: no standard miniscript compiles to `DROP`, so
+  other tools reject the descriptor instead of deriving a different address.
+  InheritancePolicy.toLegacy() converts an existing policy
+- Read inheritance policies stored by earlier versions as the legacy leaf: JSON
+  with `type: inheritance` and no `scriptForm` is a `CLTV DROP` leaf, in
+  policies, vaults and wallets, with or without a stored tapTree. Policies
+  written now carry `scriptForm: verify`
+- Add TapTree.parseStored, which resolves a stored tree's inheritance leaves
+  against the policies saved beside it
+- Compile miniscript `after` and `older` to `VERIFY` instead of `DROP` in
+  Miniscript.serializeForScript
+- Add OP_VERIFY
+
 ## 1.1.3
 
 - Accept single signature and multisignature PSBTs that omit PSBT_GLOBAL_XPUB,
