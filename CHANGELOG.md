@@ -1,3 +1,11 @@
+## 1.1.5
+
+- Stop comparing the PSBT's coconut descriptor identifier with the multisig
+  vault's descriptor in `Psbt.matchesVault`. A P2WSH descriptor lists the keys
+  in the order they were given, so the same vault can serialize differently and
+  fail the match; ownership rests on the global xpubs (when present) and the
+  per-input BIP32 derivation checks
+
 ## 1.1.4
 
 - Build the InheritancePolicy leaf as `<N> CLTV VERIFY <K> CHECKSIG`, which is
