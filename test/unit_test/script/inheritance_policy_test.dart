@@ -18,13 +18,25 @@ void main() {
     });
 
     group('constructor', () {
-      test('accepts ScriptNum locktime boundaries', () {
+      test('accepts the BIP-379 after(n) range 1 <= n < 2^31', () {
         final KeyStore keyStore = beneficiaryVault.keyStoreList[0];
 
-        expect(InheritancePolicy(keyStore, 0).locktime, 0);
+        expect(
+            InheritancePolicy(keyStore, InheritancePolicy.minLocktime).locktime,
+            1);
         expect(
             InheritancePolicy(keyStore, InheritancePolicy.maxLocktime).locktime,
             InheritancePolicy.maxLocktime);
+      });
+
+      test('rejects locktime 0, which makes CLTV VERIFY unspendable', () {
+        final KeyStore keyStore = beneficiaryVault.keyStoreList[0];
+
+        expect(() => InheritancePolicy(keyStore, 0), throwsRangeError);
+        expect(
+            () => InheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 0),
+            throwsRangeError);
       });
 
       test('rejects locktime outside the supported ScriptNum range', () {
@@ -99,6 +111,45 @@ void main() {
         // Read either way, written the standard way.
         expect(parsed.toMiniscript(), original.toMiniscript());
         expect(Policy.fromMiniscript(legacy), isA<InheritancePolicy>());
+      });
+
+      test('reads both spellings as the CLTV VERIFY leaf', () {
+        final InheritancePolicy original =
+            InheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 987654321);
+
+        for (final String spelling in [
+          original.toMiniscript(),
+          _legacySpellingOf(original),
+        ]) {
+          final Policy parsed = Policy.fromMiniscript(spelling);
+
+          expect(parsed, isA<InheritancePolicy>());
+          expect(parsed, isNot(isA<LegacyInheritancePolicy>()));
+          expect(parsed.toScript(0).rawSerialize(),
+              original.toScript(0).rawSerialize());
+          expect(Codec.decodeHex(parsed.toScript(0).rawSerialize())[6], 0x69);
+        }
+      });
+
+      test('rejects after(0) and after(2^31)', () {
+        final String body = _legacySpellingOf(
+                InheritancePolicy.fromDescriptorAndLocktime(
+                    beneficiaryVault.descriptor, 1000))
+            .replaceFirst('after(1000)', 'after(0)');
+        final String standard = InheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 1000)
+            .toMiniscript();
+
+        expect(() => Policy.fromMiniscript(body), throwsRangeError);
+        expect(
+            () => Policy.fromMiniscript(
+                standard.replaceFirst('after(1000)', 'after(0)')),
+            throwsRangeError);
+        expect(
+            () => Policy.fromMiniscript(
+                standard.replaceFirst('after(1000)', 'after(2147483648)')),
+            throwsRangeError);
       });
 
       test('both spellings give the same leaf', () {
@@ -189,9 +240,12 @@ void main() {
         expect(s.commands[4], ScriptOperationCode.getHex('OP_CHECKSIG'));
       });
 
-      test('differs from toScript only in the cleanup opcode', () {
+      test('differs from toScript only in the cleanup opcode at four bytes',
+          () {
+        // 1767225600 needs four bytes as a script number, so both leaves push
+        // it the same way.
         final InheritancePolicy p = InheritancePolicy.fromDescriptorAndLocktime(
-            beneficiaryVault.descriptor, 1000);
+            beneficiaryVault.descriptor, 1767225600);
         final String standard = p.toScript(0).rawSerialize();
         final String legacy = p.toLegacy().toScript(0).rawSerialize();
         expect(legacy, isNot(standard));
@@ -200,10 +254,43 @@ void main() {
     });
 
     group('toScript / toLegacy().toScript bytes', () {
-      List<int> expectedLeaf(int locktime, Uint8List pubkey, int cleanupOp) => [
+      // `<N>` as Bitcoin Core pushes it, written out by hand: OP_1..OP_16 for
+      // 1..16, else the shortest little-endian number, plus a zero byte when
+      // the top bit would read as a sign.
+      const Map<int, List<int>> minimalPush = {
+        1: [0x51],
+        10: [0x5a],
+        16: [0x60],
+        17: [0x01, 0x11],
+        127: [0x01, 0x7f],
+        128: [0x02, 0x80, 0x00],
+        144: [0x02, 0x90, 0x00],
+        255: [0x02, 0xff, 0x00],
+        256: [0x02, 0x00, 0x01],
+        1000: [0x02, 0xe8, 0x03],
+        32767: [0x02, 0xff, 0x7f],
+        32768: [0x03, 0x00, 0x80, 0x00],
+        52560: [0x03, 0x50, 0xcd, 0x00],
+        900000: [0x03, 0xa0, 0xbb, 0x0d],
+        8388607: [0x03, 0xff, 0xff, 0x7f],
+        8388608: [0x04, 0x00, 0x00, 0x80, 0x00],
+        1767225600: [0x04, 0x00, 0xb9, 0x55, 0x69],
+        0x7fffffff: [0x04, 0xff, 0xff, 0xff, 0x7f],
+      };
+
+      List<int> standardLeaf(int locktime, Uint8List pubkey) => [
+            ...minimalPush[locktime]!, // <N>
+            0xb1, // OP_CHECKLOCKTIMEVERIFY
+            0x69, // OP_VERIFY
+            32, ...pubkey, // <K>
+            0xac, // OP_CHECKSIG
+          ];
+
+      // The legacy leaf always pushes four bytes, as when it was funded.
+      List<int> legacyLeaf(int locktime, Uint8List pubkey) => [
             4, ...Converter.intToLittleEndianBytes(locktime, 4), // <N>
             0xb1, // OP_CHECKLOCKTIMEVERIFY
-            cleanupOp,
+            0x75, // OP_DROP
             32, ...pubkey, // <K>
             0xac, // OP_CHECKSIG
           ];
@@ -217,7 +304,7 @@ void main() {
         expect(
             p.toScript(0).rawSerialize(),
             Codec.encodeHex(
-                Uint8List.fromList(expectedLeaf(1767225600, pubkey, 0x69))));
+                Uint8List.fromList(standardLeaf(1767225600, pubkey))));
       });
 
       test('toLegacy().toScript emits CLTV DROP (0x75) as raw bytes', () {
@@ -229,7 +316,7 @@ void main() {
         expect(
             p.toLegacy().toScript(0).rawSerialize(),
             Codec.encodeHex(
-                Uint8List.fromList(expectedLeaf(1767225600, pubkey, 0x75))));
+                Uint8List.fromList(legacyLeaf(1767225600, pubkey))));
       });
 
       test('both follow address index and change branch', () {
@@ -243,33 +330,61 @@ void main() {
             expect(
                 p.toScript(index, isChange: isChange).rawSerialize(),
                 Codec.encodeHex(
-                    Uint8List.fromList(expectedLeaf(1000, pubkey, 0x69))));
+                    Uint8List.fromList(standardLeaf(1000, pubkey))));
             expect(
                 p.toLegacy().toScript(index, isChange: isChange).rawSerialize(),
-                Codec.encodeHex(
-                    Uint8List.fromList(expectedLeaf(1000, pubkey, 0x75))));
+                Codec.encodeHex(Uint8List.fromList(legacyLeaf(1000, pubkey))));
           }
         }
       });
 
-      test('differ only in the cleanup opcode, for any locktime', () {
-        for (final int locktime in [0, 1, 1000, 1767225600, 0x7fffffff]) {
+      test('toScript pushes the minimal script number for every locktime', () {
+        final Uint8List pubkey = beneficiaryVault.keyStoreList[0]
+            .getPublicKeyBytes(0, isXOnly: true);
+
+        for (final int locktime in minimalPush.keys) {
           final InheritancePolicy p =
               InheritancePolicy(beneficiaryVault.keyStoreList[0], locktime);
-          final List<int> standard =
-              Codec.decodeHex(p.toScript(0).rawSerialize());
-          final List<int> legacy =
-              Codec.decodeHex(p.toLegacy().toScript(0).rawSerialize());
 
-          expect(legacy.length, standard.length);
-          final List<int> diff = [
-            for (int i = 0; i < standard.length; i++)
-              if (standard[i] != legacy[i]) i
-          ];
-          expect(diff, [6]); // 1 + 4 (push N) + 1 (CLTV) -> cleanup opcode
-          expect(standard[6], 0x69);
-          expect(legacy[6], 0x75);
+          expect(
+              p.toScript(0).rawSerialize(),
+              Codec.encodeHex(
+                  Uint8List.fromList(standardLeaf(locktime, pubkey))),
+              reason: 'locktime $locktime');
         }
+      });
+
+      test('toLegacy().toScript keeps the four-byte push for every locktime',
+          () {
+        final Uint8List pubkey = beneficiaryVault.keyStoreList[0]
+            .getPublicKeyBytes(0, isXOnly: true);
+
+        for (final int locktime in minimalPush.keys) {
+          final InheritancePolicy p =
+              InheritancePolicy(beneficiaryVault.keyStoreList[0], locktime);
+
+          expect(p.toLegacy().toScript(0).rawSerialize(),
+              Codec.encodeHex(Uint8List.fromList(legacyLeaf(locktime, pubkey))),
+              reason: 'locktime $locktime');
+        }
+      });
+
+      test('a block-height locktime differs from the legacy leaf in the push',
+          () {
+        final InheritancePolicy p =
+            InheritancePolicy(beneficiaryVault.keyStoreList[0], 900000);
+
+        // 03 a0bb0d versus 04 a0bb0d00
+        expect(p.toScript(0).rawSerialize().startsWith('03a0bb0db169'), isTrue);
+        expect(
+            p
+                .toLegacy()
+                .toScript(0)
+                .rawSerialize()
+                .startsWith('04a0bb0d00b175'),
+            isTrue);
+        expect(p.toScript(0).rawSerialize().length,
+            lessThan(p.toLegacy().toScript(0).rawSerialize().length));
       });
 
       test('toMiniscript describes the standard script, not the legacy one',

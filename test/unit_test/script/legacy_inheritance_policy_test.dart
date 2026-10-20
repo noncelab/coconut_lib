@@ -26,6 +26,49 @@ void main() {
       expect(policy.locktime, 1767225600);
     });
 
+    group('locktime', () {
+      test('allows 0, which only the CLTV DROP leaf can spend', () {
+        final LegacyInheritancePolicy p =
+            LegacyInheritancePolicy(beneficiaryVault.keyStoreList[0], 0);
+
+        expect(p.locktime, 0);
+        // <0> is four zero bytes here, as it was when such a vault was funded.
+        expect(
+            p.toScript(0).rawSerialize().startsWith('0400000000b175'), isTrue);
+        expect(() => InheritancePolicy(beneficiaryVault.keyStoreList[0], 0),
+            throwsRangeError);
+      });
+
+      test('reads locktime 0 from a descriptor and from stored JSON', () {
+        final LegacyInheritancePolicy fromDescriptor =
+            LegacyInheritancePolicy.fromDescriptorAndLocktime(
+                beneficiaryVault.descriptor, 0);
+        final Policy restored = Policy.fromJson(fromDescriptor.toJson());
+
+        expect(fromDescriptor.locktime, 0);
+        expect(restored, isA<LegacyInheritancePolicy>());
+        expect((restored as LegacyInheritancePolicy).locktime, 0);
+      });
+
+      test('still rejects values outside 0 <= n < 2^31', () {
+        final KeyStore ks = beneficiaryVault.keyStoreList[0];
+
+        expect(() => LegacyInheritancePolicy(ks, -1), throwsRangeError);
+        expect(
+            () =>
+                LegacyInheritancePolicy(ks, InheritancePolicy.maxLocktime + 1),
+            throwsRangeError);
+      });
+
+      test('keeps the four-byte push for a block height', () {
+        final LegacyInheritancePolicy p =
+            LegacyInheritancePolicy(beneficiaryVault.keyStoreList[0], 900000);
+
+        expect(
+            p.toScript(0).rawSerialize().startsWith('04a0bb0d00b175'), isTrue);
+      });
+    });
+
     group('toScript', () {
       test('emits <N> CLTV DROP <K> CHECKSIG as raw bytes', () {
         final Uint8List pubkey = beneficiaryVault.keyStoreList[0]
@@ -155,8 +198,9 @@ void main() {
 
         expect(legacy.locktime, 1000);
         expect(legacy.beneficiaryKeyStore, standard.beneficiaryKeyStore);
+        // legacy: 04 e8030000 CLTV DROP ...; standard: 02 e803 CLTV VERIFY ...
         expect(Codec.decodeHex(legacy.toScript(0).rawSerialize())[6], 0x75);
-        expect(Codec.decodeHex(standard.toScript(0).rawSerialize())[6], 0x69);
+        expect(Codec.decodeHex(standard.toScript(0).rawSerialize())[4], 0x69);
       });
     });
 

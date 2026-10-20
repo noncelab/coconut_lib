@@ -184,6 +184,20 @@ void main() {
       });
     });
 
+    group('locktime 0', () {
+      // Allowed by the old code and still spendable through CLTV DROP.
+      test('a stored vault with locktime 0 keeps its address', () {
+        final TaprootVault funded = TaprootVault.fromKeyStoreList(
+            [owner], [LegacyInheritancePolicy(heirs[0], 0)]);
+        final TaprootVault restored =
+            TaprootVault.fromJson(_storedBefore(funded.toJson()));
+
+        expect(restored.policyList.single, isA<LegacyInheritancePolicy>());
+        expect((restored.policyList.single as InheritancePolicy).locktime, 0);
+        expect(restored.getAddress(0), funded.getAddress(0));
+      });
+    });
+
     group('TaprootWallet.fromJson', () {
       test('a watch-only wallet from stored JSON keeps the funded address', () {
         final TaprootVault funded = fundedVault(3);

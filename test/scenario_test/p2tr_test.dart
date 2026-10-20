@@ -823,6 +823,67 @@ void main() {
           isTrue);
     });
 
+    test('P2TR Script Path spending (block height and OP_N locktimes)', () {
+      KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
+          Seed.fromMnemonic(
+              utf8.encode(
+                  'machine crack daughter fish credit glare raven fever tunnel delay fish record'),
+              passphrase: utf8.encode(passphrase)),
+          AddressType.p2tr);
+
+      // Pushed as OP_10, a three-byte number, and a four-byte number.
+      const Map<int, String> expectedPush = {
+        10: '5ab169',
+        900000: '03a0bb0db169',
+        8388608: '0400008000b169',
+      };
+
+      for (final MapEntry<int, String> entry in expectedPush.entries) {
+        final int locktime = entry.key;
+        final KeyStore owner = keyStore('owner');
+        final KeyStore heir = keyStore('heir');
+        final TaprootVault vault = TaprootVault.fromKeyStoreList(
+            [owner], [InheritancePolicy(heir, locktime)]);
+
+        final TaprootWallet wallet =
+            TaprootWallet.fromDescriptor(vault.descriptor);
+        expect(wallet.getAddress(0), vault.getAddress(0),
+            reason: 'locktime $locktime');
+
+        final Transaction prevTx = Transaction.withInputsAndOutputs(
+          [
+            TransactionInput.forPayment(
+              '0000000000000000000000000000000000000000000000000000000000000000',
+              0,
+            )
+          ],
+          [TransactionOutput.forPayment(21000, vault.getAddress(0))],
+          AddressType.p2tr,
+        );
+        final Utxo utxo =
+            Utxo(prevTx.transactionHash, 0, 21000, "m/86'/1'/0'/0/0");
+        final Transaction tx = Transaction.forSinglePayment([utxo],
+            UtxoFixture.receiveAddress, "m/86'/1'/0'/1/0", 20000, 1, wallet);
+        tx.setPolicy(wallet.policyList[0]);
+
+        final Psbt unsignedPsbt = Psbt.fromTransaction(tx, wallet);
+        expect(unsignedPsbt.matchesVault(vault), true);
+
+        final TaprootVault heirVault =
+            TaprootVault.fromDescriptor(vault.descriptor);
+        heirVault.bindSeedToBeneficiaryKeyStore(heir.seed);
+        final Transaction signedTx =
+            Psbt.parse(heirVault.addSignatureToPsbt(unsignedPsbt.serialize()))
+                .getSignedTransaction(AddressType.p2tr);
+
+        expect(signedTx.inputs[0].witnessList[1], startsWith(entry.value),
+            reason: 'locktime $locktime');
+        expect(validateScriptPath(prevTx.serialize(), signedTx.serialize(), 0),
+            isTrue,
+            reason: 'locktime $locktime');
+      }
+    });
+
     test('P2TR Script Path spending (legacy OP_DROP inheritance leaf)', () {
       KeyStore keyStore(String passphrase) => KeyStore.fromSeed(
           Seed.fromMnemonic(

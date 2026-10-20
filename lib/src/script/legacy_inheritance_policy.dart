@@ -9,19 +9,25 @@ part of '../../coconut_lib.dart';
 /// hashes, so a vault funded under the old leaf only derives its address, and
 /// only spends, with this class.
 ///
+/// The locktime is always pushed as four little-endian bytes, as it was when
+/// those vaults were funded, whatever its size; [InheritancePolicy] pushes the
+/// minimal script number instead.
+///
 /// No miniscript fragment compiles to `DROP`, so [toMiniscript] spells the
 /// leaf with the non-standard `after_drop(N)`. Other tools reject it instead
 /// of deriving a different address from it.
 ///
 /// {@category Scripts and Policies}
 class LegacyInheritancePolicy extends InheritancePolicy {
-  LegacyInheritancePolicy(super.beneficiaryKeyStore, super.locktime);
+  /// Locktime 0 is allowed: the `CLTV DROP` leaf is spendable with it, and
+  /// vaults funded that way keep their address.
+  LegacyInheritancePolicy(KeyStore beneficiaryKeyStore, int locktime)
+      : super._(beneficiaryKeyStore, locktime, 0);
 
   factory LegacyInheritancePolicy.fromDescriptorAndLocktime(
       String descriptor, int locktime) {
-    final InheritancePolicy policy =
-        InheritancePolicy.fromDescriptorAndLocktime(descriptor, locktime);
-    return LegacyInheritancePolicy(policy.beneficiaryKeyStore, locktime);
+    return LegacyInheritancePolicy(
+        InheritancePolicy._beneficiaryFromDescriptor(descriptor), locktime);
   }
 
   /// `<N> CLTV DROP <K> CHECKSIG`
