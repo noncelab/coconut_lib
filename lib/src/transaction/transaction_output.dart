@@ -70,15 +70,17 @@ class TransactionOutput {
   }
 
   /// Parse the transaction output from the given output hex.
-  factory TransactionOutput.parse(String output) {
-    Uint8List bytes = Codec.decodeHex(output);
+  factory TransactionOutput.parse(String output) =>
+      TransactionOutput._fromBytes(Codec.decodeHex(output));
+
+  /// [parse]와 같되 hex 변환 없이 바이트(뷰 포함)를 그대로 읽음
+  factory TransactionOutput._fromBytes(Uint8List bytes) {
     if (bytes.length < 10) {
       throw const FormatException('Truncated transaction output.');
     }
     var amount = bytes.sublist(0, 8);
-    var script = bytes.sublist(8, bytes.length);
     ScriptPublicKey scriptPubKey =
-        ScriptPublicKey.parse(Codec.encodeHex(script));
+        ScriptPublicKey(Script.parseToCommand(Uint8List.sublistView(bytes, 8)));
 
     return TransactionOutput(amount, scriptPubKey);
   }

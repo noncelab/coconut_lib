@@ -247,6 +247,68 @@ void main() {
             '020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff5d0394da0d042e2c8b682f466f756e6472792055534120506f6f6c202364726f70676f6c642ffabe6d6d2fd95717b199f4ced43e66458da34d72329ef29a4ec90e4c7a3dfc25e678886c010000000000000016fd47150000200943279900ffffffff0488e2ff12000000002200207086320071974eef5e72eaa01dd9096e10c0383483855ea6b344259c244f73c20000000000000000266a24aa21a9edbd4202bdce00d84bdc744d65ef7fe4b8ea70bbd7780d41aeb160703a498c149200000000000000002f6a2d434f524501a898e2f126b642d6e401bdcb79979c691a8fd90de6d18fda214e5b9f350ffc7b6cf3058b9026e76500000000000000002b6a2952534b424c4f434b3a1c99338ef341e97c36cc02082199932ed689744071a0e141b5767316007794a50120000000000000000000000000000000000000000000000000000000000000000000000000';
         expect(Transaction.parse(coinbaseTransactionText), isA<Transaction>());
       });
+
+      String hexByte(int value) => value.toRadixString(16).padLeft(2, '0');
+      String repeatByte(int value, int count) => hexByte(value) * count;
+      String outpoint(int i) =>
+          '${repeatByte(0, 28)}${i.toRadixString(16).padLeft(8, '0')}00000000';
+      String outputs(int count) {
+        final items = List.generate(
+            count, (i) => 'e803000000000000160014${repeatByte(i & 0xff, 20)}');
+        return 'fd${hexByte(count & 0xff)}${hexByte(count >> 8)}${items.join()}';
+      }
+
+      test('Parse a transaction with hundreds of inputs and outputs quickly',
+          () {
+        const count = 400;
+        final segwitText = '02000000'
+            '0001'
+            'fd${hexByte(count & 0xff)}${hexByte(count >> 8)}'
+            '${List.generate(count, (i) => '${outpoint(i)}00ffffffff').join()}'
+            '${outputs(count)}'
+            '${List.generate(count, (i) => '0247${repeatByte(0x30, 71)}21${repeatByte(0x02, 33)}').join()}'
+            '00000000';
+        final legacyText = '01000000'
+            'fd${hexByte(count & 0xff)}${hexByte(count >> 8)}'
+            '${List.generate(count, (i) => '${outpoint(i)}6a47${repeatByte(0x30, 71)}21${repeatByte(0x02, 33)}ffffffff').join()}'
+            '${outputs(count)}'
+            '00000000';
+
+        for (final text in [segwitText, legacyText]) {
+          final watch = Stopwatch()..start();
+          final transaction = Transaction.parse(text);
+          watch.stop();
+
+          expect(transaction.inputs, hasLength(count));
+          expect(transaction.outputs, hasLength(count));
+          expect(transaction.serialize(), text);
+          expect(watch.elapsedMilliseconds, lessThan(1000));
+        }
+      });
+    });
+    group('Transaction.parse with real mainnet transactions', () {
+      setUp(() => NetworkType.setNetworkType(NetworkType.mainnet));
+      tearDown(() => NetworkType.setNetworkType(NetworkType.regtest));
+
+      for (final fixture in MainnetTransactionFixture.transactions) {
+        test(fixture.description, () {
+          final transaction = Transaction.parse(fixture.hex);
+
+          expect(transaction.serialize(), fixture.hex);
+          expect(transaction.transactionHash, fixture.txid);
+          expect(transaction.inputs, hasLength(fixture.inputCount));
+          expect(transaction.inputs.map((input) => input.scriptSig.isCoinbase),
+              everyElement(fixture.isCoinbase));
+          expect(transaction.outputs.map((output) => output.amount),
+              fixture.outputs.map((output) => output.amount));
+          for (var i = 0; i < fixture.outputs.length; i++) {
+            final address = fixture.outputs[i].address;
+            if (address != null) {
+              expect(transaction.outputs[i].getAddress(), address);
+            }
+          }
+        });
+      }
     });
     group('Transaction.parseUnsignedTransaction', () {
       test('Generate unsigned transaction from parsing', () {

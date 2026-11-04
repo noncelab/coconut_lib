@@ -409,7 +409,7 @@ class Transaction {
     for (int i = 0; i < numInputs; i++) {
       _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input =
-          TransactionInput.parse(Codec.encodeHex(txBytes.sublist(offset)));
+          TransactionInput._fromBytes(Uint8List.sublistView(txBytes, offset));
       inputs.add(input);
       int size = input.serialize().length ~/ 2;
       offset += size;
@@ -420,7 +420,7 @@ class Transaction {
     for (int i = 0; i < numOutputs; i++) {
       _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
-          TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
+          TransactionOutput._fromBytes(Uint8List.sublistView(txBytes, offset));
       outputs.add(output);
       int size = output.serialize().length ~/ 2;
       offset += size;
@@ -470,7 +470,7 @@ class Transaction {
     for (int i = 0; i < numInputs; i++) {
       _requireBytes(txBytes, offset, 41, 'input');
       TransactionInput input =
-          TransactionInput.parse(Codec.encodeHex(txBytes.sublist(offset)));
+          TransactionInput._fromBytes(Uint8List.sublistView(txBytes, offset));
       // print("input : ${input.serialize()}");
       inputs.add(input);
       int size = input.serialize().length ~/ 2;
@@ -487,7 +487,7 @@ class Transaction {
     for (int i = 0; i < numOutputs; i++) {
       _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
-          TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
+          TransactionOutput._fromBytes(Uint8List.sublistView(txBytes, offset));
       outputs.add(output);
       int size = output.serialize().length ~/ 2;
       offset += size;
@@ -510,8 +510,8 @@ class Transaction {
 
     for (int i = 0; i < numInputs; i++) {
       _requireBytes(txBytes, offset, 41, 'input');
-      TransactionInput input = TransactionInput.parseForPsbt(
-          Codec.encodeHex(txBytes.sublist(offset)));
+      TransactionInput input = TransactionInput._fromBytesForPsbt(
+          Uint8List.sublistView(txBytes, offset));
       inputs.add(input);
       int size = input.serialize().length ~/ 2;
       //print("size:" + size.toString());
@@ -528,7 +528,7 @@ class Transaction {
     for (int i = 0; i < numOutputs; i++) {
       _requireBytes(txBytes, offset, 10, 'output');
       TransactionOutput output =
-          TransactionOutput.parse(Codec.encodeHex(txBytes.sublist(offset)));
+          TransactionOutput._fromBytes(Uint8List.sublistView(txBytes, offset));
       outputs.add(output);
       int size = output.serialize().length ~/ 2;
       offset += size;
