@@ -42,8 +42,11 @@ class TransactionInput {
             witnessList != null ? List<String>.from(witnessList) : <String>[];
 
   /// Parse the transaction input from the given input string.
-  factory TransactionInput.parse(String input) {
-    Uint8List bytes = Codec.decodeHex(input);
+  factory TransactionInput.parse(String input) =>
+      TransactionInput._fromBytes(Codec.decodeHex(input));
+
+  /// [parse]와 같되 hex 변환 없이 바이트(뷰 포함)를 그대로 읽음
+  factory TransactionInput._fromBytes(Uint8List bytes) {
     if (bytes.length < 41) {
       throw const FormatException('Truncated transaction input.');
     }
@@ -72,8 +75,8 @@ class TransactionInput {
     if (bytes[36] == 0x00 && bytes[37] != 0x14) {
       script = ScriptSignature.empty();
     } else {
-      var scriptSig = bytes.sublist(36);
-      script = ScriptSignature.parse(Codec.encodeHex(scriptSig));
+      script = ScriptSignature(
+          Script.parseToCommand(Uint8List.sublistView(bytes, 36)));
     }
     scriptSize = script.serialize().length ~/ 2;
     if (36 + scriptSize + 4 > bytes.length) {
@@ -84,8 +87,11 @@ class TransactionInput {
   }
 
   /// Parse the transaction input from the given input string for PSBT.
-  factory TransactionInput.parseForPsbt(String input) {
-    Uint8List bytes = Codec.decodeHex(input);
+  factory TransactionInput.parseForPsbt(String input) =>
+      TransactionInput._fromBytesForPsbt(Codec.decodeHex(input));
+
+  /// [parseForPsbt]와 같되 hex 변환 없이 바이트(뷰 포함)를 그대로 읽음
+  factory TransactionInput._fromBytesForPsbt(Uint8List bytes) {
     if (bytes.length < 41) {
       throw const FormatException('Truncated unsigned transaction input.');
     }
