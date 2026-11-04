@@ -1,3 +1,11 @@
+## 1.1.6
+
+- Parse transactions in linear time: `Transaction.parse` re-encoded the rest of
+  the transaction as hex for every input and output, so parse time grew with
+  the square of the size (a 294 KB transaction took 27.6 s, now 41 ms). Inputs
+  and outputs now read byte views directly; the parsed result and the public
+  `parse` API are unchanged
+
 ## 1.1.5
 
 - Stop comparing the PSBT's coconut descriptor identifier with the multisig
