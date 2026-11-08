@@ -1640,6 +1640,161 @@ class Psbt {
     return Uint8List.fromList(serializedPath);
   }
 
+  /// Finalizes every signed input that is not finalized yet and returns this
+  /// PSBT, following the BIP 174 Input Finalizer role.
+  ///
+  /// P2WPKH inputs and P2WSH multisig inputs are supported. Each signature is
+  /// verified first, and the final witness replaces the partial signatures,
+  /// sighash type and witness script. Bip32 derivations are cleared too
+  /// unless [keepDerivations] is set. Inputs that are already finalized,
+  /// such as a payjoin counterparty's, are left untouched.
+  ///
+  /// Keep derivations on a payjoin sender's Original: the sender restores
+  /// them from the Original into the receiver's proposal so the wallet can
+  /// recognise and sign its own inputs again.
+  ///
+  /// Throws, leaving the PSBT unchanged, when an input lacks signatures or
+  /// metadata or carries an invalid signature. Throws [UnsupportedError] for
+  /// Taproot inputs.
+  Psbt finalizeInputs({bool keepDerivations = false}) {
+    final Map<int, List<String>> witnesses = {};
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      if (!inputs[inputIndex].isFinalized) {
+        witnesses[inputIndex] = _finalWitness(inputIndex);
+      }
+    }
+
+    for (final MapEntry<int, List<String>> entry in witnesses.entries) {
+      final PsbtInput input = inputs[entry.key];
+      final Map<String, dynamic> inputMap = psbtMap["inputs"][entry.key];
+      final String serializedWitness = _serializeScriptWitness(entry.value);
+      inputMap.removeWhere((key, _) =>
+          key.startsWith('02') ||
+          key == '03' ||
+          key == '04' ||
+          key == '05' ||
+          (!keepDerivations && key.startsWith('06')));
+      inputMap['08'] = serializedWitness;
+
+      input.partialSig = [];
+      input.sighashType = null;
+      input.witnessScript = null;
+      if (!keepDerivations) {
+        input.bip32Derivation = null;
+      }
+      input.finalScriptWitness = _parseScriptWitness(serializedWitness);
+    }
+    return this;
+  }
+
+  List<String> _finalWitness(int inputIndex) {
+    final PsbtInput input = inputs[inputIndex];
+    final TransactionOutput? witnessUtxo = input.witnessUtxo;
+    if (witnessUtxo == null) {
+      throw PsbtException(
+          PsbtErrorCode.missingMetadata, 'Input is missing its witness UTXO.',
+          inputIndex: inputIndex);
+    }
+    final ScriptPublicKey scriptPubKey = witnessUtxo.scriptPubKey;
+    if (scriptPubKey.isP2tr()) {
+      throw UnsupportedError('Taproot inputs cannot be finalized yet.');
+    }
+    final List<Signature> signatures = input.partialSig ?? <Signature>[];
+
+    if (scriptPubKey.isP2wpkh()) {
+      final String sigHash = unsignedTransaction!
+          .getSigHash(inputIndex, witnessUtxo, AddressType.p2wpkh);
+      final String scriptHash =
+          Codec.encodeHex(scriptPubKey.commands[1] as Uint8List);
+      final Signature? signature = signatures
+          .where((signature) =>
+              Codec.encodeHex(Hash.sha160fromHex(signature.publicKey)) ==
+              scriptHash)
+          .firstOrNull;
+      if (signature == null) {
+        throw PsbtException(PsbtErrorCode.insufficientSignatures,
+            'Input does not have a signature for its key.',
+            inputIndex: inputIndex);
+      }
+      _verifyEcdsaSignature(sigHash, signature, inputIndex);
+      return [signature.signature, signature.publicKey];
+    }
+
+    if (scriptPubKey.isP2wsh()) {
+      final MultisignatureScript? witnessScript = input.witnessScript;
+      if (witnessScript == null) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input is missing its witness script.',
+            inputIndex: inputIndex);
+      }
+      final String rawWitnessScript = witnessScript.rawSerialize();
+      if ('0020${Hash.sha256fromHex(rawWitnessScript)}' !=
+          scriptPubKey.rawSerialize()) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Input witness UTXO does not commit to the witness script.',
+            inputIndex: inputIndex);
+      }
+      final String sigHash = unsignedTransaction!.getSigHash(
+          inputIndex, witnessUtxo, AddressType.p2wsh,
+          witnessScript: rawWitnessScript);
+      final Map<String, Signature> signatureByKey = {
+        for (final Signature signature in signatures)
+          signature.publicKey: signature
+      };
+      // OP_CHECKMULTISIG matches signatures against keys in script order.
+      final List<Signature> ordered = witnessScript
+          .getPublicKeys()
+          .map((key) => signatureByKey[Codec.encodeHex(key)])
+          .nonNulls
+          .take(witnessScript.getRequiredSignature())
+          .toList();
+      if (ordered.length < witnessScript.getRequiredSignature()) {
+        throw PsbtException(PsbtErrorCode.insufficientSignatures,
+            'Input does not have enough signatures.',
+            inputIndex: inputIndex);
+      }
+      for (final Signature signature in ordered) {
+        _verifyEcdsaSignature(sigHash, signature, inputIndex);
+      }
+      return [
+        // OP_CHECKMULTISIG pops one extra stack item, which must be empty.
+        '',
+        ...ordered.map((signature) => signature.signature),
+        rawWitnessScript,
+      ];
+    }
+
+    throw UnsupportedError('Only P2WPKH and P2WSH inputs can be finalized.');
+  }
+
+  static void _verifyEcdsaSignature(
+      String sigHash, Signature signature, int inputIndex) {
+    final Uint8List encoded = Codec.decodeHex(signature.signature);
+    // [sigHash] is a SIGHASH_ALL digest, so only a SIGHASH_ALL signature can
+    // verify against it.
+    if (encoded.isEmpty ||
+        encoded.last != 0x01 ||
+        !Ecc.verifyEcdsa(
+            Codec.decodeHex(sigHash),
+            Codec.decodeHex(signature.publicKey),
+            Converter.derToRawSignature(encoded))) {
+      throw PsbtException(PsbtErrorCode.invalidSignature,
+          'Input contains an invalid signature.',
+          inputIndex: inputIndex);
+    }
+  }
+
+  static String _serializeScriptWitness(List<String> items) {
+    final List<int> bytes = [...Codec.encodeVariableInteger(items.length)];
+    for (final String item in items) {
+      final Uint8List itemBytes = Codec.decodeHex(item);
+      bytes
+        ..addAll(Codec.encodeVariableInteger(itemBytes.length))
+        ..addAll(itemBytes);
+    }
+    return Codec.encodeHex(Uint8List.fromList(bytes));
+  }
+
   /// Get the transaction if all inputs are signed.
   Transaction getSignedTransaction(AddressType addressType) {
     Transaction signedTransaction =
