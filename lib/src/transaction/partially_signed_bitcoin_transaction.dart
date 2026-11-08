@@ -2042,7 +2042,7 @@ class PsbtInput {
       (finalScriptWitness?.isNotEmpty ?? false);
 
   List<DerivationPath> get derivationPathList =>
-      bip32Derivation == null ? tapBip32Derivation! : bip32Derivation!;
+      bip32Derivation ?? tapBip32Derivation ?? const <DerivationPath>[];
   List<Signature> get signatureList => {
         if (partialSig != null) ...partialSig!,
         if (tapScriptSig != null) ...tapScriptSig!,

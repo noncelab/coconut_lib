@@ -173,7 +173,8 @@ abstract class MultisignatureWalletBase extends WalletBase {
   }
 
   @override
-  String addSignatureToPsbt(String psbt) {
+  String addSignatureToPsbt(String psbt,
+      {bool allowFinalizedForeignInputs = false}) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
       throw PsbtException(
@@ -189,14 +190,16 @@ abstract class MultisignatureWalletBase extends WalletBase {
     if (this is! MultisignatureVault) {
       throw StateError('Multisignature policy validation requires a vault.');
     }
-    psbtObject.validateMultisignaturePolicy(this as MultisignatureVault);
+    psbtObject.validateMultisignaturePolicy(this as MultisignatureVault,
+        allowFinalizedForeignInputs: allowFinalizedForeignInputs);
 
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {
       //in every input
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
-      if (psbtInput.requiredSignature <= psbtInput.signedCount) {
+      if (psbtInput.requiredSignature <= psbtInput.signedCount ||
+          (allowFinalizedForeignInputs && psbtInput.isFinalized)) {
         continue;
       }
       //get sigHash

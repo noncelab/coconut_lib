@@ -311,7 +311,14 @@ class KeyStore {
         publicKey, psbtInput.muSig2AggregatedPublicKey!, sigHash, publicNonce);
   }
 
-  String addSignatureToPsbt(String psbt, AddressType addressType) {
+  /// Adds this key store's signature to every input it can sign in [psbt].
+  ///
+  /// Set [allowFinalizedForeignInputs] to skip inputs that are already
+  /// finalized, such as a payjoin counterparty's, instead of failing on them.
+  /// This method does not check the vault policy; callers holding a vault
+  /// should validate the PSBT against it first.
+  String addSignatureToPsbt(String psbt, AddressType addressType,
+      {bool allowFinalizedForeignInputs = false}) {
     if (!hasSeed) {
       throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
@@ -332,8 +339,19 @@ class KeyStore {
         inputIndex++) {
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
 
-      if (psbtInput.requiredSignature <= psbtInput.signedCount) {
+      if (psbtInput.requiredSignature <= psbtInput.signedCount ||
+          (allowFinalizedForeignInputs && psbtInput.isFinalized)) {
         continue;
+      }
+      if (psbtInput.derivationPathList.isEmpty) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input has no derivation path to sign with.',
+            inputIndex: inputIndex);
+      }
+      if (psbtInput.witnessUtxo == null) {
+        throw PsbtException(
+            PsbtErrorCode.missingMetadata, 'Input is missing its witness UTXO.',
+            inputIndex: inputIndex);
       }
 
       // Generate sig hash
@@ -357,7 +375,14 @@ class KeyStore {
         for (int j = 0;
             j < psbtObject.unsignedTransaction!.inputs.length;
             j++) {
-          utxoList.add(psbtObject.inputs[j].witnessUtxo!);
+          final TransactionOutput? witnessUtxo =
+              psbtObject.inputs[j].witnessUtxo;
+          if (witnessUtxo == null) {
+            throw PsbtException(PsbtErrorCode.missingMetadata,
+                'Input is missing its witness UTXO.',
+                inputIndex: j);
+          }
+          utxoList.add(witnessUtxo);
         }
         sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
             inputIndex, utxoList,

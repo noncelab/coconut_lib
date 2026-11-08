@@ -197,7 +197,8 @@ abstract class TaprootWalletBase extends WalletBase {
   }
 
   @override
-  String addSignatureToPsbt(String psbt) {
+  String addSignatureToPsbt(String psbt,
+      {bool allowFinalizedForeignInputs = false}) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
       throw PsbtException(
@@ -222,14 +223,16 @@ abstract class TaprootWalletBase extends WalletBase {
     if (this is! TaprootVault) {
       throw StateError('Taproot policy validation requires a vault.');
     }
-    psbtObject.validateTaprootPolicy(this as TaprootVault);
+    psbtObject.validateTaprootPolicy(this as TaprootVault,
+        allowFinalizedForeignInputs: allowFinalizedForeignInputs);
 
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {
       //in every input
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
-      if (psbtInput.requiredSignature <= psbtInput.signedCount) {
+      if (psbtInput.requiredSignature <= psbtInput.signedCount ||
+          (allowFinalizedForeignInputs && psbtInput.isFinalized)) {
         continue;
       }
 

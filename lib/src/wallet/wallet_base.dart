@@ -37,5 +37,10 @@ abstract class WalletBase {
   bool hasPublicKeyInPsbt(String psbt);
 
   /// Adds every signature available to this wallet or vault to [psbt].
-  String addSignatureToPsbt(String psbt);
+  ///
+  /// Set [allowFinalizedForeignInputs] to sign a PSBT that also spends inputs
+  /// another party has already finalized, as in a payjoin (BIP 78, BIP 77).
+  /// Those inputs are left untouched; see [Psbt.matchesVault].
+  String addSignatureToPsbt(String psbt,
+      {bool allowFinalizedForeignInputs = false});
 }

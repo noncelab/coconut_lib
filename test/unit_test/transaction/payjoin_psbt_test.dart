@@ -188,6 +188,60 @@ void main() {
     });
   });
 
+  group('addSignatureToPsbt', () {
+    test('rejects foreign inputs by default', () {
+      final String psbt = PayjoinFixture.senderProposal().serialize();
+
+      expect(
+          () => vault.addSignatureToPsbt(psbt), throwsA(isA<PsbtException>()));
+      expect(() => vault.keyStore.addSignatureToPsbt(psbt, AddressType.p2wpkh),
+          throwsA(isA<PsbtException>()));
+    });
+
+    for (final (String name, Psbt Function() build, List<int> owned) in [
+      ('sender', PayjoinFixture.senderProposal, [0, 2]),
+      ('receiver', PayjoinFixture.receiverProposal, [2]),
+    ]) {
+      test('signs only our inputs of the $name proposal', () {
+        final Psbt unsigned = build();
+        for (final String signed in [
+          vault.addSignatureToPsbt(unsigned.serialize(),
+              allowFinalizedForeignInputs: true),
+          vault.keyStore.addSignatureToPsbt(
+              unsigned.serialize(), AddressType.p2wpkh,
+              allowFinalizedForeignInputs: true),
+        ]) {
+          final Psbt psbt = Psbt.parse(signed);
+          for (int i = 0; i < psbt.inputs.length; i++) {
+            if (owned.contains(i)) {
+              final Signature signature = psbt.inputs[i].partialSig!.single;
+              expect(
+                  psbt.validateSignature(
+                      i, signature.signature, signature.publicKey),
+                  isTrue);
+            } else {
+              expect(psbt.inputs[i].partialSig, isEmpty);
+              expect(psbt.inputs[i].finalScriptWitness,
+                  unsigned.inputs[i].finalScriptWitness);
+            }
+          }
+        }
+      });
+    }
+  });
+
+  group('isSigned', () {
+    test('looks past a leading foreign input', () {
+      final Psbt unsigned = PayjoinFixture.receiverProposal();
+      final Psbt signed = Psbt.parse(vault.addSignatureToPsbt(
+          unsigned.serialize(),
+          allowFinalizedForeignInputs: true));
+
+      expect(unsigned.isSigned(vault.keyStore), isFalse);
+      expect(signed.isSigned(vault.keyStore), isTrue);
+    });
+  });
+
   group('multisignature vault', () {
     late MultisignatureVault multisig;
     late Psbt psbt;
@@ -209,6 +263,18 @@ void main() {
       expect(psbt.matchesVault(multisig), isFalse);
       expect(psbt.matchesVault(multisig, allowFinalizedForeignInputs: true),
           isTrue);
+    });
+
+    test('signs only our inputs', () {
+      expect(() => multisig.addSignatureToPsbt(psbt.serialize()),
+          throwsA(isA<PsbtException>()));
+
+      final Psbt signed = Psbt.parse(multisig.addSignatureToPsbt(
+          psbt.serialize(),
+          allowFinalizedForeignInputs: true));
+
+      expect(signed.inputs[0].partialSig, isEmpty);
+      expect(signed.inputs[1].partialSig, hasLength(2));
     });
   });
 
@@ -247,6 +313,20 @@ void main() {
           throwsA(isA<PsbtException>()
               .having((e) => e.code, 'code', PsbtErrorCode.missingMetadata)
               .having((e) => e.inputIndex, 'inputIndex', 1)));
+    });
+
+    test('signs only our key-path inputs', () {
+      expect(() => taproot.addSignatureToPsbt(psbt.serialize()),
+          throwsA(isA<PsbtException>()));
+
+      final Psbt signed = Psbt.parse(taproot.addSignatureToPsbt(
+          psbt.serialize(),
+          allowFinalizedForeignInputs: true));
+
+      expect(signed.inputs[0].tapKeySig, isNotNull);
+      expect(signed.inputs[1].tapKeySig, isNull);
+      expect(signed.inputs[1].finalScriptWitness,
+          psbt.inputs[1].finalScriptWitness);
     });
   });
 }
