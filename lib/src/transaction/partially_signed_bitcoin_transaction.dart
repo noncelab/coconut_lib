@@ -657,6 +657,7 @@ class Psbt {
       List<DerivationPath> inputDerivationPathList = [];
       List<Signature> partialSigList = [];
       List<String> finalScriptWitness = [];
+      String? finalScriptSig;
       MultisignatureScript? witnessScript;
 
       // for every taproot
@@ -698,6 +699,10 @@ class Psbt {
           String size =
               Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
           witnessScript = MultisignatureScript.parse(size + script);
+        }
+        // 07 : FINAL_SCRIPTSIG
+        if (key == '07') {
+          finalScriptSig = psbtMap["inputs"][i][key];
         }
         // 08 : FINAL_SCRIPTWITNESS
         if (key.startsWith('08')) {
@@ -822,6 +827,7 @@ class Psbt {
       if (finalScriptWitness.isNotEmpty) {
         input.finalScriptWitness = finalScriptWitness;
       }
+      input.finalScriptSig = finalScriptSig;
       input.sighashType = sighashType;
       inputs.add(input);
     }
@@ -1848,6 +1854,7 @@ class PsbtInput {
   List<Signature>? partialSig; //0x02
   List<DerivationPath>? bip32Derivation; //0x03
   MultisignatureScript? witnessScript; //0x05
+  String? finalScriptSig; //0x07
   List<String>? finalScriptWitness; //0x08
   int? sighashType; //0x03
 
@@ -1894,6 +1901,12 @@ class PsbtInput {
       this.tapLeafScript,
       this.controlBlock,
       this.tapMerkleRoot);
+
+  /// Whether an Input Finalizer has completed this input's scriptSig or
+  /// witness.
+  bool get isFinalized =>
+      (finalScriptSig?.isNotEmpty ?? false) ||
+      (finalScriptWitness?.isNotEmpty ?? false);
 
   List<DerivationPath> get derivationPathList =>
       bip32Derivation == null ? tapBip32Derivation! : bip32Derivation!;
