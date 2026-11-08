@@ -386,6 +386,76 @@ void main() {
     });
   });
 
+  group('netAmount', () {
+    test('is our outputs minus our inputs', () {
+      // Sender: spends 2 x 100000, keeps 149000 in change.
+      expect(PayjoinFixture.senderProposal().netAmount(vault), -51000);
+      // Receiver: spends 100000, receives 200000.
+      expect(PayjoinFixture.receiverProposal().netAmount(vault), 100000);
+    });
+
+    test('ignores the amount a foreign input claims', () {
+      final Psbt proposal = PayjoinFixture.senderProposal();
+      final Map<String, dynamic> keyMap = proposal.toKeyMap();
+      final TransactionOutput claimed = proposal.inputs[1].witnessUtxo!;
+      keyMap['inputs'][1]['01'] = TransactionOutput.forPayment(
+              claimed.amount - 50000, claimed.scriptPubKey.getAddress())
+          .serialize();
+      final Psbt lying = Psbt.fromMap(keyMap);
+
+      expect(lying.netAmount(vault), proposal.netAmount(vault));
+      expect(lying.fee, proposal.fee - 50000);
+    });
+
+    test('counts addresses the caller recognises', () {
+      final Psbt psbt = PayjoinFixture.build(vault, inputs: [
+        OwnedInput(PayjoinFixture.ownedUtxo(vault, 0)),
+        OwnedInput(PayjoinFixture.ownedUtxo(vault, 1)),
+      ], outputs: [
+        ForeignOutput(150000, vault.getAddress(9)),
+        ForeignOutput(49000, UtxoFixture.receiveAddress),
+      ]);
+      final Map<String, dynamic> keyMap = psbt.toKeyMap();
+      (keyMap['inputs'][1] as Map<String, dynamic>)
+          .removeWhere((key, _) => key.startsWith('06'));
+      final Psbt stripped = Psbt.fromMap(keyMap);
+      final Set<String> known = {vault.getAddress(9), vault.getAddress(1)};
+
+      expect(stripped.netAmount(vault), -100000);
+      expect(stripped.netAmount(vault, isOwnedAddress: known.contains), -50000);
+    });
+
+    test('fails clearly when our input lacks its witness UTXO', () {
+      final Map<String, dynamic> keyMap =
+          PayjoinFixture.senderProposal().toKeyMap();
+      keyMap['inputs'][2].remove('01');
+
+      expect(
+          () => Psbt.fromMap(keyMap).netAmount(vault),
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.missingMetadata)
+              .having((e) => e.inputIndex, 'inputIndex', 2)));
+    });
+  });
+
+  group('fee', () {
+    test('counts every input amount', () {
+      expect(PayjoinFixture.senderProposal().fee, 1000);
+    });
+
+    test('fails clearly without every witness UTXO', () {
+      final Map<String, dynamic> keyMap =
+          PayjoinFixture.senderProposal().toKeyMap();
+      keyMap['inputs'][1].remove('01');
+
+      expect(
+          () => Psbt.fromMap(keyMap).fee,
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.missingMetadata)
+              .having((e) => e.inputIndex, 'inputIndex', 1)));
+    });
+  });
+
   group('multisignature vault', () {
     late MultisignatureVault multisig;
     late Psbt psbt;

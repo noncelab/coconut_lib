@@ -94,6 +94,10 @@ class Psbt {
   String? identifier;
 
   /// Get the fee of the transaction.
+  ///
+  /// The fee is computed from every input's witness UTXO, including inputs
+  /// another party contributed. Their amounts are unverified for SegWit v0
+  /// inputs, so show [netAmount] to the user for a payjoin.
   int get fee => () {
         int totalInput = 0;
         int totalOutput = 0;
@@ -101,16 +105,84 @@ class Psbt {
           throw Exception('Inputs are empty');
         }
         for (int i = 0; i < inputs.length; i++) {
-          if (inputs[i].witnessUtxo == null) {
-            throw Exception('Witness UTXO is null');
+          final TransactionOutput? witnessUtxo = inputs[i].witnessUtxo;
+          if (witnessUtxo == null) {
+            throw PsbtException(PsbtErrorCode.missingMetadata,
+                'Input is missing its witness UTXO.',
+                inputIndex: i);
           }
-          totalInput += inputs[i].witnessUtxo!.amount;
+          totalInput += witnessUtxo.amount;
         }
         for (int i = 0; i < unsignedTransaction!.outputs.length; i++) {
           totalOutput += unsignedTransaction!.outputs[i].amount;
         }
         return totalInput - totalOutput;
       }();
+
+  /// The change in [wallet]'s balance if this transaction confirms: the
+  /// outputs paying [wallet] minus the inputs it spends. Positive means
+  /// incoming.
+  ///
+  /// An input or output belongs to [wallet] when its derivation metadata
+  /// derives its address from [wallet], or when [isOwnedAddress] recognises
+  /// the address. Pass [isOwnedAddress] when the PSBT may lack derivations,
+  /// for example a payjoin proposal whose counterparty removed them.
+  ///
+  /// Throws a [PsbtException] when an input of [wallet] has no witness UTXO.
+  int netAmount(WalletBase wallet,
+      {bool Function(String address)? isOwnedAddress}) {
+    // A SegWit v0 signature commits to the amount of the input it signs
+    // (BIP 143) but not to other inputs' amounts. A counterparty's witness
+    // UTXO can therefore misstate its amount, and any fee computed from it is
+    // then wrong. The net amount reads only the wallet's own inputs, whose
+    // amounts its signatures commit to, and the outputs, which SIGHASH_ALL
+    // commits to.
+    bool isOwned(String? address, Iterable<DerivationPath> derivations) =>
+        address != null &&
+        (PsbtOutput._derivesAddress(wallet,
+                derivations.map((derivation) => derivation.path), address) ||
+            (isOwnedAddress?.call(address) ?? false));
+
+    int net = 0;
+    for (final PsbtOutput output in outputs) {
+      if (isOwned(_addressOrNull(output.outScript),
+          [...output.bip32Derivations, ...output.tapBip32Derivations])) {
+        net += output.outAmount!;
+      }
+    }
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final List<DerivationPath> derivations = [
+        ...?input.bip32Derivation,
+        ...?input.tapBip32Derivation
+      ];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      if (witnessUtxo == null) {
+        if (PsbtOutput._hasWalletPath(
+            wallet, derivations.map((derivation) => derivation.path))) {
+          throw PsbtException(PsbtErrorCode.missingMetadata,
+              'Input is missing its witness UTXO.',
+              inputIndex: inputIndex);
+        }
+        continue;
+      }
+      if (isOwned(_addressOrNull(witnessUtxo.scriptPubKey), derivations)) {
+        net -= witnessUtxo.amount;
+      }
+    }
+    return net;
+  }
+
+  static String? _addressOrNull(ScriptPublicKey? script) {
+    if (script == null) {
+      return null;
+    }
+    try {
+      return script.getAddress();
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Get the sending amount, excluding change verified against [wallet].
   int sendingAmount(WalletBase wallet) {
@@ -2364,36 +2436,46 @@ class PsbtOutput {
     if (outScript == null || derivationPaths.isEmpty) {
       return false;
     }
+    return _derivesAddress(wallet, derivationPaths, outAddress);
+  }
 
-    final List<String> walletPathSegments = wallet.derivationPath.split('/');
-
+  /// Whether one of [derivationPaths] is a receive or change path of
+  /// [wallet] whose address is [address].
+  static bool _derivesAddress(
+      WalletBase wallet, Iterable<String> derivationPaths, String address) {
     for (final String path in derivationPaths) {
-      final List<String> pathSegments = path.split('/');
-      final bool isDirectAddressPath = pathSegments.length ==
-              walletPathSegments.length + 2 &&
-          pathSegments
-              .sublist(0, walletPathSegments.length)
-              .asMap()
-              .entries
-              .every((entry) => entry.value == walletPathSegments[entry.key]) &&
-          (pathSegments[pathSegments.length - 2] == '0' ||
-              pathSegments[pathSegments.length - 2] == '1') &&
-          int.tryParse(pathSegments.last) != null;
-
-      if (!isDirectAddressPath || !WalletUtility.validateDerivationPath(path)) {
+      if (!_isWalletAddressPath(wallet, path)) {
         continue;
       }
-
       try {
-        if (wallet.getAddressWithDerivationPath(path) == outAddress) {
+        if (wallet.getAddressWithDerivationPath(path) == address) {
           return true;
         }
       } catch (_) {
         continue;
       }
     }
-
     return false;
+  }
+
+  static bool _hasWalletPath(
+          WalletBase wallet, Iterable<String> derivationPaths) =>
+      derivationPaths.any((path) => _isWalletAddressPath(wallet, path));
+
+  static bool _isWalletAddressPath(WalletBase wallet, String path) {
+    final List<String> walletPathSegments = wallet.derivationPath.split('/');
+    final List<String> pathSegments = path.split('/');
+    final bool isDirectAddressPath = pathSegments.length ==
+            walletPathSegments.length + 2 &&
+        pathSegments
+            .sublist(0, walletPathSegments.length)
+            .asMap()
+            .entries
+            .every((entry) => entry.value == walletPathSegments[entry.key]) &&
+        (pathSegments[pathSegments.length - 2] == '0' ||
+            pathSegments[pathSegments.length - 2] == '1') &&
+        int.tryParse(pathSegments.last) != null;
+    return isDirectAddressPath && WalletUtility.validateDerivationPath(path);
   }
 }
 
