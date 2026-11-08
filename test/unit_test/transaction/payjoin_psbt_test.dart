@@ -456,6 +456,113 @@ void main() {
     });
   });
 
+  group('getSignedTransaction', () {
+    Psbt signedProposal({WalletBase? foreignSigner}) =>
+        Psbt.parse(vault.addSignatureToPsbt(
+            PayjoinFixture.senderProposal(foreignSigner: foreignSigner)
+                .serialize(),
+            allowFinalizedForeignInputs: true));
+
+    void expectValidExtraction(Psbt psbt, AddressType addressType) {
+      final Transaction tx = psbt.getSignedTransaction(addressType);
+      expect(
+          tx.validateSpend(
+              psbt.inputs.map((input) => input.witnessUtxo!).toList()),
+          isTrue);
+      for (int i = 0; i < psbt.inputs.length; i++) {
+        if (psbt.inputs[i].isFinalized) {
+          expect(tx.inputs[i].witnessList, psbt.inputs[i].finalScriptWitness);
+        }
+      }
+    }
+
+    test('extracts our inputs beside a foreign P2WPKH input', () {
+      expectValidExtraction(signedProposal(), AddressType.p2wpkh);
+      expectValidExtraction(
+          signedProposal().finalizeInputs(), AddressType.p2wpkh);
+    });
+
+    test('extracts our inputs beside a foreign Taproot key-path input', () {
+      final Psbt psbt = signedProposal(
+          foreignSigner: PayjoinFixture.taprootCounterpartyVault());
+
+      expectValidExtraction(psbt, AddressType.p2wpkh);
+      expectValidExtraction(psbt.finalizeInputs(), AddressType.p2wpkh);
+    });
+
+    test('rejects an invalid foreign Taproot witness', () {
+      final Psbt psbt = signedProposal(
+          foreignSigner: PayjoinFixture.taprootCounterpartyVault());
+      final String signature = psbt.inputs[1].finalScriptWitness!.single;
+      // Change the last byte of the Schnorr signature.
+      final String forged = signature.substring(0, signature.length - 2) +
+          (signature.endsWith('00') ? '01' : '00');
+      psbt.toKeyMap()['inputs'][1]['08'] =
+          PayjoinFixture.serializeWitness([forged]);
+
+      expect(
+          () => Psbt.fromMap(psbt.toKeyMap())
+              .getSignedTransaction(AddressType.p2wpkh),
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.invalidSignature)
+              .having((e) => e.inputIndex, 'inputIndex', 1)));
+    });
+
+    test('writes a foreign final scriptSig', () {
+      final Psbt psbt = signedProposal();
+      final Map<String, dynamic> keyMap = psbt.toKeyMap();
+      final String redeemScript = '0014${'ab' * 20}';
+      final String p2shScript =
+          'a914${Codec.encodeHex(Hash.sha160fromHex(redeemScript))}87';
+      final TransactionOutput p2shUtxo = TransactionOutput.parse(
+          '${Codec.encodeHex(Converter.intToLittleEndianBytes(100000, 8))}'
+          '17$p2shScript');
+      keyMap['inputs'][1]['01'] = p2shUtxo.serialize();
+      keyMap['inputs'][1]['07'] = '16$redeemScript';
+
+      final Transaction tx = Psbt.parse(Psbt.fromMap(keyMap).serialize())
+          .getSignedTransaction(AddressType.p2wpkh);
+
+      expect(tx.inputs[1].scriptSig.rawSerialize(), '16$redeemScript');
+      expect(tx.inputs[1].witnessList, psbt.inputs[1].finalScriptWitness);
+      // Serialized as length 0x17, then the push of the redeem script.
+      expect(tx.serialize(), contains('1716$redeemScript'));
+    });
+
+    test('extracts a multisig vault spend beside a foreign input', () {
+      final MultisignatureVault multisig = WalletFixture.p2wshVault();
+      final Psbt psbt = Psbt.parse(multisig.addSignatureToPsbt(
+          PayjoinFixture.build(multisig, inputs: [
+            PayjoinFixture.foreignInput(PayjoinFixture.counterpartyVault(), 0),
+            OwnedInput(PayjoinFixture.ownedUtxo(multisig, 0)),
+          ], outputs: [
+            OwnedOutput(150000, '${multisig.derivationPath}/0/3'),
+            ForeignOutput(49000, UtxoFixture.receiveAddress),
+          ]).serialize(),
+          allowFinalizedForeignInputs: true));
+
+      expectValidExtraction(psbt, AddressType.p2wsh);
+      expectValidExtraction(psbt.finalizeInputs(), AddressType.p2wsh);
+    });
+
+    test('extracts a Taproot vault spend beside foreign inputs', () {
+      final TaprootVault taproot = WalletFixture.p2trKeyPathVault();
+      final Psbt psbt = Psbt.parse(taproot.addSignatureToPsbt(
+          PayjoinFixture.build(taproot, inputs: [
+            OwnedInput(PayjoinFixture.ownedUtxo(taproot, 0)),
+            PayjoinFixture.foreignInput(
+                PayjoinFixture.taprootCounterpartyVault(), 0),
+            PayjoinFixture.foreignInput(PayjoinFixture.counterpartyVault(), 0),
+          ], outputs: [
+            OwnedOutput(250000, '${taproot.derivationPath}/0/3'),
+            ForeignOutput(49000, UtxoFixture.receiveAddress),
+          ]).serialize(),
+          allowFinalizedForeignInputs: true));
+
+      expectValidExtraction(psbt, AddressType.p2tr);
+    });
+  });
+
   group('multisignature vault', () {
     late MultisignatureVault multisig;
     late Psbt psbt;

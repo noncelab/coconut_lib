@@ -1868,6 +1868,12 @@ class Psbt {
   }
 
   /// Get the transaction if all inputs are signed.
+  ///
+  /// [addressType] is the type of the inputs this PSBT signs with partial
+  /// signatures. Inputs that are already finalized, including a payjoin
+  /// counterparty's of any type, are copied from their final scriptSig and
+  /// witness. Their signatures are verified for P2WPKH, P2WSH and Taproot
+  /// key-path prevouts; other finalized inputs are copied unverified.
   Transaction getSignedTransaction(AddressType addressType) {
     Transaction signedTransaction =
         Transaction.parseUnsignedTransaction(unsignedTransaction!.serialize());
@@ -1875,6 +1881,10 @@ class Psbt {
     //p2wsh multisig
     if (addressType == AddressType.p2wsh) {
       for (int i = 0; i < inputs.length; i++) {
+        if (inputs[i].isFinalized) {
+          _setFinalizedInput(signedTransaction, i);
+          continue;
+        }
         if (inputs[i].totalSigner < inputs[i].requiredSignature) {
           throw PsbtException(PsbtErrorCode.insufficientSignatures,
               'Input does not have enough signatures.',
@@ -1914,20 +1924,8 @@ class Psbt {
                 'Input contains an invalid signature.',
                 inputIndex: i);
           }
-        } else if (inputs[i].finalScriptWitness != null &&
-            inputs[i].finalScriptWitness!.isNotEmpty) {
-          signedTransaction.inputs[i].witnessList =
-              List<String>.from(inputs[i].finalScriptWitness!);
-          if (inputs[i].witnessUtxo == null) {
-            continue;
-          }
-          if (signedTransaction.validateEcdsa(i, inputs[i].witnessUtxo!)) {
-            continue;
-          } else {
-            throw PsbtException(PsbtErrorCode.invalidSignature,
-                'Input contains an invalid finalized signature.',
-                inputIndex: i);
-          }
+        } else if (inputs[i].isFinalized) {
+          _setFinalizedInput(signedTransaction, i);
         } else {
           throw PsbtException(PsbtErrorCode.insufficientSignatures,
               'Input does not have enough signatures.',
@@ -1946,7 +1944,9 @@ class Psbt {
         utxoList.add(witnessUtxo);
       }
       for (int i = 0; i < inputs.length; i++) {
-        if (inputs[i].tapScriptSig != null &&
+        if (inputs[i].isFinalized) {
+          _setFinalizedInput(signedTransaction, i);
+        } else if (inputs[i].tapScriptSig != null &&
             inputs[i].tapScriptSig!.isNotEmpty) {
           //Script path spending
           for (final Signature signature in inputs[i].tapScriptSig!) {
@@ -2028,7 +2028,10 @@ class Psbt {
           }
         }
       }
-      if (!signedTransaction.validateSpend(utxoList)) {
+      final bool everyPrevoutVerifiable =
+          utxoList.every((utxo) => _isVerifiableScript(utxo.scriptPubKey));
+      if (everyPrevoutVerifiable &&
+          !signedTransaction.validateSpend(utxoList)) {
         throw PsbtException(PsbtErrorCode.invalidTransaction,
             'Finalized PSBT produced an invalid transaction.');
       }
@@ -2038,6 +2041,63 @@ class Psbt {
     //Validate signedTransaction
     return signedTransaction;
   }
+
+  /// Copies a finalized input's scriptSig and witness into [transaction] and
+  /// verifies them where this library can.
+  void _setFinalizedInput(Transaction transaction, int inputIndex) {
+    final PsbtInput input = inputs[inputIndex];
+    final TransactionInput txInput = transaction.inputs[inputIndex];
+    final String? finalScriptSig = input.finalScriptSig;
+    if (finalScriptSig != null && finalScriptSig.isNotEmpty) {
+      final int length = finalScriptSig.length ~/ 2;
+      txInput.scriptSig = ScriptSignature.parse(
+          Codec.encodeHex(Codec.encodeVariableInteger(length)) +
+              finalScriptSig);
+    }
+    txInput.witnessList = List<String>.from(input.finalScriptWitness ?? []);
+
+    final TransactionOutput? witnessUtxo = input.witnessUtxo;
+    if (witnessUtxo == null) {
+      return;
+    }
+    final ScriptPublicKey script = witnessUtxo.scriptPubKey;
+    final bool isValid;
+    if (script.isP2wpkh() || script.isP2wsh()) {
+      isValid = transaction.validateEcdsa(inputIndex, witnessUtxo);
+    } else if (script.isP2tr() && txInput.witnessList.length == 1) {
+      final List<TransactionOutput> utxoList = [];
+      for (int i = 0; i < inputs.length; i++) {
+        final TransactionOutput? utxo = inputs[i].witnessUtxo;
+        if (utxo == null) {
+          // BIP 341 signature hashes commit to every prevout.
+          throw PsbtException(PsbtErrorCode.missingMetadata,
+              'Input is missing its witness UTXO.',
+              inputIndex: i);
+        }
+        utxoList.add(utxo);
+      }
+      try {
+        isValid = transaction.validateSchnorr(inputIndex, utxoList);
+      } on FormatException catch (e) {
+        throw PsbtException(PsbtErrorCode.invalidSignature,
+            'Input contains an invalid finalized signature.',
+            inputIndex: inputIndex, cause: e);
+      }
+    } else {
+      // Taproot script paths in mixed transactions and wrapped or legacy
+      // scripts are not verified here. An invalid one only makes the
+      // transaction fail to broadcast.
+      return;
+    }
+    if (!isValid) {
+      throw PsbtException(PsbtErrorCode.invalidSignature,
+          'Input contains an invalid finalized signature.',
+          inputIndex: inputIndex);
+    }
+  }
+
+  static bool _isVerifiableScript(ScriptPublicKey script) =>
+      script.isP2wpkh() || script.isP2wsh() || script.isP2tr();
 
   /// Verifies [signature] for [publicKey] against the selected input sighash.
   ///
