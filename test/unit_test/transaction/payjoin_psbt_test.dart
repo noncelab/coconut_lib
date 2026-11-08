@@ -53,4 +53,200 @@ void main() {
           isFalse);
     });
   });
+
+  group('validateSingleSignaturePolicy', () {
+    test('rejects foreign inputs by default', () {
+      for (final Psbt psbt in [
+        PayjoinFixture.senderProposal(),
+        PayjoinFixture.receiverProposal()
+      ]) {
+        expect(
+            () => psbt.validateSingleSignaturePolicy(vault),
+            throwsA(isA<PsbtException>()
+                .having((e) => e.code, 'code', PsbtErrorCode.missingMetadata)));
+      }
+    });
+
+    test('accepts finalized foreign inputs when allowed', () {
+      for (final Psbt psbt in [
+        PayjoinFixture.senderProposal(),
+        PayjoinFixture.receiverProposal()
+      ]) {
+        expect(
+            () => psbt.validateSingleSignaturePolicy(vault,
+                allowFinalizedForeignInputs: true),
+            returnsNormally);
+      }
+    });
+
+    test('accepts a finalized foreign Taproot input when allowed', () {
+      final Psbt psbt = PayjoinFixture.senderProposal(
+          foreignSigner: PayjoinFixture.taprootCounterpartyVault());
+
+      expect(
+          () => psbt.validateSingleSignaturePolicy(vault,
+              allowFinalizedForeignInputs: true),
+          returnsNormally);
+    });
+
+    test('still rejects an unfinalized input without derivations', () {
+      final Map<String, dynamic> keyMap =
+          PayjoinFixture.senderProposal().toKeyMap();
+      keyMap['inputs'][1].remove('08');
+      final Psbt psbt = Psbt.fromMap(keyMap);
+
+      expect(
+          () => psbt.validateSingleSignaturePolicy(vault,
+              allowFinalizedForeignInputs: true),
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.missingMetadata)
+              .having((e) => e.inputIndex, 'inputIndex', 1)));
+    });
+
+    test('checks a finalized input that claims our fingerprint', () {
+      final Map<String, dynamic> keyMap =
+          PayjoinFixture.senderProposal().toKeyMap();
+      // A forged key under our fingerprint and path, on a finalized input.
+      final String forgedKey = PayjoinFixture.counterpartyVault()
+          .keyStore
+          .getPublicKey(0, isChange: false);
+      final String ourDerivation = (keyMap['inputs'][0] as Map<String, dynamic>)
+          .entries
+          .firstWhere((entry) => entry.key.startsWith('06'))
+          .value;
+      keyMap['inputs'][1]['06$forgedKey'] = ourDerivation;
+      final Psbt psbt = Psbt.fromMap(keyMap);
+
+      expect(
+          () => psbt.validateSingleSignaturePolicy(vault,
+              allowFinalizedForeignInputs: true),
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.signerMismatch)
+              .having((e) => e.inputIndex, 'inputIndex', 1)));
+    });
+
+    test('checks an owned input whose witness UTXO was swapped', () {
+      final Map<String, dynamic> keyMap =
+          PayjoinFixture.senderProposal().toKeyMap();
+      keyMap['inputs'][2]['01'] = keyMap['inputs'][1]['01'];
+      final Psbt psbt = Psbt.fromMap(keyMap);
+
+      expect(
+          () => psbt.validateSingleSignaturePolicy(vault,
+              allowFinalizedForeignInputs: true),
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.utxoMismatch)
+              .having((e) => e.inputIndex, 'inputIndex', 2)));
+    });
+
+    test('requires at least one owned input', () {
+      final SingleSignatureVault counterparty =
+          PayjoinFixture.counterpartyVault();
+      final Psbt psbt = PayjoinFixture.build(vault, inputs: [
+        PayjoinFixture.foreignInput(counterparty, 0),
+        PayjoinFixture.foreignInput(counterparty, 1),
+      ], outputs: [
+        OwnedOutput(150000, '${vault.derivationPath}/0/3'),
+      ]);
+
+      expect(
+          () => psbt.validateSingleSignaturePolicy(vault,
+              allowFinalizedForeignInputs: true),
+          throwsA(isA<PsbtException>()));
+    });
+  });
+
+  group('matchesVault', () {
+    test('is false for foreign inputs by default and true when allowed', () {
+      for (final Psbt psbt in [
+        PayjoinFixture.senderProposal(),
+        PayjoinFixture.receiverProposal()
+      ]) {
+        expect(psbt.matchesVault(vault), isFalse);
+        expect(psbt.matchesVault(vault, allowFinalizedForeignInputs: true),
+            isTrue);
+      }
+    });
+
+    test('ignores the counterparty xpub and identifier when allowed', () {
+      final SingleSignatureVault counterparty =
+          PayjoinFixture.counterpartyVault();
+      final Psbt psbt = PayjoinFixture.build(vault,
+          inputs: [
+            PayjoinFixture.foreignInput(counterparty, 0),
+            OwnedInput(PayjoinFixture.ownedUtxo(vault, 0)),
+          ],
+          outputs: [
+            OwnedOutput(150000, '${vault.derivationPath}/0/3'),
+          ],
+          globalsFrom: counterparty);
+
+      expect(psbt.isFromCoconut, isTrue);
+      expect(psbt.matchesVault(vault), isFalse);
+      expect(
+          psbt.matchesVault(vault, allowFinalizedForeignInputs: true), isTrue);
+    });
+  });
+
+  group('multisignature vault', () {
+    late MultisignatureVault multisig;
+    late Psbt psbt;
+    setUp(() {
+      multisig = WalletFixture.p2wshVault();
+      psbt = PayjoinFixture.build(multisig,
+          inputs: [
+            PayjoinFixture.foreignInput(PayjoinFixture.counterpartyVault(), 0),
+            OwnedInput(PayjoinFixture.ownedUtxo(multisig, 0)),
+          ],
+          outputs: [
+            OwnedOutput(150000, '${multisig.derivationPath}/0/3'),
+            ForeignOutput(49000, UtxoFixture.receiveAddress),
+          ],
+          globalsFrom: multisig);
+    });
+
+    test('accepts finalized foreign inputs only when allowed', () {
+      expect(psbt.matchesVault(multisig), isFalse);
+      expect(psbt.matchesVault(multisig, allowFinalizedForeignInputs: true),
+          isTrue);
+    });
+  });
+
+  group('taproot vault', () {
+    late TaprootVault taproot;
+    late Psbt psbt;
+    setUp(() {
+      taproot = WalletFixture.p2trKeyPathVault();
+      psbt = PayjoinFixture.build(taproot,
+          inputs: [
+            OwnedInput(PayjoinFixture.ownedUtxo(taproot, 0)),
+            PayjoinFixture.foreignInput(
+                PayjoinFixture.taprootCounterpartyVault(), 0),
+          ],
+          outputs: [
+            OwnedOutput(150000, '${taproot.derivationPath}/0/3'),
+            ForeignOutput(49000, UtxoFixture.receiveAddress),
+          ],
+          globalsFrom: taproot);
+    });
+
+    test('accepts finalized foreign inputs only when allowed', () {
+      expect(psbt.matchesVault(taproot), isFalse);
+      expect(psbt.matchesVault(taproot, allowFinalizedForeignInputs: true),
+          isTrue);
+    });
+
+    test('requires the witness UTXO of a foreign input', () {
+      // BIP 341 signature hashes commit to every input's prevout.
+      final Map<String, dynamic> keyMap = psbt.toKeyMap();
+      keyMap['inputs'][1].remove('01');
+
+      expect(
+          () => Psbt.fromMap(keyMap).validateTaprootPolicy(taproot,
+              allowFinalizedForeignInputs: true),
+          throwsA(isA<PsbtException>()
+              .having((e) => e.code, 'code', PsbtErrorCode.missingMetadata)
+              .having((e) => e.inputIndex, 'inputIndex', 1)));
+    });
+  });
 }

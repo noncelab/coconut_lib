@@ -164,12 +164,21 @@ class Psbt {
   /// Returns whether this PSBT's identifying metadata matches [wallet].
   ///
   /// Multisignature inputs are also checked against the complete vault policy.
-  bool matchesVault(WalletBase wallet) {
+  ///
+  /// Set [allowFinalizedForeignInputs] to accept inputs another party has
+  /// already finalized, as in a payjoin (BIP 78, BIP 77); see
+  /// [validateSingleSignaturePolicy]. Global xpubs and the wallet identifier
+  /// are then ignored because the PSBT may carry the other party's, and
+  /// ownership rests on the per-input checks, as it does for PSBTs without
+  /// global xpubs.
+  bool matchesVault(WalletBase wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final bool checkGlobals = !allowFinalizedForeignInputs;
     if (wallet is SingleSignatureVault) {
       // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
       // Without it, ownership rests on the per-input BIP32_DERIVATION checks
       // in validateSingleSignaturePolicy below.
-      if (globalExtendedPublicKeyList.isNotEmpty) {
+      if (checkGlobals && globalExtendedPublicKeyList.isNotEmpty) {
         if (globalExtendedPublicKeyList.length != 1) {
           return false;
         }
@@ -186,12 +195,14 @@ class Psbt {
           return false;
         }
       }
-      if (isFromCoconut == true &&
+      if (checkGlobals &&
+          isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
       try {
-        validateSingleSignaturePolicy(wallet);
+        validateSingleSignaturePolicy(wallet,
+            allowFinalizedForeignInputs: allowFinalizedForeignInputs);
         return true;
       } on PsbtException {
         return false;
@@ -200,7 +211,7 @@ class Psbt {
       // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
       // Without it, ownership rests on the per-input BIP32_DERIVATION checks
       // in validateMultisignaturePolicy below.
-      if (globalExtendedPublicKeyList.isNotEmpty) {
+      if (checkGlobals && globalExtendedPublicKeyList.isNotEmpty) {
         if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
           return false;
         }
@@ -224,42 +235,19 @@ class Psbt {
       //   return false;
       // }
       try {
-        validateMultisignaturePolicy(wallet);
+        validateMultisignaturePolicy(wallet,
+            allowFinalizedForeignInputs: allowFinalizedForeignInputs);
         return true;
       } on PsbtException {
         return false;
       }
     } else if (wallet is TaprootVault) {
-      final Set<String> pubInVaultList = <String>{};
-      for (KeyStore keyStore in wallet.keyStoreList) {
-        pubInVaultList.add(
-            '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
-            '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
-      }
-      for (Policy policy in wallet.policyList) {
-        for (final KeyStore keyStore in policy.keyStoreList) {
-          pubInVaultList.add(
-              '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
-              '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
-        }
-      }
-      if (pubInVaultList.length != globalExtendedPublicKeyList.length) {
-        return false;
-      }
-      final Set<String> pubInPsbtList = globalExtendedPublicKeyList
-          .map((entry) =>
-              '${entry.publicKey}:${entry.masterFingerprint.toUpperCase()}:${entry.path}')
-          .toSet();
-      if (pubInPsbtList.length != globalExtendedPublicKeyList.length ||
-          !pubInPsbtList.containsAll(pubInVaultList)) {
-        return false;
-      }
-      if (isFromCoconut == true &&
-          (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
+      if (checkGlobals && !_globalsMatchTaprootVault(wallet)) {
         return false;
       }
       try {
-        validateTaprootPolicy(wallet);
+        validateTaprootPolicy(wallet,
+            allowFinalizedForeignInputs: allowFinalizedForeignInputs);
         return true;
       } on PsbtException {
         return false;
@@ -269,17 +257,57 @@ class Psbt {
     }
   }
 
+  bool _globalsMatchTaprootVault(TaprootVault wallet) {
+    final Set<String> pubInVaultList = <String>{};
+    for (KeyStore keyStore in wallet.keyStoreList) {
+      pubInVaultList.add(
+          '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+          '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
+    }
+    for (Policy policy in wallet.policyList) {
+      for (final KeyStore keyStore in policy.keyStoreList) {
+        pubInVaultList.add(
+            '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+            '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
+      }
+    }
+    if (pubInVaultList.length != globalExtendedPublicKeyList.length) {
+      return false;
+    }
+    final Set<String> pubInPsbtList = globalExtendedPublicKeyList
+        .map((entry) =>
+            '${entry.publicKey}:${entry.masterFingerprint.toUpperCase()}:${entry.path}')
+        .toSet();
+    if (pubInPsbtList.length != globalExtendedPublicKeyList.length ||
+        !pubInPsbtList.containsAll(pubInVaultList)) {
+      return false;
+    }
+    if (isFromCoconut == true &&
+        (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
+      return false;
+    }
+    return true;
+  }
+
   /// Validates every P2WPKH input against [wallet]'s derived key and script.
   ///
   /// Throws when derivation metadata is forged or a witness UTXO does not
   /// belong to the single-signature vault.
-  void validateSingleSignaturePolicy(SingleSignatureVault wallet) {
-    if (addressType != AddressType.p2wpkh || inputs.isEmpty) {
-      throw PsbtException(PsbtErrorCode.policyMismatch,
-          'PSBT is not a P2WPKH single-signature transaction.');
-    }
+  ///
+  /// With [allowFinalizedForeignInputs], an input that is already finalized
+  /// and has no derivation under the vault's master fingerprint is skipped as
+  /// another party's, as in a payjoin (BIP 78, BIP 77). Every other input
+  /// gets the full checks, and at least one must belong to the vault.
+  void validateSingleSignaturePolicy(SingleSignatureVault wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final Set<String> fingerprints = {wallet.keyStore.masterFingerprint};
+    final List<int> ownedInputIndexes = _ownedInputIndexes(
+        fingerprints,
+        allowFinalizedForeignInputs,
+        AddressType.p2wpkh,
+        'PSBT is not a P2WPKH single-signature transaction.');
 
-    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    for (final int inputIndex in ownedInputIndexes) {
       final PsbtInput input = inputs[inputIndex];
       final TransactionOutput? witnessUtxo = input.witnessUtxo;
       final List<DerivationPath>? derivations = input.bip32Derivation;
@@ -321,13 +349,22 @@ class Psbt {
   ///
   /// Throws when an input's witness script, derivation metadata, or witness
   /// UTXO does not match the script independently derived from the vault.
-  void validateMultisignaturePolicy(MultisignatureVault wallet) {
-    if (addressType != AddressType.p2wsh || inputs.isEmpty) {
-      throw PsbtException(PsbtErrorCode.policyMismatch,
-          'PSBT is not a P2WSH multisignature transaction.');
-    }
+  ///
+  /// [allowFinalizedForeignInputs] works as in [validateSingleSignaturePolicy],
+  /// with any of the vault's master fingerprints marking an input as ours.
+  void validateMultisignaturePolicy(MultisignatureVault wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final Set<String> fingerprints = {
+      for (final KeyStore keyStore in wallet.keyStoreList)
+        keyStore.masterFingerprint
+    };
+    final List<int> ownedInputIndexes = _ownedInputIndexes(
+        fingerprints,
+        allowFinalizedForeignInputs,
+        AddressType.p2wsh,
+        'PSBT is not a P2WSH multisignature transaction.');
 
-    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    for (final int inputIndex in ownedInputIndexes) {
       final PsbtInput input = inputs[inputIndex];
       final TransactionOutput? witnessUtxo = input.witnessUtxo;
       final MultisignatureScript? witnessScript = input.witnessScript;
@@ -421,13 +458,35 @@ class Psbt {
   }
 
   /// Validates every Taproot input against [wallet]'s complete policy.
-  void validateTaprootPolicy(TaprootVault wallet) {
-    if (addressType != AddressType.p2tr || inputs.isEmpty) {
-      throw PsbtException(
-          PsbtErrorCode.policyMismatch, 'PSBT is not a Taproot transaction.');
+  ///
+  /// [allowFinalizedForeignInputs] works as in [validateSingleSignaturePolicy],
+  /// with any key or policy signer's master fingerprint marking an input as
+  /// ours. A foreign input must still carry its witness UTXO, because BIP 341
+  /// signature hashes commit to every input's prevout.
+  void validateTaprootPolicy(TaprootVault wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final Set<String> fingerprints = {
+      for (final KeyStore keyStore in wallet.keyStoreList)
+        keyStore.masterFingerprint,
+      for (final Policy policy in wallet.policyList)
+        for (final KeyStore keyStore in policy.keyStoreList)
+          keyStore.masterFingerprint
+    };
+    final List<int> ownedInputIndexes = _ownedInputIndexes(
+        fingerprints,
+        allowFinalizedForeignInputs,
+        AddressType.p2tr,
+        'PSBT is not a Taproot transaction.');
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      if (!ownedInputIndexes.contains(inputIndex) &&
+          inputs[inputIndex].witnessUtxo == null) {
+        throw PsbtException(
+            PsbtErrorCode.missingMetadata, 'Input is missing its witness UTXO.',
+            inputIndex: inputIndex);
+      }
     }
 
-    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    for (final int inputIndex in ownedInputIndexes) {
       final PsbtInput input = inputs[inputIndex];
       final TransactionOutput? witnessUtxo = input.witnessUtxo;
       final List<DerivationPath>? derivations = input.tapBip32Derivation;
@@ -483,6 +542,62 @@ class Psbt {
             isChange, path, derivations);
       }
     }
+  }
+
+  /// Indexes of the inputs a policy validator must check, after confirming
+  /// that they share [expectedType].
+  ///
+  /// The validators exist because a PSBT can carry forged derivations that
+  /// make someone else's input or script look like the vault's, or a witness
+  /// UTXO that misstates what the vault is spending. Skipping a foreign input
+  /// does not reopen that: an input naming any of [fingerprints] is never
+  /// foreign and gets every check, and a foreign input is already finalized,
+  /// so the vault never signs it and nothing about it is attributed to the
+  /// vault. Its witness UTXO is the other party's unverified claim.
+  List<int> _ownedInputIndexes(
+      Set<String> fingerprints,
+      bool allowFinalizedForeignInputs,
+      AddressType expectedType,
+      String mismatchMessage) {
+    if (inputs.isEmpty) {
+      throw PsbtException(PsbtErrorCode.policyMismatch, mismatchMessage);
+    }
+    final List<int> ownedInputIndexes = [
+      for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++)
+        if (!allowFinalizedForeignInputs ||
+            !_isFinalizedForeignInput(inputs[inputIndex], fingerprints))
+          inputIndex
+    ];
+    if (ownedInputIndexes.isEmpty) {
+      throw PsbtException(PsbtErrorCode.missingMetadata,
+          'PSBT has no input that belongs to the vault.');
+    }
+    final AddressType? ownedType = ownedInputIndexes
+        .map((inputIndex) => _derivationAddressType(inputs[inputIndex]))
+        .nonNulls
+        .firstOrNull;
+    final AddressType? type =
+        allowFinalizedForeignInputs ? ownedType : addressType;
+    if (type != expectedType) {
+      throw PsbtException(PsbtErrorCode.policyMismatch, mismatchMessage);
+    }
+    return ownedInputIndexes;
+  }
+
+  /// Whether [input] was finalized by another party: it has a final
+  /// scriptSig or witness and no derivation under any of [fingerprints].
+  static bool _isFinalizedForeignInput(
+      PsbtInput input, Set<String> fingerprints) {
+    if (!input.isFinalized) {
+      return false;
+    }
+    final Set<String> ownFingerprints =
+        fingerprints.map((fingerprint) => fingerprint.toUpperCase()).toSet();
+    return ![
+      ...?input.bip32Derivation,
+      ...?input.tapBip32Derivation,
+    ].any(
+        (derivation) => ownFingerprints.contains(derivation.masterFingerprint));
   }
 
   static List<int> _validateWalletChildPath(
