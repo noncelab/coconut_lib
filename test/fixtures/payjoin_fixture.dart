@@ -157,6 +157,63 @@ abstract final class PayjoinFixture {
     return Psbt.parse(psbt.serialize());
   }
 
+  /// The proposal a payjoin sender gets back for [original], as rust-payjoin
+  /// hands it over: the receiver inserts [input] at [inputIndex] and adds
+  /// its amount less [receiverFee] to output [outputIndex], clearing the
+  /// sender's signatures; the sender then restores its inputs' and outputs'
+  /// metadata from [original].
+  static Psbt receiverContribution(Psbt original, ForeignInput input,
+      {required int inputIndex,
+      required int outputIndex,
+      int receiverFee = 0}) {
+    final Transaction originalTx = original.unsignedTransaction!;
+    final List<TransactionInput> txInputs = [
+      ...originalTx.inputs.map((txInput) =>
+          TransactionInput.forPayment(txInput.transactionHash, txInput.index))
+    ]..insert(
+        inputIndex,
+        TransactionInput.forPayment(
+            input.utxo.transactionHash, input.utxo.index));
+    final List<TransactionOutput> txOutputs = [
+      for (int i = 0; i < originalTx.outputs.length; i++)
+        TransactionOutput.forPayment(
+            originalTx.outputs[i].amount +
+                (i == outputIndex ? input.utxo.amount - receiverFee : 0),
+            originalTx.outputs[i].scriptPubKey.getAddress())
+    ];
+    final Transaction tx = Transaction.withInputsAndOutputs(
+        txInputs, txOutputs, AddressType.p2pkh);
+
+    final List<TransactionOutput> prevouts = [
+      ...original.inputs.map((psbtInput) => psbtInput.witnessUtxo!)
+    ]..insert(
+        inputIndex,
+        TransactionOutput.forPayment(
+            input.utxo.amount,
+            input.signer
+                .getAddressWithDerivationPath(input.utxo.derivationPath)));
+    final Map<String, dynamic> originalMap = original.toKeyMap();
+    final List<Map<String, dynamic>> inputMaps = [
+      for (final Map<String, dynamic> inputMap in originalMap['inputs'])
+        Map<String, dynamic>.from(inputMap)
+          ..removeWhere(
+              (key, _) => key == '07' || key == '08' || key.startsWith('02'))
+    ]..insert(inputIndex, {
+        '01': prevouts[inputIndex].serialize(),
+        '08':
+            serializeWitness(_foreignWitness(tx, inputIndex, input, prevouts)),
+      });
+    final Psbt psbt = Psbt.fromMap({
+      'global': {'00': tx.serialize()},
+      'inputs': inputMaps,
+      'outputs': [
+        for (final Map<String, dynamic> outputMap in originalMap['outputs'])
+          Map<String, dynamic>.from(outputMap)
+      ],
+    });
+    return Psbt.parse(psbt.serialize());
+  }
+
   /// BIP 141 witness stack serialization, as stored in a PSBT.
   static String serializeWitness(List<String> items) {
     final StringBuffer buffer = StringBuffer(

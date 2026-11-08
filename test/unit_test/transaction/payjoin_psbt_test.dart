@@ -563,6 +563,83 @@ void main() {
     });
   });
 
+  group('payjoin round trip', () {
+    late Psbt original;
+    late ForeignInput receiverInput;
+    setUp(() {
+      final Transaction tx = Transaction.forSinglePayment([
+        PayjoinFixture.ownedUtxo(vault, 0),
+        PayjoinFixture.ownedUtxo(vault, 1)
+      ], PayjoinFixture.counterpartyVault().getAddress(5),
+          '${vault.derivationPath}/1/1', 150000, 2, vault);
+      final Psbt unsigned = Psbt.fromTransaction(tx, vault);
+      original = Psbt.parse(
+          Psbt.parse(vault.addSignatureToPsbt(unsigned.serialize()))
+              .finalizeInputs(keepDerivations: true)
+              .serialize());
+      receiverInput = PayjoinFixture.foreignInput(
+          PayjoinFixture.counterpartyVault(), 0,
+          amount: 70000);
+    });
+
+    test('signs, finalizes and extracts the sender side', () {
+      // The Original is a broadcastable fallback on its own.
+      final Transaction fallback =
+          original.getSignedTransaction(vault.addressType);
+      expect(
+          fallback.validateSpend(
+              original.inputs.map((input) => input.witnessUtxo!).toList()),
+          isTrue);
+
+      final Psbt proposal = PayjoinFixture.receiverContribution(
+          original, receiverInput,
+          inputIndex: 1, outputIndex: 0, receiverFee: 300);
+      expect(proposal.matchesVault(vault), isFalse);
+      expect(proposal.matchesVault(vault, allowFinalizedForeignInputs: true),
+          isTrue);
+      expect(proposal.netAmount(vault), original.netAmount(vault));
+      expect(proposal.unsignedTransaction!.outputs[0].amount,
+          150000 + 70000 - 300);
+
+      final Psbt signed = Psbt.parse(vault.addSignatureToPsbt(
+          proposal.serialize(),
+          allowFinalizedForeignInputs: true));
+      final Psbt finalized = Psbt.parse(signed.finalizeInputs().serialize());
+      final Transaction payjoin =
+          finalized.getSignedTransaction(vault.addressType);
+
+      expect(payjoin.inputs, hasLength(3));
+      expect(
+          payjoin.inputs[1].witnessList, proposal.inputs[1].finalScriptWitness);
+      expect(
+          payjoin.validateSpend(
+              finalized.inputs.map((input) => input.witnessUtxo!).toList()),
+          isTrue);
+      expect(_spendIsValid(finalized), isTrue);
+    });
+
+    test('needs the derivations kept on the Original', () {
+      final Psbt strictOriginal = Psbt.parse(Psbt.parse(
+              vault.addSignatureToPsbt(Psbt.fromTransaction(
+                      Transaction.forSinglePayment([
+                        PayjoinFixture.ownedUtxo(vault, 0),
+                        PayjoinFixture.ownedUtxo(vault, 1)
+                      ], PayjoinFixture.counterpartyVault().getAddress(5),
+                          '${vault.derivationPath}/1/1', 150000, 2, vault),
+                      vault)
+                  .serialize()))
+          .finalizeInputs()
+          .serialize());
+
+      final Psbt proposal = PayjoinFixture.receiverContribution(
+          strictOriginal, receiverInput,
+          inputIndex: 1, outputIndex: 0);
+
+      expect(proposal.matchesVault(vault, allowFinalizedForeignInputs: true),
+          isFalse);
+    });
+  });
+
   group('multisignature vault', () {
     late MultisignatureVault multisig;
     late Psbt psbt;
