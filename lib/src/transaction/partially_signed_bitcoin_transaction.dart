@@ -123,25 +123,43 @@ class Psbt {
     return sendingAmount;
   }
 
-  /// Infers the common address type from the first input's derivation data.
+  /// Infers the common address type from the derivation data of the first
+  /// input that carries any, preferring inputs that are not finalized yet.
   ///
-  /// Returns `null` when the input does not contain a supported derivation map.
-  AddressType? get addressType => () {
-        if (inputs.isEmpty) {
-          throw Exception('Inputs are empty');
-        }
-        if (inputs[0].bip32Derivation != null) {
-          if (inputs[0].witnessScript == null) {
-            return AddressType.p2wpkh;
-          } else {
-            return AddressType.p2wsh;
-          }
-        } else if (inputs[0].tapBip32Derivation != null) {
-          return AddressType.p2tr;
-        } else {
-          return null;
-        }
-      }();
+  /// Inputs another signer already finalized, such as a payjoin
+  /// counterparty's, usually carry no derivations and may be of another
+  /// type, so they do not decide the type of the inputs still to be signed.
+  ///
+  /// Returns `null` when no input contains a supported derivation map.
+  AddressType? get addressType {
+    if (inputs.isEmpty) {
+      throw Exception('Inputs are empty');
+    }
+    AddressType? finalizedInputType;
+    for (final PsbtInput input in inputs) {
+      final AddressType? inputType = _derivationAddressType(input);
+      if (inputType == null) {
+        continue;
+      }
+      if (!input.isFinalized) {
+        return inputType;
+      }
+      finalizedInputType ??= inputType;
+    }
+    return finalizedInputType;
+  }
+
+  static AddressType? _derivationAddressType(PsbtInput input) {
+    if (input.bip32Derivation != null) {
+      return input.witnessScript == null
+          ? AddressType.p2wpkh
+          : AddressType.p2wsh;
+    }
+    if (input.tapBip32Derivation != null) {
+      return AddressType.p2tr;
+    }
+    return null;
+  }
 
   /// Returns whether this PSBT's identifying metadata matches [wallet].
   ///
