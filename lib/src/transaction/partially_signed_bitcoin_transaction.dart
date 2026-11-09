@@ -94,6 +94,10 @@ class Psbt {
   String? identifier;
 
   /// Get the fee of the transaction.
+  ///
+  /// The fee is computed from every input's witness UTXO, including inputs
+  /// another party contributed. Their amounts are unverified for SegWit v0
+  /// inputs, so show [netAmount] to the user for a payjoin.
   int get fee => () {
         int totalInput = 0;
         int totalOutput = 0;
@@ -101,16 +105,84 @@ class Psbt {
           throw Exception('Inputs are empty');
         }
         for (int i = 0; i < inputs.length; i++) {
-          if (inputs[i].witnessUtxo == null) {
-            throw Exception('Witness UTXO is null');
+          final TransactionOutput? witnessUtxo = inputs[i].witnessUtxo;
+          if (witnessUtxo == null) {
+            throw PsbtException(PsbtErrorCode.missingMetadata,
+                'Input is missing its witness UTXO.',
+                inputIndex: i);
           }
-          totalInput += inputs[i].witnessUtxo!.amount;
+          totalInput += witnessUtxo.amount;
         }
         for (int i = 0; i < unsignedTransaction!.outputs.length; i++) {
           totalOutput += unsignedTransaction!.outputs[i].amount;
         }
         return totalInput - totalOutput;
       }();
+
+  /// The change in [wallet]'s balance if this transaction confirms: the
+  /// outputs paying [wallet] minus the inputs it spends. Positive means
+  /// incoming.
+  ///
+  /// An input or output belongs to [wallet] when its derivation metadata
+  /// derives its address from [wallet], or when [isOwnedAddress] recognises
+  /// the address. Pass [isOwnedAddress] when the PSBT may lack derivations,
+  /// for example a payjoin proposal whose counterparty removed them.
+  ///
+  /// Throws a [PsbtException] when an input of [wallet] has no witness UTXO.
+  int netAmount(WalletBase wallet,
+      {bool Function(String address)? isOwnedAddress}) {
+    // A SegWit v0 signature commits to the amount of the input it signs
+    // (BIP 143) but not to other inputs' amounts. A counterparty's witness
+    // UTXO can therefore misstate its amount, and any fee computed from it is
+    // then wrong. The net amount reads only the wallet's own inputs, whose
+    // amounts its signatures commit to, and the outputs, which SIGHASH_ALL
+    // commits to.
+    bool isOwned(String? address, Iterable<DerivationPath> derivations) =>
+        address != null &&
+        (PsbtOutput._derivesAddress(wallet,
+                derivations.map((derivation) => derivation.path), address) ||
+            (isOwnedAddress?.call(address) ?? false));
+
+    int net = 0;
+    for (final PsbtOutput output in outputs) {
+      if (isOwned(_addressOrNull(output.outScript),
+          [...output.bip32Derivations, ...output.tapBip32Derivations])) {
+        net += output.outAmount!;
+      }
+    }
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      final PsbtInput input = inputs[inputIndex];
+      final List<DerivationPath> derivations = [
+        ...?input.bip32Derivation,
+        ...?input.tapBip32Derivation
+      ];
+      final TransactionOutput? witnessUtxo = input.witnessUtxo;
+      if (witnessUtxo == null) {
+        if (PsbtOutput._hasWalletPath(
+            wallet, derivations.map((derivation) => derivation.path))) {
+          throw PsbtException(PsbtErrorCode.missingMetadata,
+              'Input is missing its witness UTXO.',
+              inputIndex: inputIndex);
+        }
+        continue;
+      }
+      if (isOwned(_addressOrNull(witnessUtxo.scriptPubKey), derivations)) {
+        net -= witnessUtxo.amount;
+      }
+    }
+    return net;
+  }
+
+  static String? _addressOrNull(ScriptPublicKey? script) {
+    if (script == null) {
+      return null;
+    }
+    try {
+      return script.getAddress();
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Get the sending amount, excluding change verified against [wallet].
   int sendingAmount(WalletBase wallet) {
@@ -123,35 +195,62 @@ class Psbt {
     return sendingAmount;
   }
 
-  /// Infers the common address type from the first input's derivation data.
+  /// Infers the common address type from the derivation data of the first
+  /// input that carries any, preferring inputs that are not finalized yet.
   ///
-  /// Returns `null` when the input does not contain a supported derivation map.
-  AddressType? get addressType => () {
-        if (inputs.isEmpty) {
-          throw Exception('Inputs are empty');
-        }
-        if (inputs[0].bip32Derivation != null) {
-          if (inputs[0].witnessScript == null) {
-            return AddressType.p2wpkh;
-          } else {
-            return AddressType.p2wsh;
-          }
-        } else if (inputs[0].tapBip32Derivation != null) {
-          return AddressType.p2tr;
-        } else {
-          return null;
-        }
-      }();
+  /// Inputs another signer already finalized, such as a payjoin
+  /// counterparty's, usually carry no derivations and may be of another
+  /// type, so they do not decide the type of the inputs still to be signed.
+  ///
+  /// Returns `null` when no input contains a supported derivation map.
+  AddressType? get addressType {
+    if (inputs.isEmpty) {
+      throw Exception('Inputs are empty');
+    }
+    AddressType? finalizedInputType;
+    for (final PsbtInput input in inputs) {
+      final AddressType? inputType = _derivationAddressType(input);
+      if (inputType == null) {
+        continue;
+      }
+      if (!input.isFinalized) {
+        return inputType;
+      }
+      finalizedInputType ??= inputType;
+    }
+    return finalizedInputType;
+  }
+
+  static AddressType? _derivationAddressType(PsbtInput input) {
+    if (input.bip32Derivation != null) {
+      return input.witnessScript == null
+          ? AddressType.p2wpkh
+          : AddressType.p2wsh;
+    }
+    if (input.tapBip32Derivation != null) {
+      return AddressType.p2tr;
+    }
+    return null;
+  }
 
   /// Returns whether this PSBT's identifying metadata matches [wallet].
   ///
   /// Multisignature inputs are also checked against the complete vault policy.
-  bool matchesVault(WalletBase wallet) {
+  ///
+  /// Set [allowFinalizedForeignInputs] to accept inputs another party has
+  /// already finalized, as in a payjoin (BIP 78, BIP 77); see
+  /// [validateSingleSignaturePolicy]. Global xpubs and the wallet identifier
+  /// are then ignored because the PSBT may carry the other party's, and
+  /// ownership rests on the per-input checks, as it does for PSBTs without
+  /// global xpubs.
+  bool matchesVault(WalletBase wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final bool checkGlobals = !allowFinalizedForeignInputs;
     if (wallet is SingleSignatureVault) {
       // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
       // Without it, ownership rests on the per-input BIP32_DERIVATION checks
       // in validateSingleSignaturePolicy below.
-      if (globalExtendedPublicKeyList.isNotEmpty) {
+      if (checkGlobals && globalExtendedPublicKeyList.isNotEmpty) {
         if (globalExtendedPublicKeyList.length != 1) {
           return false;
         }
@@ -168,12 +267,14 @@ class Psbt {
           return false;
         }
       }
-      if (isFromCoconut == true &&
+      if (checkGlobals &&
+          isFromCoconut == true &&
           (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
         return false;
       }
       try {
-        validateSingleSignaturePolicy(wallet);
+        validateSingleSignaturePolicy(wallet,
+            allowFinalizedForeignInputs: allowFinalizedForeignInputs);
         return true;
       } on PsbtException {
         return false;
@@ -182,7 +283,7 @@ class Psbt {
       // PSBT_GLOBAL_XPUB is optional, and wallets such as BlueWallet omit it.
       // Without it, ownership rests on the per-input BIP32_DERIVATION checks
       // in validateMultisignaturePolicy below.
-      if (globalExtendedPublicKeyList.isNotEmpty) {
+      if (checkGlobals && globalExtendedPublicKeyList.isNotEmpty) {
         if (wallet.keyStoreList.length != globalExtendedPublicKeyList.length) {
           return false;
         }
@@ -206,42 +307,19 @@ class Psbt {
       //   return false;
       // }
       try {
-        validateMultisignaturePolicy(wallet);
+        validateMultisignaturePolicy(wallet,
+            allowFinalizedForeignInputs: allowFinalizedForeignInputs);
         return true;
       } on PsbtException {
         return false;
       }
     } else if (wallet is TaprootVault) {
-      final Set<String> pubInVaultList = <String>{};
-      for (KeyStore keyStore in wallet.keyStoreList) {
-        pubInVaultList.add(
-            '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
-            '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
-      }
-      for (Policy policy in wallet.policyList) {
-        for (final KeyStore keyStore in policy.keyStoreList) {
-          pubInVaultList.add(
-              '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
-              '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
-        }
-      }
-      if (pubInVaultList.length != globalExtendedPublicKeyList.length) {
-        return false;
-      }
-      final Set<String> pubInPsbtList = globalExtendedPublicKeyList
-          .map((entry) =>
-              '${entry.publicKey}:${entry.masterFingerprint.toUpperCase()}:${entry.path}')
-          .toSet();
-      if (pubInPsbtList.length != globalExtendedPublicKeyList.length ||
-          !pubInPsbtList.containsAll(pubInVaultList)) {
-        return false;
-      }
-      if (isFromCoconut == true &&
-          (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
+      if (checkGlobals && !_globalsMatchTaprootVault(wallet)) {
         return false;
       }
       try {
-        validateTaprootPolicy(wallet);
+        validateTaprootPolicy(wallet,
+            allowFinalizedForeignInputs: allowFinalizedForeignInputs);
         return true;
       } on PsbtException {
         return false;
@@ -251,17 +329,57 @@ class Psbt {
     }
   }
 
+  bool _globalsMatchTaprootVault(TaprootVault wallet) {
+    final Set<String> pubInVaultList = <String>{};
+    for (KeyStore keyStore in wallet.keyStoreList) {
+      pubInVaultList.add(
+          '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+          '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
+    }
+    for (Policy policy in wallet.policyList) {
+      for (final KeyStore keyStore in policy.keyStoreList) {
+        pubInVaultList.add(
+            '${keyStore.extendedPublicKey.serializeForPsbt(toXpub: true)}:'
+            '${keyStore.masterFingerprint.toUpperCase()}:${wallet.derivationPath}');
+      }
+    }
+    if (pubInVaultList.length != globalExtendedPublicKeyList.length) {
+      return false;
+    }
+    final Set<String> pubInPsbtList = globalExtendedPublicKeyList
+        .map((entry) =>
+            '${entry.publicKey}:${entry.masterFingerprint.toUpperCase()}:${entry.path}')
+        .toSet();
+    if (pubInPsbtList.length != globalExtendedPublicKeyList.length ||
+        !pubInPsbtList.containsAll(pubInVaultList)) {
+      return false;
+    }
+    if (isFromCoconut == true &&
+        (identifier != Codec.encodeHex(Hash.sha256(wallet.descriptor)))) {
+      return false;
+    }
+    return true;
+  }
+
   /// Validates every P2WPKH input against [wallet]'s derived key and script.
   ///
   /// Throws when derivation metadata is forged or a witness UTXO does not
   /// belong to the single-signature vault.
-  void validateSingleSignaturePolicy(SingleSignatureVault wallet) {
-    if (addressType != AddressType.p2wpkh || inputs.isEmpty) {
-      throw PsbtException(PsbtErrorCode.policyMismatch,
-          'PSBT is not a P2WPKH single-signature transaction.');
-    }
+  ///
+  /// With [allowFinalizedForeignInputs], an input that is already finalized
+  /// and has no derivation under the vault's master fingerprint is skipped as
+  /// another party's, as in a payjoin (BIP 78, BIP 77). Every other input
+  /// gets the full checks, and at least one must belong to the vault.
+  void validateSingleSignaturePolicy(SingleSignatureVault wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final Set<String> fingerprints = {wallet.keyStore.masterFingerprint};
+    final List<int> ownedInputIndexes = _ownedInputIndexes(
+        fingerprints,
+        allowFinalizedForeignInputs,
+        AddressType.p2wpkh,
+        'PSBT is not a P2WPKH single-signature transaction.');
 
-    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    for (final int inputIndex in ownedInputIndexes) {
       final PsbtInput input = inputs[inputIndex];
       final TransactionOutput? witnessUtxo = input.witnessUtxo;
       final List<DerivationPath>? derivations = input.bip32Derivation;
@@ -303,13 +421,22 @@ class Psbt {
   ///
   /// Throws when an input's witness script, derivation metadata, or witness
   /// UTXO does not match the script independently derived from the vault.
-  void validateMultisignaturePolicy(MultisignatureVault wallet) {
-    if (addressType != AddressType.p2wsh || inputs.isEmpty) {
-      throw PsbtException(PsbtErrorCode.policyMismatch,
-          'PSBT is not a P2WSH multisignature transaction.');
-    }
+  ///
+  /// [allowFinalizedForeignInputs] works as in [validateSingleSignaturePolicy],
+  /// with any of the vault's master fingerprints marking an input as ours.
+  void validateMultisignaturePolicy(MultisignatureVault wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final Set<String> fingerprints = {
+      for (final KeyStore keyStore in wallet.keyStoreList)
+        keyStore.masterFingerprint
+    };
+    final List<int> ownedInputIndexes = _ownedInputIndexes(
+        fingerprints,
+        allowFinalizedForeignInputs,
+        AddressType.p2wsh,
+        'PSBT is not a P2WSH multisignature transaction.');
 
-    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    for (final int inputIndex in ownedInputIndexes) {
       final PsbtInput input = inputs[inputIndex];
       final TransactionOutput? witnessUtxo = input.witnessUtxo;
       final MultisignatureScript? witnessScript = input.witnessScript;
@@ -403,13 +530,35 @@ class Psbt {
   }
 
   /// Validates every Taproot input against [wallet]'s complete policy.
-  void validateTaprootPolicy(TaprootVault wallet) {
-    if (addressType != AddressType.p2tr || inputs.isEmpty) {
-      throw PsbtException(
-          PsbtErrorCode.policyMismatch, 'PSBT is not a Taproot transaction.');
+  ///
+  /// [allowFinalizedForeignInputs] works as in [validateSingleSignaturePolicy],
+  /// with any key or policy signer's master fingerprint marking an input as
+  /// ours. A foreign input must still carry its witness UTXO, because BIP 341
+  /// signature hashes commit to every input's prevout.
+  void validateTaprootPolicy(TaprootVault wallet,
+      {bool allowFinalizedForeignInputs = false}) {
+    final Set<String> fingerprints = {
+      for (final KeyStore keyStore in wallet.keyStoreList)
+        keyStore.masterFingerprint,
+      for (final Policy policy in wallet.policyList)
+        for (final KeyStore keyStore in policy.keyStoreList)
+          keyStore.masterFingerprint
+    };
+    final List<int> ownedInputIndexes = _ownedInputIndexes(
+        fingerprints,
+        allowFinalizedForeignInputs,
+        AddressType.p2tr,
+        'PSBT is not a Taproot transaction.');
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      if (!ownedInputIndexes.contains(inputIndex) &&
+          inputs[inputIndex].witnessUtxo == null) {
+        throw PsbtException(
+            PsbtErrorCode.missingMetadata, 'Input is missing its witness UTXO.',
+            inputIndex: inputIndex);
+      }
     }
 
-    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+    for (final int inputIndex in ownedInputIndexes) {
       final PsbtInput input = inputs[inputIndex];
       final TransactionOutput? witnessUtxo = input.witnessUtxo;
       final List<DerivationPath>? derivations = input.tapBip32Derivation;
@@ -465,6 +614,62 @@ class Psbt {
             isChange, path, derivations);
       }
     }
+  }
+
+  /// Indexes of the inputs a policy validator must check, after confirming
+  /// that they share [expectedType].
+  ///
+  /// The validators exist because a PSBT can carry forged derivations that
+  /// make someone else's input or script look like the vault's, or a witness
+  /// UTXO that misstates what the vault is spending. Skipping a foreign input
+  /// does not reopen that: an input naming any of [fingerprints] is never
+  /// foreign and gets every check, and a foreign input is already finalized,
+  /// so the vault never signs it and nothing about it is attributed to the
+  /// vault. Its witness UTXO is the other party's unverified claim.
+  List<int> _ownedInputIndexes(
+      Set<String> fingerprints,
+      bool allowFinalizedForeignInputs,
+      AddressType expectedType,
+      String mismatchMessage) {
+    if (inputs.isEmpty) {
+      throw PsbtException(PsbtErrorCode.policyMismatch, mismatchMessage);
+    }
+    final List<int> ownedInputIndexes = [
+      for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++)
+        if (!allowFinalizedForeignInputs ||
+            !_isFinalizedForeignInput(inputs[inputIndex], fingerprints))
+          inputIndex
+    ];
+    if (ownedInputIndexes.isEmpty) {
+      throw PsbtException(PsbtErrorCode.missingMetadata,
+          'PSBT has no input that belongs to the vault.');
+    }
+    final AddressType? ownedType = ownedInputIndexes
+        .map((inputIndex) => _derivationAddressType(inputs[inputIndex]))
+        .nonNulls
+        .firstOrNull;
+    final AddressType? type =
+        allowFinalizedForeignInputs ? ownedType : addressType;
+    if (type != expectedType) {
+      throw PsbtException(PsbtErrorCode.policyMismatch, mismatchMessage);
+    }
+    return ownedInputIndexes;
+  }
+
+  /// Whether [input] was finalized by another party: it has a final
+  /// scriptSig or witness and no derivation under any of [fingerprints].
+  static bool _isFinalizedForeignInput(
+      PsbtInput input, Set<String> fingerprints) {
+    if (!input.isFinalized) {
+      return false;
+    }
+    final Set<String> ownFingerprints =
+        fingerprints.map((fingerprint) => fingerprint.toUpperCase()).toSet();
+    return ![
+      ...?input.bip32Derivation,
+      ...?input.tapBip32Derivation,
+    ].any(
+        (derivation) => ownFingerprints.contains(derivation.masterFingerprint));
   }
 
   static List<int> _validateWalletChildPath(
@@ -657,6 +862,7 @@ class Psbt {
       List<DerivationPath> inputDerivationPathList = [];
       List<Signature> partialSigList = [];
       List<String> finalScriptWitness = [];
+      String? finalScriptSig;
       MultisignatureScript? witnessScript;
 
       // for every taproot
@@ -698,6 +904,10 @@ class Psbt {
           String size =
               Codec.encodeHex(Codec.encodeVariableInteger(script.length ~/ 2));
           witnessScript = MultisignatureScript.parse(size + script);
+        }
+        // 07 : FINAL_SCRIPTSIG
+        if (key == '07') {
+          finalScriptSig = psbtMap["inputs"][i][key];
         }
         // 08 : FINAL_SCRIPTWITNESS
         if (key.startsWith('08')) {
@@ -822,6 +1032,7 @@ class Psbt {
       if (finalScriptWitness.isNotEmpty) {
         input.finalScriptWitness = finalScriptWitness;
       }
+      input.finalScriptSig = finalScriptSig;
       input.sighashType = sighashType;
       inputs.add(input);
     }
@@ -1501,7 +1712,168 @@ class Psbt {
     return Uint8List.fromList(serializedPath);
   }
 
+  /// Finalizes every signed input that is not finalized yet and returns this
+  /// PSBT, following the BIP 174 Input Finalizer role.
+  ///
+  /// P2WPKH inputs and P2WSH multisig inputs are supported. Each signature is
+  /// verified first, and the final witness replaces the partial signatures,
+  /// sighash type and witness script. Bip32 derivations are cleared too
+  /// unless [keepDerivations] is set. Inputs that are already finalized,
+  /// such as a payjoin counterparty's, are left untouched.
+  ///
+  /// Keep derivations on a payjoin sender's Original: the sender restores
+  /// them from the Original into the receiver's proposal so the wallet can
+  /// recognise and sign its own inputs again.
+  ///
+  /// Throws, leaving the PSBT unchanged, when an input lacks signatures or
+  /// metadata or carries an invalid signature. Throws [UnsupportedError] for
+  /// Taproot inputs.
+  Psbt finalizeInputs({bool keepDerivations = false}) {
+    final Map<int, List<String>> witnesses = {};
+    for (int inputIndex = 0; inputIndex < inputs.length; inputIndex++) {
+      if (!inputs[inputIndex].isFinalized) {
+        witnesses[inputIndex] = _finalWitness(inputIndex);
+      }
+    }
+
+    for (final MapEntry<int, List<String>> entry in witnesses.entries) {
+      final PsbtInput input = inputs[entry.key];
+      final Map<String, dynamic> inputMap = psbtMap["inputs"][entry.key];
+      final String serializedWitness = _serializeScriptWitness(entry.value);
+      inputMap.removeWhere((key, _) =>
+          key.startsWith('02') ||
+          key == '03' ||
+          key == '04' ||
+          key == '05' ||
+          (!keepDerivations && key.startsWith('06')));
+      inputMap['08'] = serializedWitness;
+
+      input.partialSig = [];
+      input.sighashType = null;
+      input.witnessScript = null;
+      if (!keepDerivations) {
+        input.bip32Derivation = null;
+      }
+      input.finalScriptWitness = _parseScriptWitness(serializedWitness);
+    }
+    return this;
+  }
+
+  List<String> _finalWitness(int inputIndex) {
+    final PsbtInput input = inputs[inputIndex];
+    final TransactionOutput? witnessUtxo = input.witnessUtxo;
+    if (witnessUtxo == null) {
+      throw PsbtException(
+          PsbtErrorCode.missingMetadata, 'Input is missing its witness UTXO.',
+          inputIndex: inputIndex);
+    }
+    final ScriptPublicKey scriptPubKey = witnessUtxo.scriptPubKey;
+    if (scriptPubKey.isP2tr()) {
+      throw UnsupportedError('Taproot inputs cannot be finalized yet.');
+    }
+    final List<Signature> signatures = input.partialSig ?? <Signature>[];
+
+    if (scriptPubKey.isP2wpkh()) {
+      final String sigHash = unsignedTransaction!
+          .getSigHash(inputIndex, witnessUtxo, AddressType.p2wpkh);
+      final String scriptHash =
+          Codec.encodeHex(scriptPubKey.commands[1] as Uint8List);
+      final Signature? signature = signatures
+          .where((signature) =>
+              Codec.encodeHex(Hash.sha160fromHex(signature.publicKey)) ==
+              scriptHash)
+          .firstOrNull;
+      if (signature == null) {
+        throw PsbtException(PsbtErrorCode.insufficientSignatures,
+            'Input does not have a signature for its key.',
+            inputIndex: inputIndex);
+      }
+      _verifyEcdsaSignature(sigHash, signature, inputIndex);
+      return [signature.signature, signature.publicKey];
+    }
+
+    if (scriptPubKey.isP2wsh()) {
+      final MultisignatureScript? witnessScript = input.witnessScript;
+      if (witnessScript == null) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input is missing its witness script.',
+            inputIndex: inputIndex);
+      }
+      final String rawWitnessScript = witnessScript.rawSerialize();
+      if ('0020${Hash.sha256fromHex(rawWitnessScript)}' !=
+          scriptPubKey.rawSerialize()) {
+        throw PsbtException(PsbtErrorCode.utxoMismatch,
+            'Input witness UTXO does not commit to the witness script.',
+            inputIndex: inputIndex);
+      }
+      final String sigHash = unsignedTransaction!.getSigHash(
+          inputIndex, witnessUtxo, AddressType.p2wsh,
+          witnessScript: rawWitnessScript);
+      final Map<String, Signature> signatureByKey = {
+        for (final Signature signature in signatures)
+          signature.publicKey: signature
+      };
+      // OP_CHECKMULTISIG matches signatures against keys in script order.
+      final List<Signature> ordered = witnessScript
+          .getPublicKeys()
+          .map((key) => signatureByKey[Codec.encodeHex(key)])
+          .nonNulls
+          .take(witnessScript.getRequiredSignature())
+          .toList();
+      if (ordered.length < witnessScript.getRequiredSignature()) {
+        throw PsbtException(PsbtErrorCode.insufficientSignatures,
+            'Input does not have enough signatures.',
+            inputIndex: inputIndex);
+      }
+      for (final Signature signature in ordered) {
+        _verifyEcdsaSignature(sigHash, signature, inputIndex);
+      }
+      return [
+        // OP_CHECKMULTISIG pops one extra stack item, which must be empty.
+        '',
+        ...ordered.map((signature) => signature.signature),
+        rawWitnessScript,
+      ];
+    }
+
+    throw UnsupportedError('Only P2WPKH and P2WSH inputs can be finalized.');
+  }
+
+  static void _verifyEcdsaSignature(
+      String sigHash, Signature signature, int inputIndex) {
+    final Uint8List encoded = Codec.decodeHex(signature.signature);
+    // [sigHash] is a SIGHASH_ALL digest, so only a SIGHASH_ALL signature can
+    // verify against it.
+    if (encoded.isEmpty ||
+        encoded.last != 0x01 ||
+        !Ecc.verifyEcdsa(
+            Codec.decodeHex(sigHash),
+            Codec.decodeHex(signature.publicKey),
+            Converter.derToRawSignature(encoded))) {
+      throw PsbtException(PsbtErrorCode.invalidSignature,
+          'Input contains an invalid signature.',
+          inputIndex: inputIndex);
+    }
+  }
+
+  static String _serializeScriptWitness(List<String> items) {
+    final List<int> bytes = [...Codec.encodeVariableInteger(items.length)];
+    for (final String item in items) {
+      final Uint8List itemBytes = Codec.decodeHex(item);
+      bytes
+        ..addAll(Codec.encodeVariableInteger(itemBytes.length))
+        ..addAll(itemBytes);
+    }
+    return Codec.encodeHex(Uint8List.fromList(bytes));
+  }
+
   /// Get the transaction if all inputs are signed.
+  ///
+  /// [addressType] is the type of the inputs this PSBT signs with partial
+  /// signatures. Inputs that are already finalized, including a payjoin
+  /// counterparty's of any type, are copied from their final scriptSig and
+  /// witness. Their signatures are verified for P2WPKH, P2WSH and Taproot
+  /// key-path prevouts; other finalized inputs are copied unverified.
   Transaction getSignedTransaction(AddressType addressType) {
     Transaction signedTransaction =
         Transaction.parseUnsignedTransaction(unsignedTransaction!.serialize());
@@ -1509,6 +1881,10 @@ class Psbt {
     //p2wsh multisig
     if (addressType == AddressType.p2wsh) {
       for (int i = 0; i < inputs.length; i++) {
+        if (inputs[i].isFinalized) {
+          _setFinalizedInput(signedTransaction, i);
+          continue;
+        }
         if (inputs[i].totalSigner < inputs[i].requiredSignature) {
           throw PsbtException(PsbtErrorCode.insufficientSignatures,
               'Input does not have enough signatures.',
@@ -1548,20 +1924,8 @@ class Psbt {
                 'Input contains an invalid signature.',
                 inputIndex: i);
           }
-        } else if (inputs[i].finalScriptWitness != null &&
-            inputs[i].finalScriptWitness!.isNotEmpty) {
-          signedTransaction.inputs[i].witnessList =
-              List<String>.from(inputs[i].finalScriptWitness!);
-          if (inputs[i].witnessUtxo == null) {
-            continue;
-          }
-          if (signedTransaction.validateEcdsa(i, inputs[i].witnessUtxo!)) {
-            continue;
-          } else {
-            throw PsbtException(PsbtErrorCode.invalidSignature,
-                'Input contains an invalid finalized signature.',
-                inputIndex: i);
-          }
+        } else if (inputs[i].isFinalized) {
+          _setFinalizedInput(signedTransaction, i);
         } else {
           throw PsbtException(PsbtErrorCode.insufficientSignatures,
               'Input does not have enough signatures.',
@@ -1580,7 +1944,9 @@ class Psbt {
         utxoList.add(witnessUtxo);
       }
       for (int i = 0; i < inputs.length; i++) {
-        if (inputs[i].tapScriptSig != null &&
+        if (inputs[i].isFinalized) {
+          _setFinalizedInput(signedTransaction, i);
+        } else if (inputs[i].tapScriptSig != null &&
             inputs[i].tapScriptSig!.isNotEmpty) {
           //Script path spending
           for (final Signature signature in inputs[i].tapScriptSig!) {
@@ -1662,7 +2028,10 @@ class Psbt {
           }
         }
       }
-      if (!signedTransaction.validateSpend(utxoList)) {
+      final bool everyPrevoutVerifiable =
+          utxoList.every((utxo) => _isVerifiableScript(utxo.scriptPubKey));
+      if (everyPrevoutVerifiable &&
+          !signedTransaction.validateSpend(utxoList)) {
         throw PsbtException(PsbtErrorCode.invalidTransaction,
             'Finalized PSBT produced an invalid transaction.');
       }
@@ -1672,6 +2041,63 @@ class Psbt {
     //Validate signedTransaction
     return signedTransaction;
   }
+
+  /// Copies a finalized input's scriptSig and witness into [transaction] and
+  /// verifies them where this library can.
+  void _setFinalizedInput(Transaction transaction, int inputIndex) {
+    final PsbtInput input = inputs[inputIndex];
+    final TransactionInput txInput = transaction.inputs[inputIndex];
+    final String? finalScriptSig = input.finalScriptSig;
+    if (finalScriptSig != null && finalScriptSig.isNotEmpty) {
+      final int length = finalScriptSig.length ~/ 2;
+      txInput.scriptSig = ScriptSignature.parse(
+          Codec.encodeHex(Codec.encodeVariableInteger(length)) +
+              finalScriptSig);
+    }
+    txInput.witnessList = List<String>.from(input.finalScriptWitness ?? []);
+
+    final TransactionOutput? witnessUtxo = input.witnessUtxo;
+    if (witnessUtxo == null) {
+      return;
+    }
+    final ScriptPublicKey script = witnessUtxo.scriptPubKey;
+    final bool isValid;
+    if (script.isP2wpkh() || script.isP2wsh()) {
+      isValid = transaction.validateEcdsa(inputIndex, witnessUtxo);
+    } else if (script.isP2tr() && txInput.witnessList.length == 1) {
+      final List<TransactionOutput> utxoList = [];
+      for (int i = 0; i < inputs.length; i++) {
+        final TransactionOutput? utxo = inputs[i].witnessUtxo;
+        if (utxo == null) {
+          // BIP 341 signature hashes commit to every prevout.
+          throw PsbtException(PsbtErrorCode.missingMetadata,
+              'Input is missing its witness UTXO.',
+              inputIndex: i);
+        }
+        utxoList.add(utxo);
+      }
+      try {
+        isValid = transaction.validateSchnorr(inputIndex, utxoList);
+      } on FormatException catch (e) {
+        throw PsbtException(PsbtErrorCode.invalidSignature,
+            'Input contains an invalid finalized signature.',
+            inputIndex: inputIndex, cause: e);
+      }
+    } else {
+      // Taproot script paths in mixed transactions and wrapped or legacy
+      // scripts are not verified here. An invalid one only makes the
+      // transaction fail to broadcast.
+      return;
+    }
+    if (!isValid) {
+      throw PsbtException(PsbtErrorCode.invalidSignature,
+          'Input contains an invalid finalized signature.',
+          inputIndex: inputIndex);
+    }
+  }
+
+  static bool _isVerifiableScript(ScriptPublicKey script) =>
+      script.isP2wpkh() || script.isP2wsh() || script.isP2tr();
 
   /// Verifies [signature] for [publicKey] against the selected input sighash.
   ///
@@ -1848,6 +2274,7 @@ class PsbtInput {
   List<Signature>? partialSig; //0x02
   List<DerivationPath>? bip32Derivation; //0x03
   MultisignatureScript? witnessScript; //0x05
+  String? finalScriptSig; //0x07
   List<String>? finalScriptWitness; //0x08
   int? sighashType; //0x03
 
@@ -1895,8 +2322,14 @@ class PsbtInput {
       this.controlBlock,
       this.tapMerkleRoot);
 
+  /// Whether an Input Finalizer has completed this input's scriptSig or
+  /// witness.
+  bool get isFinalized =>
+      (finalScriptSig?.isNotEmpty ?? false) ||
+      (finalScriptWitness?.isNotEmpty ?? false);
+
   List<DerivationPath> get derivationPathList =>
-      bip32Derivation == null ? tapBip32Derivation! : bip32Derivation!;
+      bip32Derivation ?? tapBip32Derivation ?? const <DerivationPath>[];
   List<Signature> get signatureList => {
         if (partialSig != null) ...partialSig!,
         if (tapScriptSig != null) ...tapScriptSig!,
@@ -2063,36 +2496,46 @@ class PsbtOutput {
     if (outScript == null || derivationPaths.isEmpty) {
       return false;
     }
+    return _derivesAddress(wallet, derivationPaths, outAddress);
+  }
 
-    final List<String> walletPathSegments = wallet.derivationPath.split('/');
-
+  /// Whether one of [derivationPaths] is a receive or change path of
+  /// [wallet] whose address is [address].
+  static bool _derivesAddress(
+      WalletBase wallet, Iterable<String> derivationPaths, String address) {
     for (final String path in derivationPaths) {
-      final List<String> pathSegments = path.split('/');
-      final bool isDirectAddressPath = pathSegments.length ==
-              walletPathSegments.length + 2 &&
-          pathSegments
-              .sublist(0, walletPathSegments.length)
-              .asMap()
-              .entries
-              .every((entry) => entry.value == walletPathSegments[entry.key]) &&
-          (pathSegments[pathSegments.length - 2] == '0' ||
-              pathSegments[pathSegments.length - 2] == '1') &&
-          int.tryParse(pathSegments.last) != null;
-
-      if (!isDirectAddressPath || !WalletUtility.validateDerivationPath(path)) {
+      if (!_isWalletAddressPath(wallet, path)) {
         continue;
       }
-
       try {
-        if (wallet.getAddressWithDerivationPath(path) == outAddress) {
+        if (wallet.getAddressWithDerivationPath(path) == address) {
           return true;
         }
       } catch (_) {
         continue;
       }
     }
-
     return false;
+  }
+
+  static bool _hasWalletPath(
+          WalletBase wallet, Iterable<String> derivationPaths) =>
+      derivationPaths.any((path) => _isWalletAddressPath(wallet, path));
+
+  static bool _isWalletAddressPath(WalletBase wallet, String path) {
+    final List<String> walletPathSegments = wallet.derivationPath.split('/');
+    final List<String> pathSegments = path.split('/');
+    final bool isDirectAddressPath = pathSegments.length ==
+            walletPathSegments.length + 2 &&
+        pathSegments
+            .sublist(0, walletPathSegments.length)
+            .asMap()
+            .entries
+            .every((entry) => entry.value == walletPathSegments[entry.key]) &&
+        (pathSegments[pathSegments.length - 2] == '0' ||
+            pathSegments[pathSegments.length - 2] == '1') &&
+        int.tryParse(pathSegments.last) != null;
+    return isDirectAddressPath && WalletUtility.validateDerivationPath(path);
   }
 }
 

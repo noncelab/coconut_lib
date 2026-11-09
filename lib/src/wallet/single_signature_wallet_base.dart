@@ -82,7 +82,8 @@ abstract class SingleSignatureWalletBase extends WalletBase {
   }
 
   @override
-  String addSignatureToPsbt(String psbt) {
+  String addSignatureToPsbt(String psbt,
+      {bool allowFinalizedForeignInputs = false}) {
     Psbt psbtObject = Psbt.parse(psbt);
     if (psbtObject.addressType != addressType) {
       throw PsbtException(
@@ -98,12 +99,16 @@ abstract class SingleSignatureWalletBase extends WalletBase {
     if (this is! SingleSignatureVault) {
       throw StateError('Single-signature policy validation requires a vault.');
     }
-    psbtObject.validateSingleSignaturePolicy(this as SingleSignatureVault);
+    psbtObject.validateSingleSignaturePolicy(this as SingleSignatureVault,
+        allowFinalizedForeignInputs: allowFinalizedForeignInputs);
 
     for (int inputIndex = 0;
         inputIndex < psbtObject.inputs.length;
         inputIndex++) {
       PsbtInput input = psbtObject.inputs[inputIndex];
+      if (allowFinalizedForeignInputs && input.isFinalized) {
+        continue;
+      }
       TransactionOutput utxo = input.witnessUtxo!;
       late String sigHash;
       List<DerivationPath>? derivationPathList;

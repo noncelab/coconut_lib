@@ -220,54 +220,32 @@ class KeyStore {
     if (psbtObj.inputs.isEmpty) {
       throw PsbtException(PsbtErrorCode.missingMetadata, 'PSBT has no inputs.');
     }
-
-    if (psbtObj.inputs[0].bip32Derivation != null) {
-      for (int i = 0; i < psbtObj.unsignedTransaction!.inputs.length; i++) {
-        PsbtInput thisInput = psbtObj.inputs[i];
-        for (int j = 0; j < thisInput.derivationPathList.length; j++) {
-          String publicKeyInPsbt = thisInput.derivationPathList[j].publicKey;
-          String publicKey = getPublicKey(
-              thisInput.derivationPathList[j].accountIndex,
-              isChange: thisInput.derivationPathList[j].isChange);
-          if (publicKeyInPsbt.length != publicKey.length) {
-            publicKey = publicKey.substring(2);
-          }
-          if (thisInput.derivationPathList[j].masterFingerprint ==
-              masterFingerprint) {
-            if (publicKeyInPsbt == publicKey) {
-              return true;
-            }
-          }
-        }
-      }
-      return false;
-    } else if (psbtObj.inputs[0].tapBip32Derivation != null) {
-      // taproot
-      for (int i = 0; i < psbtObj.unsignedTransaction!.inputs.length; i++) {
-        PsbtInput thisInput = psbtObj.inputs[i];
-        for (int j = 0; j < thisInput.tapBip32Derivation!.length; j++) {
-          String publicKeyInPsbt = thisInput.tapBip32Derivation![j].publicKey;
-          String publicKey = getPublicKey(
-              thisInput.tapBip32Derivation![j].accountIndex,
-              isChange: thisInput.tapBip32Derivation![j].isChange,
-              isXOnly: false);
-          if (publicKeyInPsbt.length != publicKey.length) {
-            publicKey = publicKey.substring(2);
-          }
-
-          if (thisInput.tapBip32Derivation![j].masterFingerprint ==
-              masterFingerprint) {
-            if (publicKeyInPsbt == publicKey) {
-              return true;
-            }
-          }
-        }
-      }
-      return false;
-    } else {
+    final AddressType? addressType = psbtObj.addressType;
+    if (addressType == null) {
       throw PsbtException(PsbtErrorCode.missingMetadata,
           'Derivation path is not included in the PSBT.');
     }
+
+    for (final PsbtInput input in psbtObj.inputs) {
+      final List<DerivationPath> derivations = (addressType.isTaproot
+              ? input.tapBip32Derivation
+              : input.bip32Derivation) ??
+          const <DerivationPath>[];
+      for (final DerivationPath derivation in derivations) {
+        if (derivation.masterFingerprint != masterFingerprint) {
+          continue;
+        }
+        String publicKey = getPublicKey(derivation.accountIndex,
+            isChange: derivation.isChange, isXOnly: false);
+        if (derivation.publicKey.length != publicKey.length) {
+          publicKey = publicKey.substring(2);
+        }
+        if (derivation.publicKey == publicKey) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// [auxRand] is forwarded to [getSecretNonce]; see the warning there before
@@ -333,7 +311,14 @@ class KeyStore {
         publicKey, psbtInput.muSig2AggregatedPublicKey!, sigHash, publicNonce);
   }
 
-  String addSignatureToPsbt(String psbt, AddressType addressType) {
+  /// Adds this key store's signature to every input it can sign in [psbt].
+  ///
+  /// Set [allowFinalizedForeignInputs] to skip inputs that are already
+  /// finalized, such as a payjoin counterparty's, instead of failing on them.
+  /// This method does not check the vault policy; callers holding a vault
+  /// should validate the PSBT against it first.
+  String addSignatureToPsbt(String psbt, AddressType addressType,
+      {bool allowFinalizedForeignInputs = false}) {
     if (!hasSeed) {
       throw SigningException(SigningErrorCode.privateKeyUnavailable,
           'This key store does not have a seed.');
@@ -354,8 +339,19 @@ class KeyStore {
         inputIndex++) {
       PsbtInput psbtInput = psbtObject.inputs[inputIndex];
 
-      if (psbtInput.requiredSignature <= psbtInput.signedCount) {
+      if (psbtInput.requiredSignature <= psbtInput.signedCount ||
+          (allowFinalizedForeignInputs && psbtInput.isFinalized)) {
         continue;
+      }
+      if (psbtInput.derivationPathList.isEmpty) {
+        throw PsbtException(PsbtErrorCode.missingMetadata,
+            'Input has no derivation path to sign with.',
+            inputIndex: inputIndex);
+      }
+      if (psbtInput.witnessUtxo == null) {
+        throw PsbtException(
+            PsbtErrorCode.missingMetadata, 'Input is missing its witness UTXO.',
+            inputIndex: inputIndex);
       }
 
       // Generate sig hash
@@ -379,7 +375,14 @@ class KeyStore {
         for (int j = 0;
             j < psbtObject.unsignedTransaction!.inputs.length;
             j++) {
-          utxoList.add(psbtObject.inputs[j].witnessUtxo!);
+          final TransactionOutput? witnessUtxo =
+              psbtObject.inputs[j].witnessUtxo;
+          if (witnessUtxo == null) {
+            throw PsbtException(PsbtErrorCode.missingMetadata,
+                'Input is missing its witness UTXO.',
+                inputIndex: j);
+          }
+          utxoList.add(witnessUtxo);
         }
         sigHash = psbtObject.unsignedTransaction!.getTaprootSigHash(
             inputIndex, utxoList,
